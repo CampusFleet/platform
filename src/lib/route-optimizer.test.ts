@@ -11,8 +11,12 @@ import {
   kruskalMST,
   computeNetworkStats,
   computeDirectExpressRoute,
+  reconcileShiftAttendance,
+  detectIntraCorridorDisassemblies,
+  computeClarkeWrightRouteStitches,
+  computeFleetOrchestrationPlan,
 } from "./route-optimizer";
-import { Stop, Route, RouteStop, Booking } from "./types";
+import { Stop, Route, RouteStop, Booking, Bus } from "./types";
 
 // ─── Generic Test Fixtures (No hardcoded real data) ──────────────────────────
 
@@ -441,5 +445,175 @@ describe("Direct Express Route to Campus (Full-Capacity Bypass)", () => {
     expect(result.isExpressDirect).toBe(false);
     expect(result.bypassedStopsCount).toBe(0);
     expect(result.activeStops.length).toBe(4);
+  });
+});
+
+describe("Attendance-Reconciled Hybrid Fleet Orchestration (Approach C)", () => {
+  const dummyBuses: Bus[] = [
+    {
+      id: 1,
+      busNumber: 101,
+      registrationNo: "DL-01-101",
+      model: "Standard 40",
+      capacity: 40,
+      seatLayout: "2x2",
+      status: "ACTIVE",
+      gpsDeviceId: "gps-101",
+      insuranceExpiry: "2027-01-01",
+      maintenanceDueDate: "2027-01-01",
+      currentRouteId: "rA",
+    },
+    {
+      id: 2,
+      busNumber: 102,
+      registrationNo: "DL-01-102",
+      model: "Standard 40",
+      capacity: 40,
+      seatLayout: "2x2",
+      status: "ACTIVE",
+      gpsDeviceId: "gps-102",
+      insuranceExpiry: "2027-01-01",
+      maintenanceDueDate: "2027-01-01",
+      currentRouteId: "rA", // Same corridor as Bus 1
+    },
+    {
+      id: 3,
+      busNumber: 103,
+      registrationNo: "DL-01-103",
+      model: "Standard 40",
+      capacity: 40,
+      seatLayout: "2x2",
+      status: "ACTIVE",
+      gpsDeviceId: "gps-103",
+      insuranceExpiry: "2027-01-01",
+      maintenanceDueDate: "2027-01-01",
+      currentRouteId: "rB", // Sparse adjacent corridor
+    },
+    {
+      id: 4,
+      busNumber: 104,
+      registrationNo: "DL-01-104",
+      model: "Standard 40",
+      capacity: 40,
+      seatLayout: "2x2",
+      status: "ACTIVE",
+      gpsDeviceId: "gps-104",
+      insuranceExpiry: "2027-01-01",
+      maintenanceDueDate: "2027-01-01",
+      currentRouteId: "rC", // Sparse adjacent corridor
+    },
+  ];
+
+  it("reconciles incoming morning attendance and prunes absentee students from outgoing manifest", () => {
+    // 6 students booked on outgoing trip
+    const outgoingBookings: Booking[] = [
+      { id: "b1", studentId: "stud-1", tripId: "t-out", busId: 1, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C1", createdAt: "" },
+      { id: "b2", studentId: "stud-2", tripId: "t-out", busId: 1, boardingStopId: "s2", status: "CONFIRMED", bookingCode: "C2", createdAt: "" },
+      { id: "b3", studentId: "stud-3", tripId: "t-out", busId: 1, boardingStopId: "s3", status: "CONFIRMED", bookingCode: "C3", createdAt: "" },
+      { id: "b4", studentId: "stud-4", tripId: "t-out", busId: 2, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C4", createdAt: "" },
+      { id: "b5", studentId: "stud-5", tripId: "t-out", busId: 2, boardingStopId: "s2", status: "CONFIRMED", bookingCode: "C5", createdAt: "" },
+      { id: "b6", studentId: "stud-6", tripId: "t-out", busId: 2, boardingStopId: "s3", status: "CONFIRMED", bookingCode: "C6", createdAt: "" },
+    ];
+
+    // Only stud-1, stud-2, and stud-4 attended incoming morning shift
+    const incomingAttendees = new Set(["stud-1", "stud-2", "stud-4"]);
+
+    const summary = reconcileShiftAttendance(incomingAttendees, outgoingBookings, dummyBuses);
+
+    expect(summary.totalIncomingAttendees).toBe(3);
+    expect(summary.totalAbsentPruned).toBe(3); // stud-3, stud-5, stud-6 pruned
+    expect(summary.reconciledOutgoingPassengers).toBe(3);
+    expect(summary.prunedStudentIds).toEqual(["stud-3", "stud-5", "stud-6"]);
+
+    // Bus 1 has 2 reconciled (stud-1, stud-2), Bus 2 has 1 reconciled (stud-4)
+    const b1Stat = summary.reconciledBusStats.find((s) => s.busId === 1);
+    const b2Stat = summary.reconciledBusStats.find((s) => s.busId === 2);
+    expect(b1Stat?.reconciledOccupancy).toBe(2);
+    expect(b2Stat?.reconciledOccupancy).toBe(1);
+    expect(b1Stat?.isCandidateForDisassembly).toBe(true);
+    expect(b2Stat?.isCandidateForDisassembly).toBe(true);
+  });
+
+  it("detects intra-corridor bus disassembly when combined occupancy fits in carrier bus", () => {
+    const incomingAttendees = new Set(["stud-1", "stud-2", "stud-4"]);
+    const outgoingBookings: Booking[] = [
+      { id: "b1", studentId: "stud-1", tripId: "t-out", busId: 1, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C1", createdAt: "" },
+      { id: "b2", studentId: "stud-2", tripId: "t-out", busId: 1, boardingStopId: "s2", status: "CONFIRMED", bookingCode: "C2", createdAt: "" },
+      { id: "b4", studentId: "stud-4", tripId: "t-out", busId: 2, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C4", createdAt: "" },
+    ];
+
+    const summary = reconcileShiftAttendance(incomingAttendees, outgoingBookings, dummyBuses);
+    const disassemblies = detectIntraCorridorDisassemblies(
+      dummyBuses,
+      allRoutes,
+      [{ routeId: "rA", id: "mp-1", code: "MP-NORTH", name: "North Interchange", isActive: true }],
+      summary
+    );
+
+    expect(disassemblies.length).toBeGreaterThanOrEqual(1);
+    const opp = disassemblies[0];
+    expect(opp.type).toBe("INTRA_CORRIDOR_DISASSEMBLY");
+    expect(opp.combinedOccupancy).toBe(3);
+    expect(opp.remainingSeats).toBe(37); // 40 capacity - 3
+    expect(opp.fuelSavedLiters).toBeGreaterThan(0);
+  });
+
+  it("computes Clarke-Wright route stitching for sparse adjacent corridors under 50% capacity", () => {
+    // Bus 3 (on r2) has 5 students, Bus 4 (on r3) has 6 students (both < 50% of 40 capacity)
+    const incomingAttendees = new Set([
+      "s3-1", "s3-2", "s3-3", "s3-4", "s3-5",
+      "s4-1", "s4-2", "s4-3", "s4-4", "s4-5", "s4-6"
+    ]);
+
+    const outgoingBookings: Booking[] = [
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `b3-${i}`, studentId: `s3-${i + 1}`, tripId: "t-r2", busId: 3, boardingStopId: "s1", status: "CONFIRMED" as const, bookingCode: `BK3-${i}`, createdAt: ""
+      })),
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: `b4-${i}`, studentId: `s4-${i + 1}`, tripId: "t-r3", busId: 4, boardingStopId: "s2", status: "CONFIRMED" as const, bookingCode: `BK4-${i}`, createdAt: ""
+      })),
+    ];
+
+    const summary = reconcileShiftAttendance(incomingAttendees, outgoingBookings, dummyBuses);
+    const stitches = computeClarkeWrightRouteStitches(
+      allRoutes,
+      dummyBuses,
+      summary,
+      outgoingBookings,
+      15 // max detour 15 mins
+    );
+
+    expect(stitches.length).toBeGreaterThanOrEqual(1);
+    const stitch = stitches[0];
+    expect(stitch.type).toBe("ROUTE_STITCH_CONSOLIDATION");
+    expect(stitch.combinedOccupancy).toBe(11); // 5 + 6
+    expect(stitch.fuelSavedLiters).toBeGreaterThan(0);
+    expect(stitch.estimatedDetourMinutes).toBeLessThanOrEqual(15);
+  });
+
+  it("master orchestrator outputs complete fleet rightsizing plan with financial savings", () => {
+    const incomingAttendees = new Set(["stud-1", "stud-2", "stud-4", "s3-1", "s4-1"]);
+    const outgoingBookings: Booking[] = [
+      { id: "b1", studentId: "stud-1", tripId: "t-out", busId: 1, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C1", createdAt: "" },
+      { id: "b2", studentId: "stud-2", tripId: "t-out", busId: 1, boardingStopId: "s2", status: "CONFIRMED", bookingCode: "C2", createdAt: "" },
+      { id: "b4", studentId: "stud-4", tripId: "t-out", busId: 2, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C4", createdAt: "" },
+      { id: "b3-1", studentId: "s3-1", tripId: "t-r2", busId: 3, boardingStopId: "s1", status: "CONFIRMED", bookingCode: "C31", createdAt: "" },
+      { id: "b4-1", studentId: "s4-1", tripId: "t-r3", busId: 4, boardingStopId: "s2", status: "CONFIRMED", bookingCode: "C41", createdAt: "" },
+    ];
+
+    const plan = computeFleetOrchestrationPlan(
+      incomingAttendees,
+      outgoingBookings,
+      dummyBuses,
+      allRoutes,
+      [{ routeId: "rA", id: "mp-1", code: "MP-NORTH", name: "North Interchange", isActive: true }],
+      15,
+      90
+    );
+
+    expect(plan.summary.totalIncomingAttendees).toBe(5);
+    expect(plan.totalVehiclesStoodDown).toBeGreaterThanOrEqual(1);
+    expect(plan.totalFuelSavedLiters).toBeGreaterThan(0);
+    expect(plan.totalCostSavedINR).toBeGreaterThan(0);
   });
 });

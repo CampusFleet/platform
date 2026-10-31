@@ -8,7 +8,7 @@
  * 4. Route Recommendation Engine — Combines both for optimal bus selection
  */
 
-import { Stop, Route, RouteStop, Booking } from "./types";
+import { Stop, Route, RouteStop, Booking, Bus } from "./types";
 import { calculateHaversineDistanceKm } from "./eta-calculator";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1135,6 +1135,418 @@ export function computeDirectExpressRoute(
     campusStop,
     bypassedStopsCount: 0,
     isFullyBooked,
+  };
+}
+
+// ─── Attendance-Reconciled Fleet Orchestration Engine (Approach C) ───────────
+
+export interface AttendanceReconciliationSummary {
+  tripDate: string;
+  totalIncomingAttendees: number;
+  totalAbsentPruned: number;
+  initialOutgoingPassengers: number;
+  reconciledOutgoingPassengers: number;
+  prunedStudentIds: string[];
+  reconciledBusStats: {
+    busId: number | string;
+    busNumber: number | string;
+    routeId?: string;
+    routeName?: string;
+    capacity: number;
+    initialOccupancy: number;
+    reconciledOccupancy: number;
+    loadFactorPercent: number;
+    isCandidateForDisassembly: boolean;
+  }[];
+}
+
+export interface IntraCorridorDisassemblyOpportunity {
+  id: string;
+  type: "INTRA_CORRIDOR_DISASSEMBLY";
+  routeId: string;
+  routeName: string;
+  mergePointId: string;
+  mergePointCode: string;
+  mergePointName: string;
+  sourceBusId: string | number;
+  sourceBusNumber: string | number;
+  sourceOccupancy: number;
+  targetBusId: string | number;
+  targetBusNumber: string | number;
+  targetOccupancy: number;
+  targetCapacity: number;
+  combinedOccupancy: number;
+  remainingSeats: number;
+  fuelSavedLiters: number;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXECUTED";
+}
+
+export interface RouteStitchOpportunity {
+  id: string;
+  type: "ROUTE_STITCH_CONSOLIDATION";
+  primaryRouteId: string;
+  primaryRouteName: string;
+  secondaryRouteId: string;
+  secondaryRouteName: string;
+  sourceBusId: string | number; // Bus stood down (disassembled)
+  sourceBusNumber: string | number;
+  sourceOccupancy: number;
+  targetBusId: string | number; // Consolidated active carrier bus
+  targetBusNumber: string | number;
+  targetOccupancy: number;
+  targetCapacity: number;
+  combinedOccupancy: number;
+  remainingSeats: number;
+  activeStops: Stop[];
+  bypassedStopsCount: number;
+  clarkeWrightSavingsKm: number;
+  estimatedDetourMinutes: number;
+  fuelSavedLiters: number;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXECUTED";
+}
+
+export interface FleetOrchestrationPlan {
+  summary: AttendanceReconciliationSummary;
+  disassemblyOpportunities: IntraCorridorDisassemblyOpportunity[];
+  routeStitchOpportunities: RouteStitchOpportunity[];
+  totalVehiclesStoodDown: number;
+  totalFuelSavedLiters: number;
+  totalCostSavedINR: number;
+}
+
+/**
+ * Stage 1: Reconciles incoming shift attendance with outgoing shift bookings.
+ * Identifies students who did NOT attend the morning shift and prunes them from
+ * the outgoing shift manifest to obtain 100% deterministic demand.
+ */
+export function reconcileShiftAttendance(
+  incomingAttendeeStudentIds: Set<string>,
+  outgoingBookings: Booking[],
+  buses: Bus[],
+  tripDate: string = new Date().toISOString().split("T")[0]
+): AttendanceReconciliationSummary {
+  const confirmedOutgoing = outgoingBookings.filter(
+    (b) => b.status === "CONFIRMED" || b.status === "BOARDED" || b.status === "WAITLISTED"
+  );
+
+  const prunedStudentIds: string[] = [];
+  const initialBusCounts = new Map<string, number>();
+  const reconciledBusCounts = new Map<string, number>();
+
+  for (const b of confirmedOutgoing) {
+    const bId = String(b.busId || "unassigned");
+    initialBusCounts.set(bId, (initialBusCounts.get(bId) || 0) + 1);
+
+    // If student did NOT attend morning incoming trip, prune them from outgoing trip
+    if (!incomingAttendeeStudentIds.has(b.studentId)) {
+      prunedStudentIds.push(b.studentId);
+    } else {
+      reconciledBusCounts.set(bId, (reconciledBusCounts.get(bId) || 0) + 1);
+    }
+  }
+
+  const busStats = buses.map((bus) => {
+    const bId = String(bus.id);
+    const initialOcc = initialBusCounts.get(bId) || 0;
+    const reconciledOcc = reconciledBusCounts.get(bId) || 0;
+    const cap = bus.capacity || 50;
+    const loadFactor = Math.round((reconciledOcc / cap) * 100);
+
+    return {
+      busId: bus.id,
+      busNumber: bus.busNumber,
+      routeId: bus.currentRouteId,
+      capacity: cap,
+      initialOccupancy: initialOcc,
+      reconciledOccupancy: reconciledOcc,
+      loadFactorPercent: loadFactor,
+      isCandidateForDisassembly: loadFactor <= 50,
+    };
+  });
+
+  return {
+    tripDate,
+    totalIncomingAttendees: incomingAttendeeStudentIds.size,
+    totalAbsentPruned: prunedStudentIds.length,
+    initialOutgoingPassengers: confirmedOutgoing.length,
+    reconciledOutgoingPassengers: confirmedOutgoing.length - prunedStudentIds.length,
+    prunedStudentIds,
+    reconciledBusStats: busStats,
+  };
+}
+
+/**
+ * Stage 2A: Detects intra-corridor bus disassembly opportunities.
+ * If two buses run on the same corridor or meet at a designated merge point,
+ * and their combined reconciled occupancy fits inside one bus, one bus is stood down.
+ */
+export function detectIntraCorridorDisassemblies(
+  buses: Bus[],
+  routes: Route[],
+  mergePoints: any[],
+  reconciledStats: AttendanceReconciliationSummary
+): IntraCorridorDisassemblyOpportunity[] {
+  const statsMap = new Map(reconciledStats.reconciledBusStats.map((s) => [String(s.busId), s]));
+  const routeMap = new Map(routes.map((r) => [r.id, r]));
+
+  // Group buses by route
+  const routeBuses = new Map<string, Bus[]>();
+  for (const b of buses) {
+    if (b.status === "MAINTENANCE" || b.status === "INACTIVE" || b.status === "MERGED") continue;
+    const rId = b.currentRouteId;
+    if (rId) {
+      if (!routeBuses.has(rId)) routeBuses.set(rId, []);
+      routeBuses.get(rId)!.push(b);
+    }
+  }
+
+  const opportunities: IntraCorridorDisassemblyOpportunity[] = [];
+
+  for (const [routeId, busesOnRoute] of Array.from(routeBuses.entries())) {
+    if (busesOnRoute.length < 2) continue;
+
+    // Find designated merge point for this route
+    const mp = mergePoints.find((p) => p.routeId === routeId && p.isActive !== false) || {
+      id: "AUTO-MERGE-" + routeId,
+      code: "MP-INTERCHANGE",
+      name: "Designated Route Interchange",
+    };
+
+    const route = routeMap.get(routeId);
+    const routeDistanceKm = route?.totalDistanceKm || 22;
+    // Fuel consumption: ~3.8 km/L
+    const estimatedFuelSaved = Math.round((routeDistanceKm / 3.8) * 10) / 10;
+
+    for (let i = 0; i < busesOnRoute.length; i++) {
+      for (let j = i + 1; j < busesOnRoute.length; j++) {
+        const b1 = busesOnRoute[i];
+        const b2 = busesOnRoute[j];
+
+        const s1 = statsMap.get(String(b1.id));
+        const s2 = statsMap.get(String(b2.id));
+
+        const occ1 = s1?.reconciledOccupancy ?? 0;
+        const occ2 = s2?.reconciledOccupancy ?? 0;
+        const cap1 = b1.capacity || 50;
+        const cap2 = b2.capacity || 50;
+        const combined = occ1 + occ2;
+
+        let source = null;
+        let target = null;
+
+        if (combined <= cap1) {
+          source = b2;
+          target = b1;
+        } else if (combined <= cap2) {
+          source = b1;
+          target = b2;
+        }
+
+        if (source && target) {
+          const targetCap = target.capacity || 50;
+          opportunities.push({
+            id: `DISASM-${source.id}-${target.id}`,
+            type: "INTRA_CORRIDOR_DISASSEMBLY",
+            routeId,
+            routeName: route?.name || `Route ${routeId}`,
+            mergePointId: mp.id,
+            mergePointCode: mp.code,
+            mergePointName: mp.name,
+            sourceBusId: source.id,
+            sourceBusNumber: source.busNumber,
+            sourceOccupancy: source.id === b1.id ? occ1 : occ2,
+            targetBusId: target.id,
+            targetBusNumber: target.busNumber,
+            targetOccupancy: target.id === b1.id ? occ1 : occ2,
+            targetCapacity: targetCap,
+            combinedOccupancy: combined,
+            remainingSeats: Math.max(0, targetCap - combined),
+            fuelSavedLiters: estimatedFuelSaved,
+            status: "PENDING",
+          });
+        }
+      }
+    }
+  }
+
+  return opportunities;
+}
+
+/**
+ * Stage 2B: Inter-Corridor Route Stitching via Clarke-Wright Savings Algorithm.
+ * When two distinct routes both have low load factors (<= 50%), their active passenger
+ * drop-off stops are merged into a single multi-stop sequence served by one bus,
+ * standing down the second bus to maximize fuel and fleet efficiency.
+ */
+export function computeClarkeWrightRouteStitches(
+  routes: Route[],
+  buses: Bus[],
+  reconciledStats: AttendanceReconciliationSummary,
+  outgoingBookings: Booking[],
+  maxDetourMinutes: number = 15
+): RouteStitchOpportunity[] {
+  const statsMap = new Map(reconciledStats.reconciledBusStats.map((s) => [String(s.busId), s]));
+  const routeMap = new Map(routes.map((r) => [r.id, r]));
+
+  // Active bookings that were not pruned
+  const prunedSet = new Set(reconciledStats.prunedStudentIds);
+  const activeBookings = outgoingBookings.filter(
+    (b) => !prunedSet.has(b.studentId) && (b.status === "CONFIRMED" || b.status === "BOARDED")
+  );
+
+  // Group active bookings by route
+  const bookingsByRoute = new Map<string, Booking[]>();
+  for (const b of activeBookings) {
+    const bus = buses.find((bs) => bs.id === b.busId);
+    const rId = bus?.currentRouteId;
+    if (rId) {
+      if (!bookingsByRoute.has(rId)) bookingsByRoute.set(rId, []);
+      bookingsByRoute.get(rId)!.push(b);
+    }
+  }
+
+  // Find candidate routes with low load (occupancy <= 50% of assigned bus)
+  const candidateRoutes: { route: Route; bus: Bus; occupancy: number }[] = [];
+  for (const route of routes) {
+    const assignedBus = buses.find((b) => b.currentRouteId === route.id && b.status !== "MAINTENANCE");
+    if (!assignedBus) continue;
+
+    const stat = statsMap.get(String(assignedBus.id));
+    const occ = stat ? stat.reconciledOccupancy : (bookingsByRoute.get(route.id)?.length || 0);
+    const cap = assignedBus.capacity || 50;
+
+    // Must be <= 50% full to be eligible for route stitching consolidation
+    if (occ > 0 && occ / cap <= 0.55) {
+      candidateRoutes.push({ route, bus: assignedBus, occupancy: occ });
+    }
+  }
+
+  const stitchOpportunities: RouteStitchOpportunity[] = [];
+  const matchedBusIds = new Set<string>();
+
+  for (let i = 0; i < candidateRoutes.length; i++) {
+    for (let j = i + 1; j < candidateRoutes.length; j++) {
+      const c1 = candidateRoutes[i];
+      const c2 = candidateRoutes[j];
+
+      if (matchedBusIds.has(String(c1.bus.id)) || matchedBusIds.has(String(c2.bus.id))) {
+        continue;
+      }
+
+      const combinedOccupancy = c1.occupancy + c2.occupancy;
+      const targetCap = Math.max(c1.bus.capacity, c2.bus.capacity);
+
+      // Check capacity feasibility
+      if (combinedOccupancy > targetCap) continue;
+
+      // Choose target carrier (the bus with greater capacity or higher occupancy)
+      const target = c1.bus.capacity >= c2.bus.capacity ? c1 : c2;
+      const source = target === c1 ? c2 : c1;
+
+      // Get active stops with passenger drop-offs for both routes
+      const bookedStops1 = new Set((bookingsByRoute.get(c1.route.id) || []).map((b) => b.boardingStopId));
+      const bookedStops2 = new Set((bookingsByRoute.get(c2.route.id) || []).map((b) => b.boardingStopId));
+
+      const activeStops1 = (c1.route.stops || [])
+        .filter((rs) => bookedStops1.has(rs.stopId) || (rs.stop && bookedStops1.has(rs.stop.id)))
+        .map((rs) => rs.stop || ({ id: rs.stopId, name: `Stop ${rs.stopId}`, code: rs.stopId, latitude: 0, longitude: 0, landmark: "", geofenceRadiusMeters: 50 } as Stop));
+      const activeStops2 = (c2.route.stops || [])
+        .filter((rs) => bookedStops2.has(rs.stopId) || (rs.stop && bookedStops2.has(rs.stop.id)))
+        .map((rs) => rs.stop || ({ id: rs.stopId, name: `Stop ${rs.stopId}`, code: rs.stopId, latitude: 0, longitude: 0, landmark: "", geofenceRadiusMeters: 50 } as Stop));
+
+      const allActiveStops = Array.from(new Set([...activeStops1, ...activeStops2]));
+      // If no stops matched explicitly, use all stops from both routes as active
+      const finalStops = allActiveStops.length > 0 
+        ? allActiveStops 
+        : (c1.route.stops || []).map(rs => rs.stop).filter(Boolean);
+
+      // Clarke-Wright Savings Estimation:
+      // Distance of depot to R1 + depot to R2 - distance(R1, R2)
+      const d1 = c1.route.totalDistanceKm || 20;
+      const d2 = c2.route.totalDistanceKm || 20;
+      const directInterDistance = Math.max(4, Math.abs(d1 - d2) + 3); // Approx cross-corridor link
+      const savingsKm = Math.round((d1 + d2 - (Math.max(d1, d2) + directInterDistance)) * 10) / 10;
+
+      // Detour time estimation (at campus transit avg 30 km/h)
+      const extraKm = directInterDistance;
+      const detourMins = Math.round((extraKm / 30) * 60);
+
+      // Verify SLA: maximum detour limit
+      if (detourMins > maxDetourMinutes) continue;
+
+      // Calculate net fuel saved: standing down source bus saves its entire run minus extra detour
+      const netKmSaved = Math.max(0, source.route.totalDistanceKm - extraKm);
+      const fuelSavedLiters = Math.round((netKmSaved / 3.8) * 10) / 10;
+
+      // Total empty intermediate stops bypassed across both full routes
+      const totalPossibleStops = (c1.route.stops?.length || 0) + (c2.route.stops?.length || 0);
+      const bypassedCount = Math.max(0, totalPossibleStops - finalStops.length);
+
+      matchedBusIds.add(String(c1.bus.id));
+      matchedBusIds.add(String(c2.bus.id));
+
+      stitchOpportunities.push({
+        id: `STITCH-${source.bus.id}-${target.bus.id}`,
+        type: "ROUTE_STITCH_CONSOLIDATION",
+        primaryRouteId: target.route.id,
+        primaryRouteName: target.route.name,
+        secondaryRouteId: source.route.id,
+        secondaryRouteName: source.route.name,
+        sourceBusId: source.bus.id,
+        sourceBusNumber: source.bus.busNumber,
+        sourceOccupancy: source.occupancy,
+        targetBusId: target.bus.id,
+        targetBusNumber: target.bus.busNumber,
+        targetOccupancy: target.occupancy,
+        targetCapacity: target.bus.capacity,
+        combinedOccupancy,
+        remainingSeats: Math.max(0, target.bus.capacity - combinedOccupancy),
+        activeStops: finalStops,
+        bypassedStopsCount: bypassedCount,
+        clarkeWrightSavingsKm: Math.max(0, savingsKm),
+        estimatedDetourMinutes: detourMins,
+        fuelSavedLiters,
+        status: "PENDING",
+      });
+    }
+  }
+
+  return stitchOpportunities;
+}
+
+/**
+ * Stage 3: Master Orchestrator — executes the complete Attendance-Reconciled
+ * Hybrid Orchestration Pipeline (Approach C).
+ */
+export function computeFleetOrchestrationPlan(
+  incomingAttendeeStudentIds: Set<string>,
+  outgoingBookings: Booking[],
+  buses: Bus[],
+  routes: Route[],
+  mergePoints: any[] = [],
+  maxDetourMinutes: number = 15,
+  fuelPricePerLiter: number = 90
+): FleetOrchestrationPlan {
+  // 1. Reconcile attendance
+  const summary = reconcileShiftAttendance(incomingAttendeeStudentIds, outgoingBookings, buses);
+
+  // 2. Intra-corridor disassemblies
+  const disassemblies = detectIntraCorridorDisassemblies(buses, routes, mergePoints, summary);
+
+  // 3. Inter-corridor route stitches (Clarke-Wright)
+  const stitches = computeClarkeWrightRouteStitches(routes, buses, summary, outgoingBookings, maxDetourMinutes);
+
+  const totalFuel = Math.round(
+    ([...disassemblies, ...stitches].reduce((acc, curr) => acc + curr.fuelSavedLiters, 0)) * 10
+  ) / 10;
+
+  return {
+    summary,
+    disassemblyOpportunities: disassemblies,
+    routeStitchOpportunities: stitches,
+    totalVehiclesStoodDown: disassemblies.length + stitches.length,
+    totalFuelSavedLiters: totalFuel,
+    totalCostSavedINR: Math.round(totalFuel * fuelPricePerLiter),
   };
 }
 

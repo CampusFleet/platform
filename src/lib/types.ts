@@ -8,7 +8,7 @@ export type TripStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
 
 export type ShiftType = "MORNING" | "AFTERNOON" | "EVENING" | "CUSTOM" | string;
 
-export type VehicleStatus = "ACTIVE" | "MAINTENANCE" | "INACTIVE" | "DECOMMISSIONED";
+export type VehicleStatus = "ACTIVE" | "MAINTENANCE" | "INACTIVE" | "DECOMMISSIONED" | "MERGED" | "STANDBY_DISASSEMBLED";
 
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "WAIVED";
 

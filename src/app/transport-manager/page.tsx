@@ -40,8 +40,8 @@ const logisticsModules: HubModule[] = [
     href: "/transport-manager/demand"
   },
   {
-    title: "Combine Buses",
-    description: "Review merge suggestions and combine two half-empty buses into one to save fuel.",
+    title: "Fleet Orchestrator",
+    description: "Attendance-reconciled bus disassembly at merge stops & multi-corridor route stitching to maximize fuel savings.",
     icon: GitMerge,
     href: "/transport-manager/combine-buses"
   },

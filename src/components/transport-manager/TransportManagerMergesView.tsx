@@ -351,11 +351,11 @@ export default function TransportManagerMergesView({
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-800/40 p-6 rounded-3xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 text-white">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
-            <Sparkles className="w-4 h-4 text-indigo-400" />
-            <span>Autonomous Fleet Orchestration Hub</span>
+            <GitMerge className="w-4 h-4 text-indigo-400" />
+            <span>Combine Buses • Intelligent Fleet Orchestration</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            Bus Disassembly & Route Stitching
+            Combine Buses & Progressive Dispatch
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
             Attendance-reconciled fleet right-sizing: Automatically stands down redundant buses based on morning attendance actuals, reassigning students at merge interchanges and stitching sparse routes via Clarke-Wright heuristics.

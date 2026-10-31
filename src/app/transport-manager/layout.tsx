@@ -53,11 +53,11 @@ export default function TransportManagerLayout({ children }: { children: React.R
       ],
     },
     combine: {
-      title: "Fleet Orchestrator",
+      title: "Combine Buses",
       subtitle: "Attendance-Reconciled Bus Disassembly & Route Stitching",
       items: [
         { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
-        { href: "/transport-manager/combine-buses", label: "Fleet Orchestration", shortLabel: "Orchestrate", icon: GitMerge },
+        { href: "/transport-manager/combine-buses", label: "Combine Buses", shortLabel: "Combine", icon: GitMerge },
       ],
     },
   };

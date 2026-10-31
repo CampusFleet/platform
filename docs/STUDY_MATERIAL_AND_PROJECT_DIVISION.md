@@ -2,7 +2,7 @@
 
 > **Official Project Name**: CampusFleet – Smart Campus Transit, Live Telematics & Intelligent Fleet Operations Management System  
 > **Live Production Web App**: [https://campusfleet.vercel.app](https://campusfleet.vercel.app)  
-> **GitHub Repository**: [https://github.com/AdityaPandey-DEV/CampusFleet](https://github.com/AdityaPandey-DEV/CampusFleet)  
+> **GitHub Repository**: [https://github.com/CampusFleet/platform](https://github.com/CampusFleet/platform)  
 > **Primary Technology Stack**: Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Supabase PostgreSQL, Leaflet GIS, Vitest  
 
 ---

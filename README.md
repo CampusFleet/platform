@@ -5,7 +5,7 @@
 > Inspired by the seat allocation UX of **RedBus & AbhiBus**, the live radar experience of **Delhi Metro**, and the operational rigor of production fleet management.
 
 [![Production Deployment](https://img.shields.io/badge/Vercel-Live%20Demo-black?style=for-the-badge&logo=vercel)](https://campusfleet.vercel.app)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/AdityaPandey-DEV/CampusFleet)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/CampusFleet/platform)
 
 🌐 **Official Production URL**: [**https://campusfleet.vercel.app**](https://campusfleet.vercel.app)
 

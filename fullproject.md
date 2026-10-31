@@ -9,7 +9,7 @@
 > **Project Guide / Evaluator**: Prof. Rahul (Rahul Sir)  
 > **Institution**: Graphic Era Hill University (GEHU), Bhimtal Campus  
 > **Live URL**: [https://campusfleet.vercel.app](https://campusfleet.vercel.app)  
-> **Repository**: [GitHub — AdityaPandey-DEV/CampusFleet](https://github.com/AdityaPandey-DEV/CampusFleet)
+> **Repository**: [GitHub — CampusFleet/platform](https://github.com/CampusFleet/platform)
 
 ---
 

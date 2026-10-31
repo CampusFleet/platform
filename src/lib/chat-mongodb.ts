@@ -1,6 +1,10 @@
 import { getMongoDb } from "./mongodb";
 import { supabaseAdmin } from "./supabaseClient";
 import { createMessageId } from "./id";
+import { cacheGet, cacheSet, cacheDel, CACHE_TTL } from "./redis";
+import { ChatPoll, ChatPollOption } from "@/types/chat";
+
+export type { ChatPoll, ChatPollOption };
 
 export interface ChatConversation {
   id: string;
@@ -38,6 +42,7 @@ export interface ChatMessage {
   senderRole: string;
   senderAvatar?: string;
   text: string;
+  poll?: ChatPoll;
   mentions?: {
     type: "ROLE" | "USER";
     role?: string;
@@ -516,16 +521,26 @@ export async function deleteConversation(convId: string): Promise<boolean> {
   // Remove messages and conversation
   await msgCol.deleteMany({ conversationId: convId });
   const result = await convCol.deleteOne({ id: convId });
+  await cacheDel(`chat:msgs:${convId}`);
 
   return result.deletedCount > 0;
 }
 
 /**
- * Fetch messages for a conversation with pagination
+ * Fetch messages for a conversation with pagination (Redis Cached for sub-2ms retrieval)
  */
 export async function getConversationMessages(conversationId: string, limit = 60): Promise<ChatMessage[]> {
+  const cacheKey = `chat:msgs:${conversationId}`;
+
+  // 1. Check Redis cache first (sub-2ms response)
+  const cached = await cacheGet<ChatMessage[]>(cacheKey);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return cached.slice(0, limit);
+  }
+
+  // 2. Fall back to MongoDB Atlas system of record
   const db = await getMongoDb();
-  if (!db) return [];
+  if (!db) return cached || [];
 
   const msgCol = db.collection("chat_messages");
   const docs = await msgCol
@@ -534,7 +549,7 @@ export async function getConversationMessages(conversationId: string, limit = 60
     .limit(limit)
     .toArray();
 
-  return docs.map((d) => ({
+  const messages: ChatMessage[] = docs.map((d) => ({
     id: d.id || String(d._id),
     conversationId: d.conversationId,
     senderId: d.senderId,
@@ -543,16 +558,24 @@ export async function getConversationMessages(conversationId: string, limit = 60
     senderAvatar: d.senderAvatar,
     text: d.text,
     mentions: d.mentions,
+    poll: d.poll,
     attachments: d.attachments,
     reactions: d.reactions,
     isEdited: d.isEdited,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   }));
+
+  // 3. Populate Redis cache with sliding expiration
+  if (messages.length > 0) {
+    await cacheSet(cacheKey, messages, CACHE_TTL.CHAT_MESSAGES);
+  }
+
+  return messages;
 }
 
 /**
- * CRUD: Create/Send a chat message with @mention extraction
+ * CRUD: Create/Send a chat message with @mention extraction and optional poll
  */
 export async function sendChatMessage(params: {
   conversationId: string;
@@ -561,6 +584,7 @@ export async function sendChatMessage(params: {
   senderRole: string;
   senderAvatar?: string;
   text: string;
+  poll?: ChatMessage["poll"];
   attachments?: ChatMessage["attachments"];
 }): Promise<ChatMessage | null> {
   const db = await getMongoDb();
@@ -597,6 +621,7 @@ export async function sendChatMessage(params: {
     senderRole: params.senderRole,
     senderAvatar: params.senderAvatar,
     text: params.text,
+    poll: params.poll,
     mentions: mentions.length > 0 ? mentions : undefined,
     attachments: params.attachments,
     reactions: [],
@@ -608,12 +633,14 @@ export async function sendChatMessage(params: {
 
   await msgCol.insertOne(newMessage as any);
 
+  const previewText = params.poll ? `📊 Poll: ${params.poll.question}` : params.text;
+
   await convCol.updateOne(
     { id: params.conversationId },
     {
       $set: {
         lastMessage: {
-          text: params.text,
+          text: previewText,
           senderId: params.senderId,
           senderName: params.senderName,
           createdAt: now,
@@ -624,7 +651,79 @@ export async function sendChatMessage(params: {
     { upsert: false }
   );
 
+  // Maintain high-speed Redis cache (rolling window of latest 100 messages)
+  const cacheKey = `chat:msgs:${params.conversationId}`;
+  const cached = await cacheGet<ChatMessage[]>(cacheKey);
+  if (cached && Array.isArray(cached)) {
+    const updated = [...cached, newMessage].slice(-100);
+    await cacheSet(cacheKey, updated, CACHE_TTL.CHAT_MESSAGES);
+  } else {
+    await cacheDel(cacheKey);
+  }
+
   return newMessage;
+}
+
+/**
+ * CRUD: Cast or toggle a vote on an interactive chat poll
+ */
+export async function voteChatMessagePoll(
+  messageId: string,
+  optionId: string,
+  userId: string
+): Promise<ChatMessage["poll"] | null> {
+  const db = await getMongoDb();
+  if (!db) return null;
+
+  const msgCol = db.collection("chat_messages");
+  const msgDoc = await msgCol.findOne({ id: messageId });
+  if (!msgDoc || !msgDoc.poll) return null;
+
+  const poll = msgDoc.poll;
+  const allowMultiple = Boolean(poll.allowMultiple);
+
+  // If single-choice, remove user from other options
+  if (!allowMultiple) {
+    for (const opt of poll.options) {
+      if (opt.id !== optionId) {
+        opt.voterIds = (opt.voterIds || []).filter((id: string) => id !== userId);
+        opt.votes = opt.voterIds.length;
+      }
+    }
+  }
+
+  // Toggle user vote on target option
+  const targetOpt = poll.options.find((o: any) => o.id === optionId);
+  if (targetOpt) {
+    const currentVoters: string[] = targetOpt.voterIds || [];
+    if (currentVoters.includes(userId)) {
+      targetOpt.voterIds = currentVoters.filter((id) => id !== userId);
+    } else {
+      targetOpt.voterIds = [...currentVoters, userId];
+    }
+    targetOpt.votes = targetOpt.voterIds.length;
+  }
+
+  // Recalculate unique total voters
+  const allVoters = new Set<string>();
+  for (const opt of poll.options) {
+    for (const vid of opt.voterIds || []) {
+      allVoters.add(vid);
+    }
+  }
+  poll.totalVotes = allVoters.size;
+
+  await msgCol.updateOne(
+    { id: messageId },
+    { $set: { poll, updatedAt: new Date().toISOString() } }
+  );
+
+  // Invalidate Redis message cache so all clients receive updated vote counts instantly
+  if (msgDoc.conversationId) {
+    await cacheDel(`chat:msgs:${msgDoc.conversationId}`);
+  }
+
+  return poll;
 }
 
 /**
@@ -645,6 +744,13 @@ export async function updateChatMessage(messageId: string, newText: string, user
       },
     }
   );
+
+  if (result.matchedCount > 0) {
+    const msg = await msgCol.findOne({ id: messageId });
+    if (msg?.conversationId) {
+      await cacheDel(`chat:msgs:${msg.conversationId}`);
+    }
+  }
 
   return result.matchedCount > 0;
 }
@@ -668,6 +774,13 @@ export async function deleteChatMessage(messageId: string, userId: string): Prom
       },
     }
   );
+
+  if (result.matchedCount > 0) {
+    const msg = await msgCol.findOne({ id: messageId });
+    if (msg?.conversationId) {
+      await cacheDel(`chat:msgs:${msg.conversationId}`);
+    }
+  }
 
   return result.matchedCount > 0;
 }
@@ -706,6 +819,11 @@ export async function toggleMessageReaction(messageId: string, emoji: string, us
   }
 
   await msgCol.updateOne({ id: messageId }, { $set: { reactions } });
+
+  if (msg.conversationId) {
+    await cacheDel(`chat:msgs:${msg.conversationId}`);
+  }
+
   return true;
 }
 

@@ -7,6 +7,7 @@ import { createMessageId } from "@/lib/id";
 import {
   ChatConversation,
   ChatMessage,
+  ChatPoll,
   ChatUserSettings,
   PASTEL_AVATARS,
   getInitials,
@@ -17,6 +18,11 @@ import {
   Settings as SettingsIcon,
   ArrowLeft,
   Paperclip,
+  Plus,
+  BarChart2,
+  Image as ImageIcon,
+  CheckCircle2,
+  Circle,
   Smile,
   Send,
   Mic,
@@ -77,6 +83,13 @@ export function ChatPortalView() {
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [activeSettingSection, setActiveSettingSection] = useState<string | null>(null);
+
+  // Poll & Media state
+  const [isCreatePollOpen, setIsCreatePollOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollAllowMultiple, setPollAllowMultiple] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Message edit CRUD
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -258,6 +271,148 @@ export function ChatPortalView() {
     } catch (err) {
       console.error("Failed to send message:", err);
     }
+  };
+
+  const handleSendPoll = async (poll: ChatPoll) => {
+    if (!activeConvId) return;
+
+    const tempId = createMessageId();
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      conversationId: activeConvId,
+      senderId: currentUser?.id || "usr_guest",
+      senderName: currentUser?.fullName || currentUser?.email?.split("@")[0] || "Me",
+      senderRole: currentUser?.role || "student",
+      text: `📊 Poll: ${poll.question}`,
+      poll,
+      createdAt: new Date().toISOString(),
+      reactions: [],
+    };
+
+    isUserScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setTimeout(() => scrollToBottom(true), 40);
+
+    try {
+      const res = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConvId,
+          text: `📊 Poll: ${poll.question}`,
+          poll,
+          senderId: currentUser?.id,
+          senderName: currentUser?.fullName || currentUser?.email?.split("@")[0] || "Me",
+          senderRole: currentUser?.role || "student",
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.message) {
+        setMessages((prev) => prev.map((m) => (m.id === tempId ? data.message : m)));
+        loadConversations();
+      }
+    } catch (err) {
+      console.error("Failed to send poll:", err);
+    }
+  };
+
+  const handleCreatePoll = async () => {
+    if (!pollQuestion.trim() || !activeConvId) return;
+    const cleanOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+    if (cleanOptions.length < 2) return;
+
+    const pollData: ChatPoll = {
+      question: pollQuestion.trim(),
+      options: cleanOptions.map((text, i) => ({
+        id: `opt-${Date.now()}-${i}`,
+        text,
+        votes: 0,
+        voterIds: [],
+      })),
+      allowMultiple: pollAllowMultiple,
+      totalVotes: 0,
+    };
+
+    setIsCreatePollOpen(false);
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollAllowMultiple(false);
+
+    await handleSendPoll(pollData);
+  };
+
+  const handleVotePoll = async (messageId: string, optionId: string) => {
+    const uid = currentUser?.id || "usr_guest";
+
+    // 1. Optimistic UI update
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId || !m.poll) return m;
+        const currentPoll = m.poll;
+        const allowMultiple = Boolean(currentPoll.allowMultiple);
+
+        const updatedOptions = currentPoll.options.map((opt) => {
+          let voterIds = [...(opt.voterIds || [])];
+
+          if (opt.id === optionId) {
+            // Toggle
+            if (voterIds.includes(uid)) {
+              voterIds = voterIds.filter((id) => id !== uid);
+            } else {
+              voterIds.push(uid);
+            }
+          } else if (!allowMultiple) {
+            // Single choice: remove user from any other option
+            voterIds = voterIds.filter((id) => id !== uid);
+          }
+
+          return {
+            ...opt,
+            voterIds,
+            votes: voterIds.length,
+          };
+        });
+
+        // Recalculate unique total voters
+        const uniqueVoters = new Set<string>();
+        updatedOptions.forEach((o) => (o.voterIds || []).forEach((id) => uniqueVoters.add(id)));
+
+        return {
+          ...m,
+          poll: {
+            ...currentPoll,
+            options: updatedOptions,
+            totalVotes: uniqueVoters.size,
+          },
+        };
+      })
+    );
+
+    // 2. Persist to MongoDB
+    try {
+      const res = await fetch("/api/chat/polls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId, optionId, userId: uid }),
+      });
+      const data = await res.json();
+      if (data.success && data.poll) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, poll: data.poll } : m))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to vote in poll:", err);
+    }
+  };
+
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setInputMessage((prev) => (prev ? `${prev} [Attachment: ${file.name}]` : `[Attachment: ${file.name}]`));
+    e.target.value = "";
+    inputRef.current?.focus();
   };
 
   const handleReaction = async (messageId: string, emoji: string) => {
@@ -875,6 +1030,111 @@ export function ChatPortalView() {
                           </button>
                         </div>
                       </div>
+                    ) : msg.poll ? (
+                      /* Interactive Poll Card (Matching Haveloc & modern chat standards) */
+                      <div
+                        className={`w-full max-w-sm sm:max-w-md rounded-2xl p-4 shadow-sm border space-y-3 ${
+                          isMe
+                            ? "bg-white dark:bg-gray-800 border-blue-200 dark:border-blue-900/60"
+                            : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                        }`}
+                      >
+                        {/* Poll Header */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <BarChart2 className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
+                              {msg.poll.question}
+                            </div>
+                            <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+                              <span>{msg.poll.allowMultiple ? "Select one or more" : "Select one"}</span>
+                              <span>•</span>
+                              <span>
+                                {msg.poll.totalVotes} {msg.poll.totalVotes === 1 ? "vote" : "votes"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Poll Options */}
+                        <div className="space-y-2">
+                          {msg.poll.options.map((opt) => {
+                            const isVoted = opt.voterIds?.includes(currentUser?.id || "usr_guest");
+                            const percent =
+                              msg.poll!.totalVotes > 0
+                                ? Math.round((opt.votes / msg.poll!.totalVotes) * 100)
+                                : 0;
+
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => handleVotePoll(msg.id, opt.id)}
+                                className={`relative w-full text-left p-3 rounded-xl border transition-all overflow-hidden group cursor-pointer ${
+                                  isVoted
+                                    ? "border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-2xs"
+                                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-gray-50/50 dark:bg-gray-850"
+                                }`}
+                              >
+                                {/* Animated Progress Fill */}
+                                <div
+                                  className={`absolute inset-y-0 left-0 transition-all duration-500 rounded-xl ${
+                                    isVoted
+                                      ? "bg-blue-200/50 dark:bg-blue-900/40"
+                                      : "bg-gray-200/50 dark:bg-gray-700/50"
+                                  }`}
+                                  style={{ width: `${percent}%` }}
+                                />
+
+                                {/* Foreground Content */}
+                                <div className="relative z-1 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    {isVoted ? (
+                                      <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                                    ) : (
+                                      <Circle className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 shrink-0" />
+                                    )}
+                                    <span
+                                      className={`text-xs font-semibold truncate ${
+                                        isVoted
+                                          ? "text-blue-900 dark:text-blue-100 font-bold"
+                                          : "text-gray-800 dark:text-gray-200"
+                                      }`}
+                                    >
+                                      {opt.text}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0 text-xs font-semibold">
+                                    <span
+                                      className={
+                                        isVoted
+                                          ? "text-blue-700 dark:text-blue-300"
+                                          : "text-gray-500 dark:text-gray-400"
+                                      }
+                                    >
+                                      {percent}%
+                                    </span>
+                                    <span className="text-[10px] text-gray-400 font-normal">
+                                      ({opt.votes})
+                                    </span>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Poll Footer */}
+                        <div className="flex items-center justify-between pt-1 text-[10px] text-gray-400 border-t border-gray-100 dark:border-gray-700/60">
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Live poll
+                          </span>
+                          <span>{formatTime(msg.createdAt)}</span>
+                        </div>
+                      </div>
                     ) : (
                       <div
                         className={`relative px-4 py-2.5 rounded-2xl max-w-[85%] sm:max-w-[75%] shadow-2xs text-sm leading-relaxed ${
@@ -1025,6 +1285,63 @@ export function ChatPortalView() {
               </button>
             )}
 
+            {/* Attachment Menu Popup (Matching Haveloc Screenshot) */}
+            {isAttachmentOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setIsAttachmentOpen(false)}
+                />
+                <div className="absolute bottom-20 left-4 sm:left-6 z-30 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  {/* Media */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAttachmentOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl text-left hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors group cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700/80 flex items-center justify-center text-gray-600 dark:text-gray-300 group-hover:bg-blue-50 dark:group-hover:bg-blue-950/60 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      <ImageIcon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-gray-900 dark:text-white">Media</div>
+                      <div className="text-[11px] text-gray-400">Photos, files & more</div>
+                    </div>
+                  </button>
+
+                  {/* Poll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAttachmentOpen(false);
+                      setIsCreatePollOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl text-left hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors group cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700/80 flex items-center justify-center text-gray-600 dark:text-gray-300 group-hover:bg-blue-50 dark:group-hover:bg-blue-950/60 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      <BarChart2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-gray-900 dark:text-white">Poll</div>
+                      <div className="text-[11px] text-gray-400">Ask the group</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Hidden file input for Media */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx"
+              className="hidden"
+              onChange={handleMediaSelect}
+            />
+
             {/* Bottom Input Toolbar: Always fixed at bottom */}
             <div className="flex-shrink-0 p-3 sm:p-4 bg-white dark:bg-gray-900 border-t border-gray-200/80 dark:border-gray-800 z-10 sticky bottom-0">
               <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800/80 rounded-full px-3 py-1.5 border border-transparent focus-within:border-gray-300 dark:focus-within:border-gray-700 transition-all">
@@ -1032,17 +1349,17 @@ export function ChatPortalView() {
                 <button
                   type="button"
                   onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0"
-                  title="Add attachment"
+                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
+                  title="Add attachment or poll"
                 >
-                  <Paperclip className="w-4 h-4" />
+                  <Plus className={`w-4 h-4 transition-transform duration-200 ${isAttachmentOpen ? "rotate-45" : ""}`} />
                 </button>
 
                 {/* Emoji button */}
                 <button
                   type="button"
                   onClick={() => insertMention("@transportadmin")}
-                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0"
+                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
                   title="Mention Transport Admin"
                 >
                   <Smile className="w-4 h-4" />
@@ -1068,7 +1385,7 @@ export function ChatPortalView() {
                 <button
                   type="button"
                   onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
-                  className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0"
+                  className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
                   title="Quick templates"
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -1079,7 +1396,7 @@ export function ChatPortalView() {
                   <button
                     type="button"
                     onClick={() => handleSendMessage()}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xs transition-transform active:scale-95 flex-shrink-0"
+                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xs transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
                   >
                     <Send className="w-4 h-4" />
                   </button>
@@ -1087,7 +1404,7 @@ export function ChatPortalView() {
                   <button
                     type="button"
                     onClick={() => handleSendMessage("👋 Check-in")}
-                    className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0"
+                    className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
                     title="Send quick wave"
                   >
                     <Mic className="w-4 h-4" />
@@ -1111,6 +1428,130 @@ export function ChatPortalView() {
           </div>
         )}
       </div>
+
+      {/* Create Poll Modal  */}
+      {isCreatePollOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <BarChart2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Create a Poll</h3>
+                  <p className="text-[11px] text-gray-400">Ask the group and gather real-time feedback</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatePollOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* Question */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
+                  Question
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ask a question..."
+                  value={pollQuestion}
+                  onChange={(e) => setPollQuestion(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+
+              {/* Options */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
+                  Options
+                </label>
+                <div className="space-y-2">
+                  {pollOptions.map((opt, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder={`Option ${idx + 1}`}
+                        value={opt}
+                        onChange={(e) => {
+                          const newOpts = [...pollOptions];
+                          newOpts[idx] = e.target.value;
+                          setPollOptions(newOpts);
+                        }}
+                        className="flex-1 px-3.5 py-2 rounded-xl text-xs sm:text-sm border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                      {pollOptions.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPollOptions(pollOptions.filter((_, i) => i !== idx));
+                          }}
+                          className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {pollOptions.length < 8 && (
+                  <button
+                    type="button"
+                    onClick={() => setPollOptions([...pollOptions, ""])}
+                    className="mt-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Option</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Settings Toggle: Allow multiple answers */}
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-gray-900 dark:text-white">Allow multiple answers</div>
+                  <div className="text-[11px] text-gray-400">Members can select more than one option</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={pollAllowMultiple}
+                  onChange={(e) => setPollAllowMultiple(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3.5 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreatePollOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-200/60 dark:hover:bg-gray-800 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!pollQuestion.trim() || pollOptions.filter((o) => o.trim()).length < 2}
+                onClick={handleCreatePoll}
+                className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <BarChart2 className="w-3.5 h-3.5" />
+                <span>Create Poll</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

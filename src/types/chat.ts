@@ -28,14 +28,36 @@ export interface ChatConversation {
   updatedAt: string;
 }
 
+export interface ChatPollOption {
+  id: string;
+  text: string;
+  votes: number;
+  voterIds: string[];
+}
+
+export interface ChatPoll {
+  question: string;
+  options: ChatPollOption[];
+  allowMultiple?: boolean;
+  totalVotes: number;
+  closed?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   senderName: string;
   senderRole?: string;
+  senderAvatar?: string;
   text: string;
   isEdited?: boolean;
+  poll?: ChatPoll;
+  mentions?: {
+    type: "ROLE" | "USER";
+    role?: string;
+    label: string;
+  }[];
   attachments?: {
     type: "image" | "file" | "voice";
     url: string;

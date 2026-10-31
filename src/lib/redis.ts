@@ -35,6 +35,8 @@ export const CACHE_TTL = {
   HOT_DATA_SHIFTS: 3600, // 1 hour
   HOT_DATA_TRIPS: 300, // 5 minutes (changes often with active trips)
   MASTER_DATA_PERMANENT: 3600, // 1 hour (auto-heals even if webhooks drop)
+  CHAT_MESSAGES: 60, // 1 minute sliding cache for conversation messages
+  CHAT_CONVERSATIONS: 30, // 30 seconds cache for user conversation lists
 } as const;
 
 /**

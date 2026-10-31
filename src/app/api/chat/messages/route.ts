@@ -25,10 +25,10 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
     const body = await req.json();
-    const { conversationId, text, attachments } = body;
+    const { conversationId, text, attachments, poll } = body;
 
-    if (!conversationId || (!text && (!attachments || attachments.length === 0))) {
-      return NextResponse.json({ success: false, error: "conversationId and text or attachment are required" }, { status: 400 });
+    if (!conversationId || (!text && (!attachments || attachments.length === 0) && !poll)) {
+      return NextResponse.json({ success: false, error: "conversationId and text, poll, or attachment are required" }, { status: 400 });
     }
 
     const senderId = session?.userId || body.senderId || "usr_guest";
@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
       senderId,
       senderName,
       senderRole,
-      text: text || "",
+      text: text || (poll ? `📊 ${poll.question}` : ""),
+      poll,
       attachments,
     });
 

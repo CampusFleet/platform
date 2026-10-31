@@ -319,7 +319,9 @@ export function StaffBillingView({
       {toastMessage && (
         <div className="p-4 rounded-2xl bg-green-600 text-white font-bold text-xs shadow-xl flex items-center justify-between animate-in slide-in-from-top">
           <span>{toastMessage}</span>
-          <button onClick={() => setToastMessage(null)} className="text-white/80 hover:text-white">✕</button>
+          <button onClick={() => setToastMessage(null)} className="text-white/80 hover:text-white p-1 rounded-lg cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -905,9 +907,9 @@ export function StaffBillingView({
               <button
                 type="button"
                 onClick={() => setPreviewImageUrl(null)}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-600 dark:text-gray-300 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-600 dark:text-gray-300 flex items-center justify-center cursor-pointer transition-colors"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <div className="mt-4 flex items-center justify-center max-h-[75vh] overflow-auto">
@@ -926,9 +928,9 @@ export function StaffBillingView({
               <button
                 type="button"
                 onClick={() => setRejectModalId(null)}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center cursor-pointer transition-colors"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -983,9 +985,9 @@ export function StaffBillingView({
               <button
                 type="button"
                 onClick={() => setZoneModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center cursor-pointer transition-colors"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -1238,9 +1240,9 @@ export function StaffBillingView({
               <button
                 type="button"
                 onClick={() => setDeleteConfirmZone(null)}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center cursor-pointer transition-colors"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

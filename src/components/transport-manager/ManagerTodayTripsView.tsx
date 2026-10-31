@@ -21,6 +21,7 @@ import {
   ArrowRight,
   ShieldAlert,
   Sparkles,
+  Calendar,
 } from "lucide-react";
 import type { Trip, Bus, Route, Shift, Staff, Booking } from "@/lib/types";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
@@ -340,8 +341,9 @@ export default function ManagerTodayTripsView({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Live Fleet Dispatch
             </span>
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              📅 {formattedTodayDate}
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              <Calendar className="w-3.5 h-3.5 text-gray-400" />
+              <span>{formattedTodayDate}</span>
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white mt-1">
@@ -770,14 +772,16 @@ export default function ManagerTodayTripsView({
               <p>
                 <strong>{pendingReassignment.bus.busNumber}</strong> is currently assigned to start at:
               </p>
-              <div className="font-bold text-amber-950 dark:text-amber-100 bg-white/70 dark:bg-gray-900/60 p-2 rounded-xl border border-amber-300 dark:border-amber-800">
-                📍 {pendingReassignment.oldStopName} ({pendingReassignment.oldRouteName})
+              <div className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-100 bg-white/70 dark:bg-gray-900/60 p-2 rounded-xl border border-amber-300 dark:border-amber-800">
+                <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>{pendingReassignment.oldStopName} ({pendingReassignment.oldRouteName})</span>
               </div>
               <p className="pt-1">
                 Do you want to <strong>remove</strong> it from {pendingReassignment.oldStopName} and <strong>reassign</strong> it to start at:
               </p>
-              <div className="font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 p-2 rounded-xl border border-emerald-300 dark:border-emerald-800">
-                📍 {pendingReassignment.newStopName} ({pendingReassignment.newRoute.name})
+              <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 p-2 rounded-xl border border-emerald-300 dark:border-emerald-800">
+                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>{pendingReassignment.newStopName} ({pendingReassignment.newRoute.name})</span>
               </div>
             </div>
 

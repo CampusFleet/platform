@@ -23,6 +23,7 @@ import {
   Key,
   BookOpen,
   Briefcase,
+  X,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 
@@ -480,9 +481,9 @@ export default function AdminStaffView({
               </h3>
               <button
                 onClick={() => setIsAddUserOpen(false)}
-                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

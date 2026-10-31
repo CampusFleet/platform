@@ -562,8 +562,9 @@ export default function SmartTransitCockpit({
 
           {/* Greeting Headline */}
           <div className="space-y-2 max-w-2xl">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Thank You for Today! See You Tomorrow 👋
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Thank You for Today! See You Tomorrow</span>
+              <Sparkles className="w-6 h-6 text-amber-500 shrink-0" />
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
               All scheduled bus shifts for today have successfully concluded. Rest well tonight—CampusFleet will be ready to pick you up tomorrow morning!

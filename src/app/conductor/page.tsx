@@ -83,12 +83,12 @@ export default function ConductorHubPage() {
           {dutyAttendance?.method === "BUS_QR_SCAN" ? (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
               <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>✓ Duty Verified via Bus QR</span>
+              <span>Duty Verified via Bus QR</span>
             </span>
           ) : dutyAttendance ? (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-bold">
               <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span>✓ Duty Active (Card Selected)</span>
+              <span>Duty Active (Card Selected)</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold animate-pulse">

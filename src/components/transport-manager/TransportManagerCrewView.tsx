@@ -18,6 +18,10 @@ import {
   QrCode,
   Banknote,
   Check,
+  Lock,
+  Sunrise,
+  Sunset,
+  Building,
 } from "lucide-react";
 import { formatTime, formatDate } from "@/lib/utils";
 import type { Trip, Bus, Route, Staff, UserAccount, AttendanceRecord } from "@/lib/types";
@@ -421,8 +425,9 @@ export default function TransportManagerCrewView({
                           </div>
                           <div className="text-[10px] font-mono text-gray-400">{trip.tripCode}</div>
                           {store.isTripSpecial(trip) && (
-                            <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                              🔒 Special Restricted Run
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <Lock className="w-2.5 h-2.5 shrink-0" />
+                              <span>Special Restricted Run</span>
                             </span>
                           )}
                         </td>
@@ -444,7 +449,13 @@ export default function TransportManagerCrewView({
                                       : "text-blue-600 dark:text-blue-400"
                                   }`}
                                 >
-                                  <span>{isC2C ? "🟣" : isOutbound ? "🌆" : "🌅"}</span>
+                                  {isC2C ? (
+                                    <Building className="w-3 h-3 shrink-0" />
+                                  ) : isOutbound ? (
+                                    <Sunset className="w-3 h-3 shrink-0" />
+                                  ) : (
+                                    <Sunrise className="w-3 h-3 shrink-0" />
+                                  )}
                                   <span>{shift?.name || "Transit Run"}</span>
                                   {shift?.startTime && (
                                     <span className="opacity-75 font-normal">({shift.startTime})</span>

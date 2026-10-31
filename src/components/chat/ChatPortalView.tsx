@@ -49,7 +49,22 @@ import {
   VolumeX,
   Trash2,
   Pencil,
+  ThumbsUp,
+  Heart,
 } from "lucide-react";
+
+const QUICK_REACTIONS = [
+  { id: "like", emoji: "👍", label: "Thumbs Up", icon: ThumbsUp, color: "text-amber-500 hover:text-amber-600" },
+  { id: "heart", emoji: "❤️", label: "Heart", icon: Heart, color: "text-rose-500 hover:text-rose-600 fill-rose-500" },
+  { id: "bus", emoji: "🚌", label: "Bus", icon: BusFront, color: "text-blue-500 hover:text-blue-600" },
+];
+
+function renderReactionBadgeIcon(emoji: string) {
+  if (emoji === "👍") return <ThumbsUp className="w-3 h-3 text-amber-500 shrink-0" />;
+  if (emoji === "❤️") return <Heart className="w-3 h-3 text-rose-500 fill-rose-500 shrink-0" />;
+  if (emoji === "🚌") return <BusFront className="w-3 h-3 text-blue-500 shrink-0" />;
+  return <span className="text-xs">{emoji}</span>;
+}
 
 const MENTION_ROLES = [
   { tag: "@transportadmin", role: "transport_admin", label: "Transport Admin", icon: Shield, color: "text-blue-600 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800" },
@@ -1163,16 +1178,16 @@ export function ChatPortalView() {
                       </div>
                     )}
 
-                    {/* Emoji Reactions below bubble */}
+                    {/* SVG Reactions below bubble */}
                     {msg.reactions && msg.reactions.length > 0 && (
                       <div className="flex items-center gap-1 mt-1 ml-1">
                         {msg.reactions.map((r, ri) => (
                           <button
                             key={ri}
                             onClick={() => handleReaction(msg.id, r.emoji)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xs hover:scale-105 transition-transform"
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xs hover:scale-105 transition-transform cursor-pointer"
                           >
-                            <span>{r.emoji}</span>
+                            {renderReactionBadgeIcon(r.emoji)}
                             <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300">
                               {r.count}
                             </span>
@@ -1183,15 +1198,19 @@ export function ChatPortalView() {
 
                     {/* Hover quick reaction & CRUD buttons */}
                     <div className="hidden group-hover:flex items-center gap-1 mt-0.5 opacity-90">
-                      {(["👍", "❤️", "🚌"].map((e) => (
-                        <button
-                          key={e}
-                          onClick={() => handleReaction(msg.id, e)}
-                          className="text-xs p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-                        >
-                          {e}
-                        </button>
-                      )))}
+                      {QUICK_REACTIONS.map((qr) => {
+                        const Icon = qr.icon;
+                        return (
+                          <button
+                            key={qr.id}
+                            onClick={() => handleReaction(msg.id, qr.emoji)}
+                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                            title={qr.label}
+                          >
+                            <Icon className={`w-3.5 h-3.5 ${qr.color}`} />
+                          </button>
+                        );
+                      })}
                       {isMe && (
                         <>
                           <button
@@ -1403,9 +1422,9 @@ export function ChatPortalView() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => handleSendMessage("👋 Check-in")}
+                    onClick={() => handleSendMessage("Check-in: Arrived at stop")}
                     className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
-                    title="Send quick wave"
+                    title="Send quick check-in"
                   >
                     <Mic className="w-4 h-4" />
                   </button>

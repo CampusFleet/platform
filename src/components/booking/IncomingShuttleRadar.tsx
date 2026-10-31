@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Bus, MapPin, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ArrowRight, Clock } from "lucide-react";
+import { Bus, MapPin, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ArrowRight, Clock, Zap } from "lucide-react";
 import { Stop } from "@/lib/types";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 
@@ -138,8 +138,9 @@ export function IncomingShuttleRadar({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase tracking-wider text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-950/60 px-2.5 py-0.5 rounded-full border border-pink-200 dark:border-pink-800/60">
-              ⚡ Missed Bus / Rapid Transit Recovery
+            <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-950/60 px-2.5 py-0.5 rounded-full border border-pink-200 dark:border-pink-800/60">
+              <Zap className="w-3 h-3 text-pink-500 fill-pink-500 shrink-0" />
+              <span>Missed Bus / Rapid Transit Recovery</span>
             </span>
           </div>
           <h3 className="text-lg font-black text-gray-900 dark:text-white mt-1">
@@ -158,7 +159,7 @@ export function IncomingShuttleRadar({
             size="sm"
             options={stops.map((s) => ({
               value: s.id,
-              label: `${s.name} (${s.code}) ${s.isBusMergeStop ? "⚡ Merge Stop" : ""}`,
+              label: `${s.name} (${s.code}) ${s.isBusMergeStop ? "• Merge Hub" : ""}`,
             }))}
             containerClassName="w-64"
           />

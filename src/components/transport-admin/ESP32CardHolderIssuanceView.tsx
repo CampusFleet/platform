@@ -866,9 +866,10 @@ function formatTimeAgo(isoString?: string | null): string {
               <button
                 type="button"
                 onClick={handleConfirmManualDevice}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer"
               >
-                <span>Next ➔ Select Bus</span>
+                <span>Next: Select Bus</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>

@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Navigation,
   Clock,
+  Check,
 } from "lucide-react";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
@@ -832,8 +833,9 @@ export default function StudentOnboardingPage() {
                 Academic Cohort & Section Selection
               </h3>
               {currentMatchedClass && (
-                <span className="text-[11px] font-mono px-2 py-0.5 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/40">
-                  ✓ Verified Cohort
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/40">
+                  <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+                  <span>Verified Cohort</span>
                 </span>
               )}
             </div>

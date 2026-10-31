@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { MapPin, Search, Plus, X, GitMerge, Building2, BusFront, Check } from 'lucide-react';
+import { MapPin, Search, Plus, X, GitMerge, Building2, BusFront, Check, Sparkles } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { CustomDropdown } from '@/components/common/CustomDropdown';
 
@@ -253,7 +253,7 @@ export function StopBuilderModal({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                  🏛️
+                  <Building2 className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-base">
@@ -330,8 +330,9 @@ export function StopBuilderModal({
                       }) : null);
                     }}
                   />
-                  <p className="text-[10px] text-gray-400 italic">
-                    💡 Click anywhere on the map to drop the anchor coordinates for the campus terminal and depot slots.
+                  <p className="text-[10px] text-gray-400 italic flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                    <span>Click anywhere on the map to drop the anchor coordinates for the campus terminal and depot slots.</span>
                   </p>
                 </div>
               )}

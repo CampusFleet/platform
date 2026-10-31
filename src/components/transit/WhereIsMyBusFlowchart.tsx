@@ -17,6 +17,7 @@ import {
   BusFront,
   ArrowDown,
   ShieldCheck,
+  Flag,
 } from "lucide-react";
 
 export interface WhereIsMyBusFlowchartProps {
@@ -322,8 +323,8 @@ export function WhereIsMyBusFlowchart({
                           <MapPin className="w-3 h-3" />
                         </div>
                       ) : isLast ? (
-                        <div className="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 flex items-center justify-center text-[10px]">
-                          🏁
+                        <div className="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 flex items-center justify-center">
+                          <Flag className="w-2.5 h-2.5 text-gray-500 dark:text-gray-400" />
                         </div>
                       ) : (
                         <div className="w-5 h-5 rounded-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 flex items-center justify-center text-[10px] font-medium text-gray-500">

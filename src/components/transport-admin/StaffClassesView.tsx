@@ -21,6 +21,7 @@ import {
   AlertCircle,
   RefreshCw,
   X,
+  Check,
   UserPlus,
   Tag,
   Building2,
@@ -1149,7 +1150,11 @@ export default function StaffClassesView({
                                         }`}
                                       title={isDayEnabled ? `${d}: Enabled for Section` : `${d}: Disabled (Emergency Pass Required)`}
                                     >
-                                      <span>{isDayEnabled ? "✓" : "✕"}</span>
+                                      {isDayEnabled ? (
+                                        <Check className="w-3.5 h-3.5 shrink-0" />
+                                      ) : (
+                                        <X className="w-3.5 h-3.5 shrink-0" />
+                                      )}
                                       <span>{d.substring(0, 3)}</span>
                                     </button>
                                   );

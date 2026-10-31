@@ -45,6 +45,7 @@ import {
   ChevronDown,
   Info,
   Building2,
+  Zap,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 
@@ -474,7 +475,8 @@ export default function StopsManager({ mode = "view" }: { mode?: "view" | "creat
                   {st.isBusMergeStop && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300 text-[11px] font-bold border border-pink-200 dark:border-pink-800">
                       <GitMerge className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
-                      <span>Authorized Bus Merge Stop ⚡</span>
+                      <span>Authorized Bus Merge Stop</span>
+                      <Zap className="w-3 h-3 text-pink-500 fill-pink-500" />
                     </div>
                   )}
                 </div>

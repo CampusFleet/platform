@@ -22,6 +22,7 @@ import {
   Settings,
   Wifi,
   Laptop,
+  ArrowRight,
 } from "lucide-react";
 import type { Student, Stop, Route, Bus } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
@@ -960,9 +961,10 @@ function formatTimeAgo(isoString?: string | null): string {
               <button
                 type="button"
                 onClick={handleConfirmManualCard}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer"
               >
-                Next ➔ Select Student
+                <span>Next: Select Student</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>

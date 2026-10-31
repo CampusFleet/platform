@@ -44,6 +44,9 @@ import {
   ChevronDown,
   Info,
   Building2,
+  Star,
+  Zap,
+  Keyboard,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 
@@ -1293,18 +1296,19 @@ export default function StaffRoutesView({
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner flex-shrink-0 ${
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0 ${
                         campus.isPrimary
                           ? "bg-blue-600/20 border border-blue-500/40 text-blue-400"
                           : "bg-green-50 dark:bg-green-950/60 border border-green-200 dark:border-green-800 text-green-600"
                       }`}>
-                        🏛️
+                        <Building2 className="w-6 h-6" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {campus.isPrimary && (
-                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold uppercase tracking-wider border border-blue-500/30">
-                              ⭐ Primary Hub
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold uppercase tracking-wider border border-blue-500/30">
+                              <Star className="w-2.5 h-2.5 fill-blue-300 text-blue-300" />
+                              Primary Hub
                             </span>
                           )}
                           <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${
@@ -1581,7 +1585,8 @@ export default function StaffRoutesView({
                   {st.isBusMergeStop && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300 text-[11px] font-bold border border-pink-200 dark:border-pink-800">
                       <GitMerge className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
-                      <span>Authorized Bus Merge Stop ⚡</span>
+                      <span>Authorized Bus Merge Stop</span>
+                      <Zap className="w-3 h-3 text-pink-500 fill-pink-500" />
                     </div>
                   )}
                 </div>
@@ -1851,7 +1856,7 @@ export default function StaffRoutesView({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                  🏛️
+                  <Building2 className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-base">
@@ -1865,7 +1870,7 @@ export default function StaffRoutesView({
 
               <button
                 onClick={() => setIsEditCampusModalOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg"
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1895,8 +1900,8 @@ export default function StaffRoutesView({
                     : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
                 }`}
               >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>⌨️ Enter GPS Coordinates</span>
+                <Keyboard className="w-3.5 h-3.5" />
+                <span>Enter GPS Coordinates</span>
               </button>
             </div>
 
@@ -1928,8 +1933,9 @@ export default function StaffRoutesView({
                       }) : null);
                     }}
                   />
-                  <p className="text-[10px] text-gray-400 italic">
-                    💡 Click anywhere on the map to drop the anchor coordinates for the campus terminal and depot slots.
+                  <p className="text-[10px] text-gray-400 italic flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                    <span>Click anywhere on the map to drop the anchor coordinates for the campus terminal and depot slots.</span>
                   </p>
                 </div>
               )}

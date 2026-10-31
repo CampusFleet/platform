@@ -6,7 +6,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Booking, Student, Bus, Stop, Shift, Trip } from "@/lib/types";
 import { formatTime, formatDate } from "@/lib/utils";
 import { store } from "@/lib/store";
-import { BusFront, Clock, User, ShieldCheck, Download, Share2, AlertCircle } from "lucide-react";
+import { BusFront, Clock, User, ShieldCheck, Download, Share2, AlertCircle, Zap } from "lucide-react";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 
 interface BoardingPassCardProps {
@@ -258,7 +258,8 @@ export function BoardingPassCard({
         {isStandingPassenger && !isCancelled && (
           <div className="p-3.5 bg-pink-50 dark:bg-pink-950/40 border border-pink-200 dark:border-pink-800/60 rounded-2xl space-y-1">
             <div className="text-xs font-black text-pink-900 dark:text-pink-300 flex items-center gap-1.5">
-              <span>⚡ Standing Passenger Authorization</span>
+              <Zap className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400 shrink-0" />
+              <span>Standing Passenger Authorization</span>
             </div>
             <div className="text-[11px] text-pink-800/90 dark:text-pink-300/90 leading-relaxed">
               Authorized to travel standing safely until <strong>{currentBooking.mergeStopName || "Bus Merge Stop"}</strong>. Conductor will reallocate you to an available confirmed seat upon vehicle consolidation at the merge hub.

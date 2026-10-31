@@ -36,7 +36,8 @@ import {
   ExternalLink,
   Shield,
   User,
-  Info
+  Info,
+  Lock,
 } from "lucide-react";
 import type {
   Trip,
@@ -1443,7 +1444,10 @@ export default function TransportAdminTripsView({
                       onChange={() => setNewTrip((prev) => ({ ...prev, facilityType: "PLACEMENT_DRIVE" }))}
                       className="text-yellow-600"
                     />
-                    <span>🎓 Placement Drive</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold">
+                      <GraduationCap className="w-3.5 h-3.5 text-blue-500" />
+                      Placement Drive
+                    </span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer text-gray-800 dark:text-gray-200">
                     <input
@@ -1454,7 +1458,10 @@ export default function TransportAdminTripsView({
                       onChange={() => setNewTrip((prev) => ({ ...prev, facilityType: "EVENT" }))}
                       className="text-yellow-600"
                     />
-                    <span>🏢 Campus Event / Conclave</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold">
+                      <Building2 className="w-3.5 h-3.5 text-emerald-500" />
+                      Campus Event / Conclave
+                    </span>
                   </label>
                 </div>
               )}
@@ -1641,8 +1648,9 @@ export default function TransportAdminTripsView({
                     <strong>{tripShift?.name || "Special Placement Shift"}</strong> • Route: {tripRoute?.name || "Campus Express"}
                   </p>
                   <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-yellow-50 dark:bg-yellow-950/60 text-yellow-800 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800">
-                      🔒 Access Controlled: Only allocated students will see this shift on their portal.
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-yellow-50 dark:bg-yellow-950/60 text-yellow-800 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800">
+                      <Lock className="w-2.5 h-2.5 text-yellow-700 dark:text-yellow-400 shrink-0" />
+                      <span>Access Controlled: Only allocated students will see this shift on their portal.</span>
                     </span>
                   </div>
                 </div>

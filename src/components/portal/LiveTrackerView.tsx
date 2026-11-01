@@ -210,31 +210,25 @@ export default function LiveTrackerView({
   useEffect(() => {
     const busId = assignedBus?.id;
     if (busId) {
-      telematicsService.startPolling(busId, 3500);
+      const unsub = telematicsService.subscribe((incoming) => {
+        if (incoming && (String(incoming.busId) === String(busId) || incoming.busId === busId)) {
+          setLiveLocation((prev: any) => ({ ...prev, ...incoming }));
+        }
+      });
+      telematicsService.startPolling(busId, 2500);
+      return () => {
+        unsub();
+        telematicsService.stopPolling();
+      };
     }
-    return () => {
-      telematicsService.stopPolling();
-    };
   }, [assignedBus?.id]);
 
-  // Effective location: If trip has not started, bus MUST be stationary at the route starting point!
+  // Effective location: Prioritize live GPS broadcast from driver / telematics engine!
+  // Fall back to current or starting stop ONLY when live telemetry has not yet pinged.
   const effectiveLiveLocation = useMemo(() => {
     const routeStartingStop = currentRouteStops[0] || stops[0];
 
-    if (!isTripInProgress && routeStartingStop) {
-      return {
-        busId: assignedBus?.id ?? -1,
-        tripId: activeTrip?.id || "",
-        latitude: routeStartingStop.latitude,
-        longitude: routeStartingStop.longitude,
-        speedKmh: 0,
-        headingDeg: 0,
-        lastPingAt: new Date().toISOString(),
-        estimatedArrivalNextStopMins: 0,
-        delayMinutes: 0,
-      };
-    }
-
+    // Priority 1: Live GPS coordinates from Driver Console or IoT Telematics
     if (
       liveLocation &&
       typeof liveLocation.latitude === "number" &&
@@ -249,19 +243,35 @@ export default function LiveTrackerView({
       };
     }
 
-    const currentStop = currentRouteStops[activeTrip?.currentStopIndex || 0] || routeStartingStop || (stops.length > 0 ? stops[0] : null);
+    // Priority 2: In-progress trip current stop
+    if (isTripInProgress) {
+      const currentStop = currentRouteStops[activeTrip?.currentStopIndex || 0] || routeStartingStop || (stops.length > 0 ? stops[0] : null);
+      return {
+        busId: assignedBus?.id ?? -1,
+        tripId: activeTrip?.id || "",
+        latitude: currentStop?.latitude || 0,
+        longitude: currentStop?.longitude || 0,
+        speedKmh: 0,
+        headingDeg: liveLocation?.headingDeg || 0,
+        lastPingAt: new Date().toISOString(),
+        estimatedArrivalNextStopMins: 0,
+        delayMinutes: 0,
+      };
+    }
+
+    // Priority 3: Scheduled trip starting stop (bus waiting at depot or first stop)
     return {
       busId: assignedBus?.id ?? -1,
       tripId: activeTrip?.id || "",
-      latitude: currentStop?.latitude || 0,
-      longitude: currentStop?.longitude || 0,
+      latitude: routeStartingStop?.latitude || 0,
+      longitude: routeStartingStop?.longitude || 0,
       speedKmh: 0,
-      headingDeg: liveLocation?.headingDeg || 0,
+      headingDeg: 0,
       lastPingAt: new Date().toISOString(),
       estimatedArrivalNextStopMins: 0,
       delayMinutes: 0,
     };
-  }, [isTripInProgress, currentRouteStops, stops, assignedBus?.id, activeTrip?.id, activeTrip?.currentStopIndex, liveLocation]);
+  }, [liveLocation, isTripInProgress, currentRouteStops, stops, assignedBus?.id, activeTrip?.id, activeTrip?.currentStopIndex]);
 
   // Dynamic ETA calculation to pickup stop
   const dynamicEta = useMemo(() => {

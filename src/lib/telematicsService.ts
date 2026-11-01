@@ -21,7 +21,7 @@ class TelematicsService {
 
   // Polling mechanism for cross-device live tracking
   private pollingTimer: NodeJS.Timeout | null = null;
-  private activePollingBusId: number | null = null;
+  private activePollingBusId: number | string | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -145,8 +145,8 @@ class TelematicsService {
    * Start polling MongoDB & Redis for a specific bus location.
    * Consumes directly from Redis (<5ms read latency) or MongoDB.
    */
-  public startPolling(busId: number , intervalMs = 3000): void {
-    if (this.pollingTimer && this.activePollingBusId === busId) return;
+  public startPolling(busId: number | string, intervalMs = 2500): void {
+    if (this.pollingTimer && String(this.activePollingBusId) === String(busId)) return;
     this.stopPolling();
     this.activePollingBusId = busId;
 

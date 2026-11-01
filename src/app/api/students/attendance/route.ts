@@ -664,11 +664,14 @@ export async function POST(req: NextRequest) {
       gpsNote = `Verified via Attendance Security Unlock (${lockCache?.unlockedBy || targetRes?.unlocked_by || "Location Distance"})`;
     } else if (targetRes.bus_id) {
       // Must verify real-time GPS proximity against live bus telematics
+      const strTargetBusId = String(targetRes.bus_id).trim();
       const busIdsToCheck = Array.from(new Set([
-        targetRes.bus_id,
-        targetRes.bus_id.toLowerCase(),
-        targetRes.bus_id.toUpperCase(),
-      ]));
+        strTargetBusId,
+        strTargetBusId.toLowerCase(),
+        strTargetBusId.toUpperCase(),
+        `bus-${strTargetBusId}`,
+        `Bus ${strTargetBusId}`,
+      ].filter(Boolean)));
       let liveTelematics: { latitude: number; longitude: number } | null = null;
       for (const bId of busIdsToCheck) {
         const cached = await cacheGet<{ latitude: number; longitude: number }>(`telematics:bus:${bId}`);

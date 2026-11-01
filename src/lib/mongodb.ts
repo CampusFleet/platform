@@ -227,18 +227,20 @@ export async function getMongoTelemetryStats(busId?: string): Promise<{
 /**
  * Fetch the latest live location for a specific bus from MongoDB.
  */
-export async function getLiveLocationFromMongo(busId: string): Promise<LiveLocationDocument | null> {
+export async function getLiveLocationFromMongo(busId: string | number): Promise<LiveLocationDocument | null> {
   const db = await getMongoDb();
   if (!db) return null;
 
   try {
-    const trimmedId = busId?.trim();
+    const trimmedId = String(busId ?? "").trim();
+    if (!trimmedId) return null;
     const doc = await db.collection("bus_live_locations").findOne(
       {
         $or: [
           { busId: trimmedId },
           { busId: trimmedId.toLowerCase() },
-          { busId: trimmedId.toUpperCase() }
+          { busId: trimmedId.toUpperCase() },
+          ...(isNaN(Number(trimmedId)) ? [] : [{ busId: Number(trimmedId) }])
         ]
       },
       { projection: { _id: 0 } }

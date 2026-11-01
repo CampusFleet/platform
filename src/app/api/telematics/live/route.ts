@@ -51,27 +51,44 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Fetch specific bus location: Redis first, MongoDB fallback
-    const CACHE_KEY = `telematics:bus:${busId}`;
-    let liveLocation = await cacheGet(CACHE_KEY);
+    const strBusId = String(busId).trim();
+    const candidateKeys = [
+      `telematics:bus:${strBusId}`,
+      `telematics:bus:${strBusId.toLowerCase()}`,
+      `telematics:bus:bus-${strBusId}`,
+      `telematics:bus:Bus ${strBusId}`,
+    ];
+
+    let liveLocation: any = null;
+    for (const key of candidateKeys) {
+      liveLocation = await cacheGet(key).catch(() => null);
+      if (liveLocation) break;
+    }
 
     if (!liveLocation) {
       // Fallback to MongoDB
-      const mongoDoc = await getLiveLocationFromMongo(busId);
+      const mongoDoc = await getLiveLocationFromMongo(strBusId);
       if (mongoDoc) {
-        liveLocation = mongoDoc;
-        // Warm Redis cache for 5 seconds
-        await cacheSet(CACHE_KEY, mongoDoc, 5);
+        liveLocation = {
+          ...mongoDoc,
+          timestamp: mongoDoc.updatedAt ? new Date(mongoDoc.updatedAt).toISOString() : new Date().toISOString(),
+        };
+        // Warm Redis cache for 60 seconds across primary keys
+        await Promise.all([
+          cacheSet(`telematics:bus:${strBusId}`, liveLocation, 60),
+          cacheSet(`telematics:bus:${strBusId.toLowerCase()}`, liveLocation, 60),
+        ]).catch(() => {});
       }
     }
 
-    const latestRfid = await cacheGet(`telematics:rfid:latest:${busId}`);
+    const latestRfid = await cacheGet(`telematics:rfid:latest:${strBusId}`).catch(() => null);
 
     return NextResponse.json(
       { success: true, liveLocation: liveLocation || null, latestRfid: latestRfid || null },
       {
         status: 200,
         headers: {
-          "Cache-Control": "private, max-age=3, stale-while-revalidate=5",
+          "Cache-Control": "private, max-age=2, stale-while-revalidate=5",
         },
       }
     );

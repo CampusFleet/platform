@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   BusFront,
   MapPin,
@@ -26,12 +27,39 @@ import {
   ArrowLeftRight,
   XCircle,
   ShieldAlert,
+  Radio,
+  Zap,
 } from "lucide-react";
 import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatGrid";
 import { generateSeatLayout, getTeacherStartingSeats } from "@/lib/utils";
 import { AttendanceLockCard } from "./AttendanceLockCard";
 import LiveTrackerView from "./LiveTrackerView";
+import { telematicsService } from "@/lib/telematicsService";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, TransportSettings, Staff } from "@/lib/types";
+
+// Dynamic import for high-performance GIS Radar map
+const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[240px] rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse flex items-center justify-center text-xs text-slate-400 font-bold">
+      Loading Live Telematics GIS Radar...
+    </div>
+  ),
+});
+
+function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
 
 interface SmartTransitCockpitProps {
   student?: Student;
@@ -139,6 +167,13 @@ export default function SmartTransitCockpit({
   const [isPeekingSeats, setIsPeekingSeats] = useState(false);
   const isLockCleared = attendanceLockStatus === "UNLOCKED" || isRfidVerified || reservation?.lock_status === "UNLOCKED";
 
+  // Live Telematics & Radar state
+  const [telematicsLocation, setTelematicsLocation] = useState<any>(null);
+  const [isTelematicsLive, setIsTelematicsLive] = useState(false);
+  const [isRadarMapExpanded, setIsRadarMapExpanded] = useState(false);
+  const [userGeoCoords, setUserGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [isQuickUnlocking, setIsQuickUnlocking] = useState(false);
+
   const studentId = student?.id || user?.studentId || user?.userId || user?.id;
   const isTeacher = Boolean(
     user?.role === "teacher" ||
@@ -220,7 +255,13 @@ export default function SmartTransitCockpit({
     }
     const busId = queryBusId || reservation?.bus_id || activeBooking?.busId;
     if (!busId) return null;
-    return buses.find((b) => b.id === busId) || reservation?.bus || null;
+    const strId = String(busId).trim();
+    return (
+      buses.find((b) => String(b.id) === strId || String(b.busNumber) === strId) ||
+      reservation?.bus ||
+      reservation?.buses ||
+      null
+    );
   }, [reservation, activeBooking, buses]);
 
   // Resolved stop entity
@@ -231,7 +272,13 @@ export default function SmartTransitCockpit({
       student?.autoAssignedStopId ||
       student?.primaryStopId;
     if (!stopId) return null;
-    return stops.find((s) => s.id === stopId) || reservation?.stop || null;
+    const strStopId = String(stopId).trim();
+    return (
+      stops.find((s) => String(s.id) === strStopId) ||
+      reservation?.stop ||
+      reservation?.stops ||
+      null
+    );
   }, [reservation, activeBooking, student, stops]);
 
   // Single Source of Truth: dynamically resolve shift from database shifts
@@ -341,6 +388,356 @@ export default function SmartTransitCockpit({
     }
     return true;
   }, [reservation, activeBooking, isChangingSeat, confirmedSeatNumber]);
+
+  // ─── LIVE TELEMATICS SUBSCRIPTION & REAL-TIME GPS WATCH ───────────
+  useEffect(() => {
+    const busId = assignedBus?.id;
+    if (!busId) return;
+
+    let isMounted = true;
+    const pollTelematics = async () => {
+      try {
+        const res = await fetch(`/api/telematics/live?busId=${encodeURIComponent(String(busId))}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success && data.liveLocation) {
+            setTelematicsLocation(data.liveLocation);
+            setIsTelematicsLive(true);
+          }
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    pollTelematics();
+
+    const unsub = telematicsService.subscribe((incoming) => {
+      if (incoming && (String(incoming.busId) === String(busId) || incoming.busId === busId)) {
+        if (isMounted) {
+          setTelematicsLocation(incoming);
+          setIsTelematicsLive(true);
+        }
+      }
+    });
+
+    telematicsService.startPolling(busId, 2500);
+
+    return () => {
+      isMounted = false;
+      unsub();
+      telematicsService.stopPolling();
+    };
+  }, [assignedBus?.id]);
+
+  // Non-blocking browser GPS detection for proximity unlock & map centering
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserGeoCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+    );
+  }, []);
+
+  const busToStopDistMeters = useMemo(() => {
+    if (!assignedStop?.latitude || !assignedStop?.longitude || !telematicsLocation?.latitude || !telematicsLocation?.longitude) {
+      return null;
+    }
+    return calculateDistanceMeters(
+      telematicsLocation.latitude,
+      telematicsLocation.longitude,
+      assignedStop.latitude,
+      assignedStop.longitude
+    );
+  }, [assignedStop, telematicsLocation]);
+
+  const busToUserDistMeters = useMemo(() => {
+    if (!userGeoCoords?.lat || !userGeoCoords?.lng || !telematicsLocation?.latitude || !telematicsLocation?.longitude) {
+      return null;
+    }
+    return calculateDistanceMeters(
+      telematicsLocation.latitude,
+      telematicsLocation.longitude,
+      userGeoCoords.lat,
+      userGeoCoords.lng
+    );
+  }, [userGeoCoords, telematicsLocation]);
+
+  const liveEtaText = useMemo(() => {
+    if (busToStopDistMeters === null) {
+      return isTelematicsLive ? "Computing arrival..." : "Awaiting GPS Ping";
+    }
+    if (busToStopDistMeters < 60) return "At Your Pick-Up Stop • Board Now";
+    if (busToStopDistMeters < 250) return "Arriving in ~1 min";
+    const mins = Math.max(1, Math.round((busToStopDistMeters / 1000) / (25 / 60)));
+    return `~${mins} mins (${busToStopDistMeters > 1000 ? `${(busToStopDistMeters / 1000).toFixed(1)} km` : `${busToStopDistMeters}m`})`;
+  }, [busToStopDistMeters, isTelematicsLive]);
+
+  const assignedDriverName = useMemo(() => {
+    if (telematicsLocation?.driverName) return telematicsLocation.driverName;
+    const foundDriver = staff?.find((s) => s.id === (activeBooking as any)?.driverId || s.id === "staff-drv-37" || s.role === "driver");
+    return foundDriver?.fullName || "Assigned Fleet Driver";
+  }, [telematicsLocation, staff, activeBooking]);
+
+  const handleQuickProximityUnlock = async () => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      showToast("Geolocation is not supported by your browser. Please enable GPS.", "error");
+      return;
+    }
+
+    setIsQuickUnlocking(true);
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 0,
+        });
+      });
+
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const acc = position.coords.accuracy;
+
+      if (!lat || !lng || (lat === 0 && lng === 0)) {
+        showToast("Device GPS is turned off or has no satellite fix. Turn on Location services.", "error");
+        setIsQuickUnlocking(false);
+        return;
+      }
+
+      setUserGeoCoords({ lat, lng });
+
+      const res = await fetch("/api/attendance/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method: "LOCATION_DISTANCE",
+          latitude: lat,
+          longitude: lng,
+          accuracy: acc ? Math.round(acc) : undefined,
+          busId: assignedBus?.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.message || "Location Distance Unlock (<2m) failed. Approach the bus to unlock.", "error");
+      } else {
+        setAttendanceLockStatus("UNLOCKED");
+        setIsPeekingSeats(false);
+        showToast("✓ Proximity verified! Attendance security cleared. Choose your seat below.", "success");
+        fetchReservation(true);
+      }
+    } catch (err: any) {
+      showToast("GPS Error: " + (err.message || "Failed to acquire location"), "error");
+    } finally {
+      setIsQuickUnlocking(false);
+    }
+  };
+
+  const renderLiveBusRadarCard = () => {
+    if (!assignedBus) return null;
+
+    const displayBusNum = assignedBus.busNumber ? `Bus ${assignedBus.busNumber}` : `Bus #${assignedBus.id}`;
+
+    return (
+      <div className="bg-slate-900 dark:bg-black rounded-3xl p-5 sm:p-6 border border-slate-800 shadow-2xl space-y-4 text-white overflow-hidden relative animate-in fade-in duration-300">
+        {/* Ambient glowing radar ripple effect in background */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
+
+        {/* Header: Pulsing Live Radar Status */}
+        <div className="flex flex-wrap items-center justify-between gap-3 relative z-10 pb-3 border-b border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex items-center justify-center">
+              <span className={`w-3 h-3 rounded-full ${isTelematicsLive ? "bg-emerald-400" : "bg-amber-400"}`} />
+              {isTelematicsLive && (
+                <span className="absolute w-5 h-5 rounded-full bg-emerald-400/40 animate-ping" />
+              )}
+            </div>
+            <div>
+              <div className="text-xs font-black tracking-wider uppercase text-emerald-400 flex items-center gap-1.5 font-mono">
+                <span>Live Bus Radar</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
+                  isTelematicsLive
+                    ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-300"
+                    : "bg-amber-950/80 border-amber-500/40 text-amber-300"
+                }`}>
+                  {isTelematicsLive ? "LIVE GPS STREAM" : "CONNECTING TO GPS"}
+                </span>
+              </div>
+              <div className="text-xs text-slate-400">
+                Tracking {displayBusNum} in real-time
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsRadarMapExpanded(!isRadarMapExpanded)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center gap-1.5 cursor-pointer border border-slate-700/80 active:scale-95"
+            >
+              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{isRadarMapExpanded ? "Hide Map" : "Show Live Map"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenLiveRadar) {
+                  onOpenLiveRadar();
+                } else {
+                  setIsLiveRadarOpen(true);
+                }
+              }}
+              className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer border border-slate-700/80 active:scale-95"
+              title="Open Full Screen GIS Tracker"
+            >
+              <Layers className="w-4 h-4 text-slate-300" />
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Telematics Metrics Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 relative z-10">
+          {/* Metric 1: Bus & Driver */}
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
+            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+              <BusFront className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Vehicle & Driver</span>
+            </div>
+            <div className="text-sm font-black text-white truncate">
+              {displayBusNum}
+            </div>
+            <div className="text-[11px] text-emerald-400 font-semibold truncate flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>{assignedDriverName}</span>
+            </div>
+          </div>
+
+          {/* Metric 2: Live ETA to Pick-Up Stop */}
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
+            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-blue-400" />
+              <span>ETA to Your Stop</span>
+            </div>
+            <div className="text-sm font-black text-white truncate">
+              {liveEtaText}
+            </div>
+            <div className="text-[11px] text-slate-400 truncate">
+              {assignedStop?.name || "Assigned Stop"}
+            </div>
+          </div>
+
+          {/* Metric 3: Live Distance to Stop */}
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
+            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-pink-400" />
+              <span>Stop Proximity</span>
+            </div>
+            <div className="text-sm font-black text-white">
+              {busToStopDistMeters !== null
+                ? busToStopDistMeters > 1000
+                  ? `${(busToStopDistMeters / 1000).toFixed(2)} km`
+                  : `${busToStopDistMeters} meters`
+                : isTelematicsLive ? "At Route Area" : "Awaiting Fix"}
+            </div>
+            <div className="text-[11px] text-slate-400 truncate">
+              {busToStopDistMeters !== null && busToStopDistMeters < 50
+                ? "Bus is at stop"
+                : "Approaching stop"}
+            </div>
+          </div>
+
+          {/* Metric 4: Speed & Telemetry */}
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
+            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Speed & Bearing</span>
+            </div>
+            <div className="text-sm font-black text-white">
+              {telematicsLocation?.speedKmh ? `${telematicsLocation.speedKmh} km/h` : "Stationary (0 km/h)"}
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Bearing: {telematicsLocation?.headingDeg ? `${telematicsLocation.headingDeg}°` : "Facing Route"}
+            </div>
+          </div>
+        </div>
+
+        {/* Expandable Mini Live GIS Map */}
+        {isRadarMapExpanded && (
+          <div className="rounded-2xl overflow-hidden border border-slate-700/80 relative z-10 animate-in fade-in duration-300">
+            <CampusFleetMap
+              busLocation={
+                telematicsLocation?.latitude
+                  ? {
+                      busId: assignedBus.id,
+                      latitude: Number(telematicsLocation.latitude),
+                      longitude: Number(telematicsLocation.longitude),
+                      speedKmh: telematicsLocation.speedKmh ? Number(telematicsLocation.speedKmh) : 0,
+                      headingDeg: telematicsLocation.headingDeg ? Number(telematicsLocation.headingDeg) : 0,
+                      lastPingAt: telematicsLocation.timestamp || new Date().toISOString(),
+                      tripId: reservation?.trip_id || activeBooking?.tripId || "",
+                      delayMinutes: telematicsLocation.delayMinutes || 0,
+                      estimatedArrivalNextStopMins: Number(telematicsLocation.estimatedArrivalNextStopMins || 2),
+                    }
+                  : undefined
+              }
+              busName={displayBusNum}
+              tripStatus={assignedTripStatus || "IN_PROGRESS"}
+              stops={stops}
+              selectedStopId={assignedStop?.id}
+              height="260px"
+              zoom={14}
+              showUserLocation={true}
+            />
+          </div>
+        )}
+
+        {/* Quick Proximity Unlock / Status Strip */}
+        {!isLockCleared && (
+          <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs relative z-10">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold text-slate-200">Seat Selection Locked: </span>
+                <span className="text-slate-400">
+                  {busToUserDistMeters !== null
+                    ? `You are ${busToUserDistMeters}m from ${displayBusNum}`
+                    : `Approach ${displayBusNum} (<2m) or tap RFID card on the bus reader to unlock`}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleQuickProximityUnlock}
+              disabled={isQuickUnlocking}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {isQuickUnlocking ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying Proximity...</span>
+                </>
+              ) : (
+                <>
+                  <Radio className="w-3.5 h-3.5" />
+                  <span>Distance Unlock (&lt;2m)</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Dynamic Commute Schedule Resolution (NO HARDCODED DAYS - strictly follows timetable schedule):
   const isTodayOff = useMemo(() => {
@@ -927,6 +1324,9 @@ export default function SmartTransitCockpit({
           </div>
         )}
 
+        {/* ─── LIVE BUS TELEMATICS RADAR CARD (STATE-OF-THE-ART COMMUTE TRACKER) ─── */}
+        {renderLiveBusRadarCard()}
+
         {/* Assigned Bus Info Bar */}
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
@@ -1153,6 +1553,9 @@ export default function SmartTransitCockpit({
 
   return (
     <div className="space-y-6">
+      {/* ─── LIVE BUS TELEMATICS RADAR CARD (STATE-OF-THE-ART COMMUTE TRACKER) ─── */}
+      {renderLiveBusRadarCard()}
+
       {/* Confirmed Commute Card */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
         <div className="flex items-center justify-between pb-6 border-b border-slate-100 dark:border-slate-800">

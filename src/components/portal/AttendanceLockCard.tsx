@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 
 interface AttendanceLockCardProps {
-  busId?: number;
+  busId?: number | string;
   studentId?: string;
-  busNumber?: number;
+  busNumber?: number | string;
   gpsDeviceId?: string;
   onUnlocked?: () => void;
   onStatusChange?: (status: "LOCKED" | "UNLOCKED") => void;

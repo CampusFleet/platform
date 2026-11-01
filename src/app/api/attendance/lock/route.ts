@@ -25,19 +25,25 @@ function getTodayIST(): { today: string; utcToday: string; allowedDates: string[
 }
 
 async function getLiveBusCoordinates(
-  busId: string,
+  busId: string | number,
   gpsDeviceId?: string | null,
-  busNumber?: string | null
+  busNumber?: string | number | null
 ): Promise<{ latitude: number; longitude: number } | null> {
   if (!busId) return null;
 
-  // Build all candidate keys to check in Redis
+  const strBusId = String(busId).trim();
+  const strGpsDeviceId = gpsDeviceId ? String(gpsDeviceId).trim() : null;
+  const strBusNumber = busNumber !== undefined && busNumber !== null ? String(busNumber).trim() : null;
+
+  // Build all candidate keys to check in Redis safely
   const busIdsToCheck = Array.from(new Set([
-    busId,
-    busId.toLowerCase(),
-    busId.toUpperCase(),
-    ...(gpsDeviceId ? [gpsDeviceId, gpsDeviceId.toLowerCase(), gpsDeviceId.toUpperCase()] : []),
-    ...(busNumber ? [busNumber, busNumber.toLowerCase(), busNumber.replace(/[^0-9]/g, "")] : []),
+    strBusId,
+    strBusId.toLowerCase(),
+    strBusId.toUpperCase(),
+    `bus-${strBusId}`,
+    `Bus ${strBusId}`,
+    ...(strGpsDeviceId ? [strGpsDeviceId, strGpsDeviceId.toLowerCase(), strGpsDeviceId.toUpperCase()] : []),
+    ...(strBusNumber ? [strBusNumber, strBusNumber.toLowerCase(), strBusNumber.replace(/[^0-9]/g, "")] : []),
   ].filter(Boolean)));
 
   // 1. Query Redis in parallel (20-40ms total)
@@ -55,12 +61,12 @@ async function getLiveBusCoordinates(
 
   // 2. Fallback to MongoDB ONLY IF Redis completely misses — single call with strict 800ms race timeout
   try {
-    const mongoPromise = getLiveLocationFromMongo(busId);
+    const mongoPromise = getLiveLocationFromMongo(strBusId);
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
     const mongoLoc = await Promise.race([mongoPromise, timeoutPromise]);
     if (mongoLoc && typeof mongoLoc.latitude === "number" && typeof mongoLoc.longitude === "number") {
       const loc = { latitude: mongoLoc.latitude, longitude: mongoLoc.longitude };
-      cacheSet(`telematics:bus:${busId}`, loc, 60).catch(() => {});
+      cacheSet(`telematics:bus:${strBusId}`, loc, 60).catch(() => {});
       return loc;
     }
   } catch {
@@ -396,8 +402,17 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
+      // Resolve bus asset details (e.g. gps_device_id and bus_number) for multi-key Redis search
+      const isNumBus = /^\d+$/.test(String(effectiveBusId));
+      const { data: dbBus } = isNumBus
+        ? await supabaseAdmin.from("buses").select("id, bus_number, gps_device_id").eq("id", Number(effectiveBusId)).maybeSingle()
+        : await supabaseAdmin.from("buses").select("id, bus_number, gps_device_id").or(`rfid_device_id.eq.${effectiveBusId},gps_device_id.eq.${effectiveBusId}`).maybeSingle();
+
+      const targetGpsId = dbBus?.gps_device_id || null;
+      const targetBusNum = dbBus?.bus_number ? String(dbBus.bus_number) : null;
+
       // Query live bus GPS telematics
-      const busCoordinates = await getLiveBusCoordinates(effectiveBusId);
+      const busCoordinates = await getLiveBusCoordinates(effectiveBusId, targetGpsId, targetBusNum);
 
       // SECURITY GUARDRAIL: Reject immediately if driver is offline or GPS is not broadcasting
       if (!busCoordinates) {

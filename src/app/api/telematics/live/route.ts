@@ -131,14 +131,18 @@ export async function POST(req: NextRequest) {
     };
 
     // 1. Store in Redis with a 120-second TTL for live bus GPS verification
+    const strBusId = String(busId).trim();
     const redisPromises = [
-      cacheSet(`telematics:bus:${busId}`, locationData, 120),
-      cacheSet(`telematics:bus:${busId.toLowerCase()}`, locationData, 120),
+      cacheSet(`telematics:bus:${strBusId}`, locationData, 120),
+      cacheSet(`telematics:bus:${strBusId.toLowerCase()}`, locationData, 120),
+      cacheSet(`telematics:bus:bus-${strBusId}`, locationData, 120),
+      cacheSet(`telematics:bus:Bus ${strBusId}`, locationData, 120),
     ];
     if (busNumber) {
-      redisPromises.push(cacheSet(`telematics:bus:${busNumber}`, locationData, 120));
-      redisPromises.push(cacheSet(`telematics:bus:${busNumber.toLowerCase()}`, locationData, 120));
-      const numericOnly = busNumber.replace(/[^0-9]/g, "");
+      const strBusNum = String(busNumber).trim();
+      redisPromises.push(cacheSet(`telematics:bus:${strBusNum}`, locationData, 120));
+      redisPromises.push(cacheSet(`telematics:bus:${strBusNum.toLowerCase()}`, locationData, 120));
+      const numericOnly = strBusNum.replace(/[^0-9]/g, "");
       if (numericOnly) {
         redisPromises.push(cacheSet(`telematics:bus:${numericOnly}`, locationData, 120));
       }

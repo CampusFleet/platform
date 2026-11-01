@@ -21,6 +21,7 @@ import {
   UserCheck,
   Lock,
   Unlock,
+  Calendar,
   Moon,
   ArrowLeftRight,
   XCircle,
@@ -76,7 +77,7 @@ export default function SmartTransitCockpit({
   const [occupiedSeats, setOccupiedSeats] = useState<string[]>([]);
   const [isRfidVerified, setIsRfidVerified] = useState<boolean>(false);
   const [isLoadingReservation, setIsLoadingReservation] = useState(
-    !initialReservation && !initialSchedule?.isTodayOff && !initialSchedule?.isAllShiftsOver
+    initialReservation === undefined && initialSchedule === undefined
   );
 
   // Seat attendance state
@@ -153,8 +154,8 @@ export default function SmartTransitCockpit({
   };
 
   useEffect(() => {
-    // If SSR provided initialReservation, perform background sync quietly without showing skeleton
-    fetchReservation(Boolean(initialReservation));
+    // If SSR provided initialReservation or initialSchedule, perform background sync quietly without showing skeleton
+    fetchReservation(Boolean(initialReservation || initialSchedule));
   }, [studentId]);
 
   // Active booking scoped to today's active commute / reservation
@@ -311,7 +312,9 @@ export default function SmartTransitCockpit({
 
   // Dynamic Commute Schedule Resolution (NO HARDCODED DAYS - strictly follows timetable schedule):
   const isTodayOff = useMemo(() => {
-    if (schedule?.isTodayOff || schedule?.is_today_off) return true;
+    // 1. Direct flag on current schedule state
+    if (schedule?.isTodayOff === true || schedule?.is_today_off === true) return true;
+    // 2. Both shifts null/empty on schedule
     if (
       schedule &&
       !schedule.incomingShiftId &&
@@ -321,12 +324,24 @@ export default function SmartTransitCockpit({
     ) {
       return true;
     }
+    // 3. SSR initialSchedule fallback before client fetch completes
+    if (initialSchedule?.isTodayOff === true || initialSchedule?.is_today_off === true) return true;
+    if (
+      initialSchedule &&
+      !initialSchedule.incomingShiftId &&
+      !initialSchedule.outgoingShiftId &&
+      !initialSchedule.incoming_shift_id &&
+      !initialSchedule.outgoing_shift_id
+    ) {
+      return true;
+    }
     return false;
-  }, [schedule]);
+  }, [schedule, initialSchedule]);
 
-  // Check if all commute shifts for today have concluded
+  // Check if all commute shifts for today have concluded (ONLY FOR ACTIVE COMMUTE DAYS, NEVER ON OFF DAYS)
   const isAllShiftsOver = useMemo(() => {
-    if (isTodayOff) return true;
+    // If today is an off day, shifts are NOT over (there were none scheduled today)
+    if (isTodayOff) return false;
     if (schedule?.isAllShiftsOver) return true;
 
     // Check IST time against fleet shift schedule
@@ -541,22 +556,158 @@ export default function SmartTransitCockpit({
     }
   };
 
-  // ─── 0. LOADING SKELETON ──────────────────────────────────────────
+  // ─── 0. HIGH-PERFORMANCE ZERO-CLS COMMUTE SKELETON ──────────────────
   if (isLoadingReservation) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col items-center justify-center min-h-[360px] text-center space-y-4 animate-pulse">
-        <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-          <BusFront className="w-7 h-7 animate-pulse" />
-        </div>
-        <div className="space-y-2">
-          <div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg mx-auto" />
-          <div className="h-3.5 w-64 bg-slate-100 dark:bg-slate-800/60 rounded-lg mx-auto" />
+      <div className="space-y-6 animate-pulse">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
+          {/* Header pill skeleton */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-slate-100 dark:border-slate-800">
+            <div className="h-6 w-36 bg-slate-200 dark:bg-slate-800 rounded-full" />
+            <div className="h-4 w-28 bg-slate-100 dark:bg-slate-800/60 rounded-md" />
+          </div>
+
+          {/* Title & subtitle skeleton */}
+          <div className="space-y-3">
+            <div className="h-8 w-64 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+            <div className="h-4 w-96 max-w-full bg-slate-100 dark:bg-slate-800/60 rounded-lg" />
+          </div>
+
+          {/* Metric cards grid skeleton */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 space-y-2"
+              >
+                <div className="h-3.5 w-20 bg-slate-200 dark:bg-slate-700 rounded" />
+                <div className="h-5 w-28 bg-slate-300 dark:bg-slate-600 rounded" />
+              </div>
+            ))}
+          </div>
+
+          {/* Live radar container placeholder */}
+          <div className="h-56 rounded-2xl bg-slate-100/70 dark:bg-slate-800/30 border border-slate-200/60 dark:border-slate-800 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center">
+                <BusFront className="w-5 h-5 animate-pulse" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium">Syncing live transit telemetry...</span>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ─── 0.5 ALL COMMUTE SHIFTS COMPLETED FOR TODAY ──────────────────
+  // ─── 0.4 TODAY IS SCHEDULED OFF (ACADEMIC TIMETABLE DAY OFF) ────────
+  if (isTodayOff) {
+    const todayName = schedule?.dayOfWeek || initialSchedule?.dayOfWeek || "Today";
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
+          {/* Top Status Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-slate-100 dark:border-slate-800">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span>No Bus Shifts Scheduled Today</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <Calendar className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+              <span>Timetable Scheduled Off ({todayName})</span>
+            </div>
+          </div>
+
+          {/* Greeting Headline */}
+          <div className="space-y-2 max-w-2xl">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <span>No Transit Scheduled for Today</span>
+              <Sparkles className="w-6 h-6 text-amber-500 shrink-0" />
+            </h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Your academic timetable has no bus commute shifts scheduled for {todayName}. Enjoy your day off—CampusFleet will be ready to pick you up for your next scheduled academic commute!
+            </p>
+          </div>
+
+          {/* Tomorrow's / Next Scheduled Commute Preview */}
+          <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 p-5 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <span>Next Scheduled Commute</span>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                Scheduled
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 space-y-1">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Departure Time</span>
+                </div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                  {formatShiftTime(tomorrowShiftStartTime) || "07:15 AM"}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 space-y-1">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Pick-Up Stop</span>
+                </div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white truncate" title={tomorrowPickupStop}>
+                  {tomorrowPickupStop}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 space-y-1">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
+                  <BusFront className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Shift Type</span>
+                </div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  {tomorrowMorningShift?.name || "Morning Academic Daily Shift"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="pt-2 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => router.push("/portal/qr/show")}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 text-white text-xs font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>Show My QR Pass</span>
+            </button>
+
+            <button
+              onClick={() => fetchReservation()}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh Schedule</span>
+            </button>
+
+            <Link
+              href={settingsHref}
+              className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white font-medium transition-colors ml-auto"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Settings</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 0.5 TODAY'S COMMUTE CONCLUDED (ACTIVE DAY ALL SHIFTS OVER) ──
   // "if todays all shift are over show in my commute: thank you for today lets see tomorrow"
   if (isAllShiftsOver) {
     const todaySeat = reservation?.chosen_seat || tentativeSeat;
@@ -569,26 +720,24 @@ export default function SmartTransitCockpit({
           {/* Top Status Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-slate-100 dark:border-slate-800">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold">
-              <span className={`w-2 h-2 rounded-full ${isTodayOff ? "bg-amber-500" : "bg-emerald-500"}`} />
-              <span>{isTodayOff ? "No Bus Shifts Scheduled Today" : "Today's Commute Concluded"}</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Today's Commute Concluded</span>
             </div>
 
             <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <Moon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-              <span>{isTodayOff ? "Timetable Scheduled Off" : "All Shifts Completed"}</span>
+              <span>All Shifts Completed</span>
             </div>
           </div>
 
           {/* Greeting Headline */}
           <div className="space-y-2 max-w-2xl">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-              <span>{isTodayOff ? "No Transit Scheduled for Today" : "Thank You for Today! See You Tomorrow"}</span>
+              <span>Thank You for Today! See You Tomorrow</span>
               <Sparkles className="w-6 h-6 text-amber-500 shrink-0" />
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              {isTodayOff
-                ? "Your academic timetable has no bus commute shifts scheduled for today. Rest well—CampusFleet will be ready to pick you up for your next scheduled commute!"
-                : "All scheduled bus shifts for today have successfully concluded. Rest well tonight—CampusFleet will be ready to pick you up tomorrow morning!"}
+              All scheduled bus shifts for today have successfully concluded. Rest well tonight—CampusFleet will be ready to pick you up tomorrow morning!
             </p>
           </div>
 
@@ -663,7 +812,7 @@ export default function SmartTransitCockpit({
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Check Updates</span>
+              <span>Refresh Commute Status</span>
             </button>
 
             <Link

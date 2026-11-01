@@ -14,17 +14,25 @@ export default async function StudentPortalPage() {
     redirect("/login?redirect=/portal");
   }
 
-  // Resolve student record by user_id, id, or email
+  // Resolve student record by user_id, id, or email with sub-2ms Redis cache-aside
   const studentOrFilter = [
     `user_id.eq.${session.userId}`,
     `id.eq.${session.userId}`,
     session.email ? `email.eq.${session.email}` : null,
   ].filter(Boolean).join(",");
 
-  const { data: dbStudents } = await supabaseAdmin
-    .from("students_full")
-    .select("*")
-    .or(studentOrFilter);
+  const dbStudents = await getOrFetchWithCache({
+    key: `portal:student_row:${session.userId}`,
+    ttl: 60,
+    allowEmpty: true,
+    fetchFn: async () => {
+      const { data } = await supabaseAdmin
+        .from("students_full")
+        .select("*")
+        .or(studentOrFilter);
+      return data || [];
+    },
+  });
 
   const activeStudentRow = dbStudents?.[0];
   const resolvedStudentId = activeStudentRow?.id || session.userId;
@@ -34,6 +42,7 @@ export default async function StudentPortalPage() {
   const todayIST = istDate.toISOString().split("T")[0];
   const todayUTC = now.toISOString().split("T")[0];
   const allowedDates = Array.from(new Set([todayIST, todayUTC]));
+  const currentDayOfWeek = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][istDate.getUTCDay()];
 
   // ── Parallel fetch: cached shared fleet data + per-student dynamic queries ──
   const [sharedData, ...perStudentResults] = await Promise.all([
@@ -83,12 +92,20 @@ export default async function StudentPortalPage() {
       .order("created_at", { ascending: false })
       .limit(1),
     activeStudentRow?.class_id
-      ? supabaseAdmin
-          .from("class_shift_schedules")
-          .select("incoming_shift_id, outgoing_shift_id, is_today_off")
-          .eq("class_id", activeStudentRow.class_id)
-          .eq("day_of_week", ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][istDate.getUTCDay()])
-          .maybeSingle()
+      ? getOrFetchWithCache({
+          key: `schedule:class:${activeStudentRow.class_id}:${currentDayOfWeek}`,
+          ttl: 120,
+          allowEmpty: true,
+          fetchFn: async () => {
+            const { data } = await supabaseAdmin
+              .from("class_shift_schedules")
+              .select("incoming_shift_id, outgoing_shift_id, is_today_off")
+              .eq("class_id", activeStudentRow.class_id)
+              .eq("day_of_week", currentDayOfWeek)
+              .maybeSingle();
+            return data;
+          },
+        }).then(data => ({ data }))
       : Promise.resolve({ data: null }),
   ]);
 
@@ -295,8 +312,8 @@ export default async function StudentPortalPage() {
         incomingShiftId: isTodayOff ? "" : (dbClassSchedule.incoming_shift_id || ""),
         outgoingShiftId: isTodayOff ? "" : (dbClassSchedule.outgoing_shift_id || ""),
         isTodayOff,
-        isAllShiftsOver: isTodayOff,
-        dayOfWeek: ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][istDate.getUTCDay()],
+        isAllShiftsOver: false,
+        dayOfWeek: currentDayOfWeek,
         reason: dbClassSchedule.is_today_off ? "CLASS_DAY_OFF" : "NO_SHIFTS_CONFIGURED",
       }
     : null;

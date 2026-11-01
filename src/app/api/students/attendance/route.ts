@@ -157,9 +157,8 @@ export async function GET(req: NextRequest) {
       if (endM > latestFleetShiftEndMinutes) latestFleetShiftEndMinutes = endM;
     }
 
-    // All shifts are over if past all fleet shift end times, or student completed outgoing, or today is off
-    const isAllShiftsOver = Boolean(
-      isTodayOff ||
+    // All shifts are over if past all fleet shift end times, or student completed outgoing (strictly only on active transit days)
+    const isAllShiftsOver = !isTodayOff && Boolean(
       (latestFleetShiftEndMinutes > 0 && currentIstMinutes >= latestFleetShiftEndMinutes) ||
       (isIncomingOver && isOutgoingOver)
     );

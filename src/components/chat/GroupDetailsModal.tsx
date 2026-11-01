@@ -57,8 +57,6 @@ export function GroupDetailsModal({
   const [mediaSubTab, setMediaSubTab] = useState<"media" | "docs">("media");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
-  if (!isOpen || !conversation) return null;
-
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 2500);
@@ -66,6 +64,8 @@ export function GroupDetailsModal({
 
   // Generate contextual members based on channel category
   const membersList: MemberItem[] = useMemo(() => {
+    if (!conversation) return [];
+
     if (conversation.id === "ops-dispatch") {
       return [
         { id: "m1", name: "Operations Director", role: "admin", roleBadge: "OWNER", initials: "OD", avatarBg: "bg-blue-600 text-white", lastSeen: "Online" },
@@ -95,8 +95,8 @@ export function GroupDetailsModal({
       ];
     }
 
-    if (conversation.category === "bus" || conversation.name.startsWith("Bus ")) {
-      const busNum = conversation.busNumber || conversation.name.replace(/\D/g, "") || "49";
+    if (conversation.category === "bus" || (conversation.name && conversation.name.startsWith("Bus "))) {
+      const busNum = conversation.busNumber || (conversation.name ? conversation.name.replace(/\D/g, "") : "") || "49";
       return [
         { id: "b1", name: `Bus ${busNum} Primary Driver`, role: "driver", roleBadge: "DRIVER", initials: "DR", avatarBg: "bg-indigo-600 text-white", lastSeen: "Online (Driving)" },
         { id: "b2", name: `Bus ${busNum} Conductor`, role: "conductor", roleBadge: "CONDUCTOR", initials: "CO", avatarBg: "bg-amber-600 text-white", lastSeen: "last seen today at 09:12" },
@@ -142,19 +142,23 @@ export function GroupDetailsModal({
   // Extract media and documents from messages
   const mediaItems = useMemo(() => {
     const list: { id: string; url: string; name?: string; type: string; date: string }[] = [];
-    messages.forEach((m) => {
-      if (m.attachments && m.attachments.length > 0) {
-        m.attachments.forEach((a, i) => {
-          list.push({
-            id: `${m.id}-${i}`,
-            url: a.url,
-            name: a.name || `Attachment ${i + 1}`,
-            type: a.type || "image",
-            date: m.createdAt || new Date().toISOString(),
+    if (messages && Array.isArray(messages)) {
+      messages.forEach((m) => {
+        if (m && m.attachments && Array.isArray(m.attachments)) {
+          m.attachments.forEach((a, i) => {
+            if (a && a.url) {
+              list.push({
+                id: `${m.id}-${i}`,
+                url: a.url,
+                name: a.name || `Attachment ${i + 1}`,
+                type: a.type || "image",
+                date: m.createdAt || new Date().toISOString(),
+              });
+            }
           });
-        });
-      }
-    });
+        }
+      });
+    }
 
     // Provide representative samples if no media attached yet
     if (list.length === 0) {
@@ -179,10 +183,14 @@ export function GroupDetailsModal({
   }, []);
 
   const starredCount = useMemo(() => {
-    return messages.filter((m) => (m as any).isStarred).length;
+    if (!messages || !Array.isArray(messages)) return 0;
+    return messages.filter((m) => (m as any)?.isStarred).length;
   }, [messages]);
 
   const memberRoleTag = currentUserRole === "admin" || currentUserRole === "transport_admin" ? "ADMIN" : "MEMBER";
+
+  // Unconditional hook execution complete; return early only before JSX render
+  if (!isOpen || !conversation) return null;
 
   return (
     <div

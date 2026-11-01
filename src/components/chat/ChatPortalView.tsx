@@ -1089,14 +1089,16 @@ export function ChatPortalView() {
             )}
 
             {/* CampusFleet Group Details Modal */}
-            <GroupDetailsModal
-              isOpen={isDetailsOpen}
-              onClose={() => setIsDetailsOpen(false)}
-              conversation={activeConversation}
-              messages={messages}
-              currentUserRole={currentUser?.role}
-              onClearChat={() => setMessages([])}
-            />
+            {isDetailsOpen && activeConversation && (
+              <GroupDetailsModal
+                isOpen={isDetailsOpen}
+                onClose={() => setIsDetailsOpen(false)}
+                conversation={activeConversation}
+                messages={messages || []}
+                currentUserRole={currentUser?.role}
+                onClearChat={() => setMessages([])}
+              />
+            )}
 
             {/* Message Thread (Matching Screenshot 5) */}
             <div

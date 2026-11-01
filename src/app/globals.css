@@ -37,18 +37,23 @@
     --popover-foreground: 210 40% 98%;
     --primary: 217 91% 60%;
     --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 17%;
+    --secondary: 0 0% 9%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
+    --muted: 0 0% 9%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217 33% 17%;
+    --accent: 0 0% 9%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
     --ring: 224 76% 48%;
   }
+}
+
+html.dark {
+  background-color: #000000;
+  color-scheme: dark;
 }
 
 body {
@@ -57,6 +62,10 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background-color: #000000;
 }
 
 /* Custom Scrollbars */

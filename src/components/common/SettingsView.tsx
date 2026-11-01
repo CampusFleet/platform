@@ -103,6 +103,23 @@ export function SettingsView() {
   const [mounted, setMounted] = useState(false);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
+  const [navStyle, setNavStyle] = useState<"top" | "side">("top");
+  const [isNavDropdownOpen, setIsNavDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const savedNav = localStorage.getItem("campusfleet_nav_style") as "top" | "side" | null;
+    if (savedNav === "top" || savedNav === "side") {
+      setNavStyle(savedNav);
+    }
+  }, []);
+
+  const handleSetNavStyle = (style: "top" | "side") => {
+    setNavStyle(style);
+    localStorage.setItem("campusfleet_nav_style", style);
+    window.dispatchEvent(new Event("campusfleet_nav_style_changed"));
+    setIsNavDropdownOpen(false);
+  };
+
   const fontOptions = [
     { value: "system", label: "System Default" },
     { value: "inter, sans-serif", label: "Inter" },
@@ -1488,6 +1505,63 @@ export function SettingsView() {
                             {fontFamily === font.value && <Check className="w-4 h-4 text-gray-900 dark:text-white" />}
                           </button>
                         ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="h-px bg-gray-100 dark:bg-gray-800/60" />
+
+            {/* Navigation Style (Top Nav vs Side Nav matching reference screenshot) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Navigation</h3>
+                <p className="text-sm text-gray-500">Choose between top navigation and side navigation</p>
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsNavDropdownOpen(!isNavDropdownOpen)}
+                  className="flex items-center justify-between min-w-[200px] px-4 py-2 text-sm font-medium border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-950 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-800"
+                >
+                  <span>{navStyle === "top" ? "Top Nav" : "Side Nav"}</span>
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                </button>
+
+                {isNavDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsNavDropdownOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-2 w-full z-20 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSetNavStyle("top")}
+                          className={`w-full text-left flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                            navStyle === "top"
+                              ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-medium"
+                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          <span>Top Nav</span>
+                          {navStyle === "top" && <Check className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetNavStyle("side")}
+                          className={`w-full text-left flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                            navStyle === "side"
+                              ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-medium"
+                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          <span>Side Nav</span>
+                          {navStyle === "side" && <Check className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+                        </button>
                       </div>
                     </div>
                   </>

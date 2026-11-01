@@ -170,13 +170,14 @@ export function UnifiedAppHeader({
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
   const [students, setStudents] = useState(store.getStudents());
 
-  // Dropdown & Drawer states
+  // Dropdown, Drawer & Navigation Style states
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAppsOpen, setIsAppsOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [hasCopiedId, setHasCopiedId] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [navStyle, setNavStyle] = useState<"top" | "side">("top");
 
   const profileRef = useRef<HTMLDivElement>(null);
   const appsRef = useRef<HTMLDivElement>(null);
@@ -187,7 +188,25 @@ export function UnifiedAppHeader({
       setCurrentUser(store.getCurrentUser());
       setStudents(store.getStudents());
     });
-    return unsub;
+
+    const savedNav = localStorage.getItem("campusfleet_nav_style") as "top" | "side" | null;
+    if (savedNav === "top" || savedNav === "side") {
+      setNavStyle(savedNav);
+    }
+
+    const handleNavStyleChange = () => {
+      const updated = localStorage.getItem("campusfleet_nav_style") as "top" | "side" | null;
+      if (updated === "top" || updated === "side") {
+        setNavStyle(updated);
+      }
+    };
+
+    window.addEventListener("campusfleet_nav_style_changed", handleNavStyleChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener("campusfleet_nav_style_changed", handleNavStyleChange);
+    };
   }, []);
 
   // Close menus on outside click
@@ -353,16 +372,18 @@ export function UnifiedAppHeader({
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-14 lg:h-16 flex items-center justify-between gap-3">
           {/* Left: Brand Identity & Optional Minimal Drawer Toggle */}
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-            {/* Minimal Mobile Drawer Button (inspired by side-nav mode in reference) */}
-            <button
-              type="button"
-              onClick={() => setIsDrawerOpen(true)}
-              className="lg:hidden p-1.5 -ml-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
-              title="Open Navigation Menu"
-              aria-label="Navigation Menu"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            {/* Minimal Mobile Drawer Button (only when Side Nav mode is chosen in Appearance settings) */}
+            {navStyle === "side" && (
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen(true)}
+                className="p-1.5 -ml-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
+                title="Open Navigation Menu"
+                aria-label="Navigation Menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
 
             <Link
               href={currentPortalConfig.path}
@@ -776,7 +797,7 @@ export function UnifiedAppHeader({
 
       {/* Sleek Side Drawer Menu (Inspiration from Screenshot 3) */}
       {isDrawerOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-50 flex">
           {/* Backdrop Blur */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"

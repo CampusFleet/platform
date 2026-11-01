@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateHaversineDistanceKm } from "@/lib/eta-calculator";
-import { cacheDel } from "@/lib/redis";
+import { cacheDel, invalidateCachedStudentProfile } from "@/lib/redis";
 import type { EnrichedPickupStop } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -372,6 +372,7 @@ export async function PUT(req: NextRequest) {
     });
 
     await cacheDel(`student:${studentId}`);
+    await invalidateCachedStudentProfile([studentId]);
 
     // Fetch enriched nearest stops for response
     const nearestStops = await calculateAndEnrichNearestStops(
@@ -535,6 +536,7 @@ export async function POST(req: NextRequest) {
       });
 
       await cacheDel(`student:${studentId}`);
+      await invalidateCachedStudentProfile([studentId, (curStudent as any)?.userId, (curStudent as any)?.user_id]);
 
       return NextResponse.json({
         success: true,

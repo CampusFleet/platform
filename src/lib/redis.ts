@@ -37,6 +37,7 @@ export const CACHE_TTL = {
   MASTER_DATA_PERMANENT: 3600, // 1 hour (auto-heals even if webhooks drop)
   CHAT_MESSAGES: 60, // 1 minute sliding cache for conversation messages
   CHAT_CONVERSATIONS: 30, // 30 seconds cache for user conversation lists
+  STUDENT_PROFILE: 1800, // 30 minutes cache for student profile (write-through / cache-aside)
 } as const;
 
 /**
@@ -180,4 +181,35 @@ export async function setCachedUserRole(userId: string, role: string): Promise<v
 
 export async function invalidateCachedUserRole(userId: string): Promise<void> {
   await cacheDel(getUserRoleKey(userId));
+}
+
+// ── Student Profile Caching Helpers (Write-Through & Cache-Aside) ───────────
+
+export function getStudentProfileKey(identifier: string): string {
+  return `student:profile:${identifier}`;
+}
+
+export async function getCachedStudentProfile<T = any>(identifier: string): Promise<T | null> {
+  return cacheGet<T>(getStudentProfileKey(identifier));
+}
+
+export async function setCachedStudentProfile(
+  identifier: string,
+  profile: any,
+  ttl: number = CACHE_TTL.STUDENT_PROFILE
+): Promise<void> {
+  await cacheSet(getStudentProfileKey(identifier), profile, ttl);
+}
+
+export async function invalidateCachedStudentProfile(
+  identifiers: (string | null | undefined)[]
+): Promise<void> {
+  const validIds = identifiers.filter((id): id is string => Boolean(id && id.trim()));
+  await Promise.allSettled(
+    validIds.flatMap((id) => [
+      cacheDel(`student:profile:${id}`),
+      cacheDel(`student:profile:${id.toLowerCase()}`),
+      cacheDel(`student:${id}`),
+    ])
+  );
 }

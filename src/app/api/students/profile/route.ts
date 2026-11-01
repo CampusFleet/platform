@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
-import { cacheSet } from "@/lib/redis";
+import { cacheSet, invalidateCachedStudentProfile } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -207,6 +207,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Update Redis cache for instant UI resolution
+    await invalidateCachedStudentProfile([userId, finalStudentId, cleanEmail]);
     if (finalPhotoUrl) {
       await cacheSet(`student:photo:${userId}`, finalPhotoUrl, 300);
     }

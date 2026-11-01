@@ -7,7 +7,8 @@ import { store } from "@/lib/store";
 import { 
   Sun, Moon, Bell, Shield, Database, Download, RefreshCw, MessageSquare, Trash, 
   ChevronDown, Check, Globe, Loader2, Type, MapPin, ArrowLeftRight, Navigation, CheckCircle2, AlertCircle, Clock, Bus,
-  Users, BusFront, QrCode, Settings as SettingsIcon, GraduationCap, GitBranch, Layers
+  Users, BusFront, QrCode, Settings as SettingsIcon, GraduationCap, GitBranch, Layers,
+  X, AlertTriangle, Info, Save
 } from "lucide-react";
 import { usePWAInstall } from "@/lib/usePWAInstall";
 import { InstallAppModal } from "@/components/common/InstallAppModal";
@@ -142,16 +143,36 @@ export function SettingsView() {
     }
   };
 
+  // Toast Notification state (Modern Vercel/Linear standard)
+  const [toast, setToast] = useState<{
+    id: string;
+    type: "success" | "error" | "warning" | "info";
+    title?: string;
+    message: string;
+  } | null>(null);
+
+  const showToast = (type: "success" | "error" | "warning" | "info", message: string, title?: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToast({ id, type, message, title });
+  };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   // Delete Account state
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [classesList, setClassesList] = useState<any[]>([]);
 
-
   const handleDeleteAccount = async () => {
     const confirmText = deleteConfirmation.trim().toUpperCase();
     if (confirmText !== "DELETE") {
-      alert("Please type DELETE to confirm.");
+      showToast("warning", "Please type DELETE to confirm account deletion.", "Confirmation Required");
       return;
     }
     
@@ -167,11 +188,12 @@ export function SettingsView() {
       
       store.wipeAllData();
       localStorage.removeItem("campusfleet_store");
+      showToast("success", "Your account has been deleted.", "Account Deleted");
       
       window.location.href = "/account-deleted";
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("An error occurred while deleting your account.");
+      showToast("error", err?.message || "An error occurred while deleting your account.", "Deletion Failed");
       setIsDeleting(false);
     }
   };
@@ -289,12 +311,14 @@ export function SettingsView() {
     }
   };
   
-  // Handle simple alerts
+  // Handle simple notifications
   const handleNotImplemented = (feature: string) => {
-    alert(feature + " is not currently available for your account type.");
+    showToast("info", `${feature} is not currently available for your account type.`, "Feature Notice");
   };
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavedRecently, setIsSavedRecently] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [profileForm, setProfileForm] = useState({
     fullName: "",
     phone: "",
@@ -497,7 +521,7 @@ export function SettingsView() {
 
   const handleDetectGPS = () => {
     if (typeof window === "undefined" || !navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      showToast("warning", "Geolocation is not supported by your browser.", "GPS Error");
       return;
     }
     setIsDetectingGPS(true);
@@ -508,11 +532,12 @@ export function SettingsView() {
         setHomeLat(lat.toFixed(6));
         setHomeLng(lng.toFixed(6));
         setIsDetectingGPS(false);
+        showToast("success", `GPS location locked (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "Location Acquired");
         // Automatically fetch street/area address from map provider (OSM / Google)
         fetchAddressForCoordinates(lat, lng);
       },
       err => {
-        alert("Failed to acquire GPS location: " + err.message);
+        showToast("error", "Failed to acquire GPS location: " + err.message, "GPS Error");
         setIsDetectingGPS(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -523,7 +548,7 @@ export function SettingsView() {
     const lat = parseFloat(homeLat);
     const lng = parseFloat(homeLng);
     if (isNaN(lat) || isNaN(lng)) {
-      alert("Please provide valid numeric latitude and longitude coordinates.");
+      showToast("warning", "Please provide valid numeric latitude and longitude coordinates.", "Coordinates Required");
       return;
     }
     const user = store.getCurrentUser();
@@ -552,7 +577,9 @@ export function SettingsView() {
       if (data.nearestStops) {
         setNearestStops(data.nearestStops);
       }
-      setHomeStatusMsg(data.message || "Home coordinates and stop assignment saved successfully!");
+      const successMsg = data.message || "Home coordinates and stop assignment saved successfully!";
+      setHomeStatusMsg(successMsg);
+      showToast("success", successMsg, "Stop Assignment Saved");
 
       // Refresh today's reservation immediately
       fetch(`/api/students/attendance?studentId=${studentId}`)
@@ -564,7 +591,7 @@ export function SettingsView() {
         })
         .catch(() => {});
     } catch (err: any) {
-      alert(err.message || "Error saving home location");
+      showToast("error", err.message || "Error saving home location", "Save Error");
     } finally {
       setIsSavingHome(false);
     }
@@ -591,10 +618,12 @@ export function SettingsView() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.message || "Failed to update pickup stop");
+        showToast("error", data.message || "Failed to update pickup stop", "Stop Selection Failed");
       } else {
         setAutoAssignedStopId(stopId);
-        setHomeStatusMsg(`✓ Primary pickup stop updated to "${stopName}"`);
+        const successMsg = `Primary pickup stop updated to "${stopName}"`;
+        setHomeStatusMsg(`✓ ${successMsg}`);
+        showToast("success", successMsg, "Stop Assigned");
         // Refresh today's reservation
         fetch(`/api/students/attendance?studentId=${studentId}`)
           .then(r => r.json())
@@ -606,7 +635,7 @@ export function SettingsView() {
           .catch(() => {});
       }
     } catch (e: any) {
-      alert(e.message || "Error selecting stop");
+      showToast("error", e.message || "Error selecting stop", "Stop Selection Error");
     } finally {
       setIsSelectingStop(false);
     }
@@ -623,7 +652,7 @@ export function SettingsView() {
     const currentStopId = activeReservation?.boarding_stop_id || activeReservation?.boardingStopId || activeStudent?.primaryStopId || (availableStops[0]?.id || "");
 
     if (!targetBusId && !targetStopId) {
-      alert("Please select either a requested bus or requested stop.");
+      showToast("warning", "Please select either a requested bus or requested stop.", "Selection Required");
       return;
     }
 
@@ -646,16 +675,19 @@ export function SettingsView() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to submit request");
+      const isAuto = data.evaluation?.overallDecision === "AUTO_APPROVED";
+      const statusText = data.message || "Switch request submitted.";
       setSwitchStatusMsg({
-        type: data.evaluation?.overallDecision === "AUTO_APPROVED" ? "success" : "error",
-        text: data.message || "Switch request submitted.",
+        type: isAuto ? "success" : "error",
+        text: statusText,
       });
+      showToast(isAuto ? "success" : "info", statusText, isAuto ? "Transfer Auto-Approved" : "Switch Submitted");
       if (data.request) {
         setSwitchRequests(prev => [data.request, ...prev]);
       }
       setSwitchReason("");
     } catch (err: any) {
-      alert(err.message || "Error submitting switch request");
+      showToast("error", err.message || "Error submitting switch request", "Switch Request Error");
     } finally {
       setIsSubmittingSwitch(false);
     }
@@ -730,7 +762,15 @@ export function SettingsView() {
   if (!mounted) return null;
 
   const handleSaveProfile = async () => {
+    if (!profileForm.fullName || profileForm.fullName.trim().length < 2) {
+      showToast("error", "Full name must be at least 2 characters.", "Validation Error");
+      setSaveFeedback({ type: "error", message: "Full name must be at least 2 characters." });
+      return;
+    }
+
     setIsSaving(true);
+    setSaveFeedback(null);
+
     try {
       const res = await fetch("/api/users/update-profile", {
         method: "POST",
@@ -742,27 +782,47 @@ export function SettingsView() {
 
       const user = store.getCurrentUser();
       const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-      if (activeStudent) {
-        await store.updateStudentProfile(activeStudent.id, {
-          fullName: profileForm.fullName,
-          phone: profileForm.phone,
-          department: profileForm.department,
+      const studentId = data.student?.id || activeStudent?.id || (user ? `stud-${user.id}` : "");
+
+      if (studentId) {
+        await store.updateStudentProfile(studentId, {
+          fullName: profileForm.fullName.trim(),
+          phone: profileForm.phone?.trim(),
+          department: data.student?.department || profileForm.department,
           semester: profileForm.semester,
           classId: profileForm.classId,
-          className: profileForm.className,
+          className: data.student?.className || profileForm.className,
           studentIdCode: profileForm.studentIdCode,
           emergencyContact: {
-            name: profileForm.emergencyContactName,
+            name: profileForm.emergencyContactName?.trim(),
             relationship: "Parent / Guardian",
-            phone: profileForm.emergencyContactPhone
+            phone: profileForm.emergencyContactPhone?.trim()
           }
         });
       }
 
-      alert("Profile updated successfully!");
+      // Update current user state and local storage
+      if (user) {
+        const updatedUser = {
+          ...user,
+          fullName: profileForm.fullName.trim(),
+          phone: profileForm.phone?.trim() || (user as any).phone
+        };
+        store.setCurrentUser(updatedUser);
+        setCurrentUser(updatedUser);
+      }
+
+      setIsSavedRecently(true);
+      setTimeout(() => setIsSavedRecently(false), 3500);
+
+      const successMsg = data.message || "Profile updated successfully! All details cached.";
+      setSaveFeedback({ type: "success", message: successMsg });
+      showToast("success", successMsg, "Saved Successfully");
     } catch (err: any) {
-      console.error(err);
-      alert(err.message || "An error occurred");
+      console.error("Profile save error:", err);
+      const errMsg = err.message || "An error occurred while updating profile.";
+      setSaveFeedback({ type: "error", message: errMsg });
+      showToast("error", errMsg, "Update Failed");
     } finally {
       setIsSaving(false);
     }
@@ -786,6 +846,38 @@ export function SettingsView() {
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col ${isEnclosedInPortalLayout ? 'pb-16' : 'pb-24 md:pb-12'}`}>
+      {/* Toast Notification Container (Floating Top-Right) */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[9999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className={`p-4 rounded-xl shadow-2xl border backdrop-blur-xl flex items-start gap-3 transition-all ${
+            toast.type === "success" 
+              ? "bg-zinc-900/95 text-zinc-100 border-emerald-500/50 shadow-emerald-950/30" 
+              : toast.type === "error"
+              ? "bg-zinc-900/95 text-zinc-100 border-rose-500/50 shadow-rose-950/30"
+              : toast.type === "warning"
+              ? "bg-zinc-900/95 text-zinc-100 border-amber-500/50 shadow-amber-950/30"
+              : "bg-zinc-900/95 text-zinc-100 border-zinc-700/60 shadow-zinc-950/40"
+          }`}>
+            <div className="shrink-0 mt-0.5">
+              {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+              {toast.type === "error" && <AlertCircle className="w-5 h-5 text-rose-400" />}
+              {toast.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-400" />}
+              {toast.type === "info" && <Info className="w-5 h-5 text-sky-400" />}
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              {toast.title && <h4 className="text-sm font-semibold tracking-tight text-white mb-0.5">{toast.title}</h4>}
+              <p className="text-xs text-zinc-300 leading-relaxed font-normal">{toast.message}</p>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="shrink-0 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {!isEnclosedInPortalLayout && (
         <UnifiedAppHeader
           role={detectedRole}
@@ -1069,13 +1161,51 @@ export function SettingsView() {
               </>
             )}
 
-            <div className="pt-4 flex flex-col sm:flex-row justify-end items-center gap-3">
+            <div className="pt-5 flex flex-col sm:flex-row justify-between items-center gap-3 border-t border-gray-100 dark:border-gray-800/60">
+              <div className="w-full sm:w-auto">
+                {saveFeedback && (
+                  <div className={`px-3 py-2 text-xs font-medium rounded-md flex items-center gap-2 border animate-in fade-in duration-200 ${
+                    saveFeedback.type === "success"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60"
+                      : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60"
+                  }`}>
+                    {saveFeedback.type === "success" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                    )}
+                    <span>{saveFeedback.message}</span>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleSaveProfile}
                 disabled={isSaving}
-                className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-none transition-colors text-sm shadow-sm active:scale-95 cursor-pointer"
+                className={`w-full sm:w-auto px-6 py-2.5 rounded-md font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-sm cursor-pointer ${
+                  isSavedRecently
+                    ? "bg-emerald-700 text-white"
+                    : isSaving
+                    ? "bg-emerald-600/70 text-white cursor-not-allowed"
+                    : "bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white"
+                }`}
               >
-                {isSaving ? t('saving') : t('saveProfile')}
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{t('saving') || "Saving Changes..."}</span>
+                  </>
+                ) : isSavedRecently ? (
+                  <>
+                    <Check className="w-4 h-4 text-white" />
+                    <span>Profile Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{t('saveProfile') || "Save Profile"}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

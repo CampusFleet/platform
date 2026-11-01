@@ -2,7 +2,7 @@ import React from "react";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import ClientPortalLayout from "./ClientPortalLayout";
-import { cacheGet, cacheSet } from "@/lib/redis";
+import { cacheGet, cacheSet, getCachedStudentProfile } from "@/lib/redis";
 
 export default async function PortalLayout({
   children,
@@ -18,16 +18,23 @@ export default async function PortalLayout({
     // 1. Check Redis Cache for instant resolution
     const subCacheKey = `student:subscription:${session.userId}`;
     const photoCacheKey = `student:photo:${session.userId}`;
-    
-    const cachedSub = await cacheGet(subCacheKey);
-    const cachedPhoto = await cacheGet(photoCacheKey);
-    
+
+    const cachedProfile = await getCachedStudentProfile(session.userId);
     let cacheHit = false;
 
-    if (cachedSub !== null) {
-      isSubscribed = Boolean(cachedSub);
-      photoUrl = cachedPhoto as string | null;
+    if (cachedProfile) {
+      isSubscribed = Boolean(cachedProfile.hasActiveSubscription);
+      photoUrl = cachedProfile.photoUrl || null;
       cacheHit = true;
+    } else {
+      const cachedSub = await cacheGet(subCacheKey);
+      const cachedPhoto = await cacheGet(photoCacheKey);
+
+      if (cachedSub !== null) {
+        isSubscribed = Boolean(cachedSub);
+        photoUrl = cachedPhoto as string | null;
+        cacheHit = true;
+      }
     }
 
     if (!cacheHit) {

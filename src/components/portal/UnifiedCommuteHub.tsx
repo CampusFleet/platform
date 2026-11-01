@@ -16,6 +16,7 @@ interface UnifiedCommuteHubProps {
   initialStaff: Staff[];
   initialRoutes: Route[];
   initialReservation?: any;
+  initialSchedule?: any;
 }
 
 export default function UnifiedCommuteHub({
@@ -29,6 +30,7 @@ export default function UnifiedCommuteHub({
   initialStaff,
   initialRoutes,
   initialReservation,
+  initialSchedule,
 }: UnifiedCommuteHubProps) {
   const [currentUser, setCurrentUser] = useState(initialUser || store.getCurrentUser());
   const [students, setStudents] = useState<Student[]>(() =>
@@ -82,6 +84,7 @@ export default function UnifiedCommuteHub({
         staff={initialStaff}
         students={students}
         initialReservation={initialReservation}
+        initialSchedule={initialSchedule}
       />
     </div>
   );

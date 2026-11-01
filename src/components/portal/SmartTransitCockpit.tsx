@@ -44,6 +44,7 @@ interface SmartTransitCockpitProps {
   staff?: Staff[];
   students?: Student[];
   initialReservation?: any;
+  initialSchedule?: any;
   onOpenLiveRadar?: () => void;
   onOpenDigitalPass?: () => void;
 }
@@ -60,6 +61,7 @@ export default function SmartTransitCockpit({
   staff,
   students,
   initialReservation,
+  initialSchedule,
   onOpenLiveRadar,
   onOpenDigitalPass,
 }: SmartTransitCockpitProps) {
@@ -69,11 +71,13 @@ export default function SmartTransitCockpit({
   // Reservation state - initialized immediately from SSR to eliminate skeleton wait time
   const [reservation, setReservation] = useState<any>(initialReservation || null);
   const [settings, setSettings] = useState<TransportSettings | null>(null);
-  const [teacherSchedule, setTeacherSchedule] = useState<any>(null);
+  const [schedule, setSchedule] = useState<any>(initialSchedule || null);
   const [previousReservation, setPreviousReservation] = useState<any>(null);
   const [occupiedSeats, setOccupiedSeats] = useState<string[]>([]);
   const [isRfidVerified, setIsRfidVerified] = useState<boolean>(false);
-  const [isLoadingReservation, setIsLoadingReservation] = useState(!initialReservation);
+  const [isLoadingReservation, setIsLoadingReservation] = useState(
+    !initialReservation && !initialSchedule?.isTodayOff && !initialSchedule?.isAllShiftsOver
+  );
 
   // Seat attendance state
   const [isSavingSeat, setIsSavingSeat] = useState(false);
@@ -138,7 +142,7 @@ export default function SmartTransitCockpit({
         if (typeof data.isRfidVerified === "boolean") setIsRfidVerified(data.isRfidVerified);
         if (data.lockStatus) setAttendanceLockStatus(data.lockStatus === "UNLOCKED" ? "UNLOCKED" : "LOCKED");
         if (data.settings) setSettings(data.settings);
-        if (data.teacherSchedule) setTeacherSchedule(data.teacherSchedule);
+        if (data.teacherSchedule || data.schedule) setSchedule(data.teacherSchedule || data.schedule);
         if (data.previousReservation) setPreviousReservation(data.previousReservation);
       }
     } catch (e) {
@@ -305,10 +309,25 @@ export default function SmartTransitCockpit({
     return true;
   }, [reservation, activeBooking, isChangingSeat, confirmedSeatNumber]);
 
+  // Dynamic Commute Schedule Resolution (NO HARDCODED DAYS - strictly follows timetable schedule):
+  const isTodayOff = useMemo(() => {
+    if (schedule?.isTodayOff || schedule?.is_today_off) return true;
+    if (
+      schedule &&
+      !schedule.incomingShiftId &&
+      !schedule.outgoingShiftId &&
+      !schedule.incoming_shift_id &&
+      !schedule.outgoing_shift_id
+    ) {
+      return true;
+    }
+    return false;
+  }, [schedule]);
+
   // Check if all commute shifts for today have concluded
   const isAllShiftsOver = useMemo(() => {
-    if (teacherSchedule?.isAllShiftsOver) return true;
-    if (teacherSchedule?.isTodayOff) return true;
+    if (isTodayOff) return true;
+    if (schedule?.isAllShiftsOver) return true;
 
     // Check IST time against fleet shift schedule
     const now = new Date();
@@ -331,12 +350,12 @@ export default function SmartTransitCockpit({
       return true;
     }
 
-    if (teacherSchedule?.isIncomingOver && teacherSchedule?.isOutgoingOver) {
+    if (schedule?.isIncomingOver && schedule?.isOutgoingOver) {
       return true;
     }
 
     return false;
-  }, [teacherSchedule, shifts]);
+  }, [isTodayOff, schedule, shifts]);
 
   // Tomorrow morning shift details for preview
   const tomorrowMorningShift = useMemo(() => {
@@ -550,24 +569,26 @@ export default function SmartTransitCockpit({
           {/* Top Status Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-slate-100 dark:border-slate-800">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Today's Commute Concluded</span>
+              <span className={`w-2 h-2 rounded-full ${isTodayOff ? "bg-amber-500" : "bg-emerald-500"}`} />
+              <span>{isTodayOff ? "No Bus Shifts Scheduled Today" : "Today's Commute Concluded"}</span>
             </div>
 
             <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <Moon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-              <span>All Shifts Completed</span>
+              <span>{isTodayOff ? "Timetable Scheduled Off" : "All Shifts Completed"}</span>
             </div>
           </div>
 
           {/* Greeting Headline */}
           <div className="space-y-2 max-w-2xl">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Thank You for Today! See You Tomorrow</span>
+              <span>{isTodayOff ? "No Transit Scheduled for Today" : "Thank You for Today! See You Tomorrow"}</span>
               <Sparkles className="w-6 h-6 text-amber-500 shrink-0" />
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              All scheduled bus shifts for today have successfully concluded. Rest well tonight—CampusFleet will be ready to pick you up tomorrow morning!
+              {isTodayOff
+                ? "Your academic timetable has no bus commute shifts scheduled for today. Rest well—CampusFleet will be ready to pick you up for your next scheduled commute!"
+                : "All scheduled bus shifts for today have successfully concluded. Rest well tonight—CampusFleet will be ready to pick you up tomorrow morning!"}
             </p>
           </div>
 
@@ -576,7 +597,7 @@ export default function SmartTransitCockpit({
             <div className="flex items-center justify-between">
               <div className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                <span>Tomorrow Morning's Commute</span>
+                <span>Next Scheduled Commute</span>
               </div>
               <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                 Scheduled
@@ -707,7 +728,7 @@ export default function SmartTransitCockpit({
   if (!isAttendanceMarked) {
     return (
       <div className="space-y-6">
-        {teacherSchedule?.isIncomingOver && previousReservation && (
+        {schedule?.isIncomingOver && previousReservation && (
           <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 text-xs flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />

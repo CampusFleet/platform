@@ -100,43 +100,54 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Dynamic Class Schedule Resolution (NO HARDCODED DAYS - strictly follows teacher / class schedule):
+    // 1. If teacher explicitly marked is_today_off === true -> day is off for this class
+    // 2. If a class schedule exists for today but neither incoming nor outgoing shift is configured -> no shift today
+    const isTodayOff = Boolean(
+      teacherSchedule?.is_today_off ||
+      (teacherSchedule && !teacherSchedule.incoming_shift_id && !teacherSchedule.outgoing_shift_id)
+    );
+
     const morningShift = (allShifts || []).find((s: any) => s.direction === "HOME_TO_CAMPUS" || s.type === "MORNING") || allShifts?.[0];
     const eveningShift = (allShifts || []).find((s: any) => s.direction === "CAMPUS_TO_HOME" || s.type === "EVENING") || allShifts?.[1] || allShifts?.[0];
 
-    const incomingShiftId = teacherSchedule?.incoming_shift_id || morningShift?.id || "";
-    const outgoingShiftId = teacherSchedule?.outgoing_shift_id || eveningShift?.id || "";
-    const incomingShift = (allShifts || []).find((s) => s.id === incomingShiftId);
-    const outgoingShift = (allShifts || []).find((s) => s.id === outgoingShiftId);
+    // If today is off for this class, do NOT fallback to default fleet shifts
+    const incomingShiftId = isTodayOff ? "" : (teacherSchedule?.incoming_shift_id || (student?.class_id ? "" : morningShift?.id) || "");
+    const outgoingShiftId = isTodayOff ? "" : (teacherSchedule?.outgoing_shift_id || (student?.class_id ? "" : eveningShift?.id) || "");
+    const incomingShift = incomingShiftId ? (allShifts || []).find((s) => s.id === incomingShiftId) : null;
+    const outgoingShift = outgoingShiftId ? (allShifts || []).find((s) => s.id === outgoingShiftId) : null;
 
     // Determine if the morning/incoming shift is over
     const incomingEndTime = parseTimeMinutes(incomingShift?.end_time);
     const incomingStartTime = parseTimeMinutes(incomingShift?.start_time);
-    const morningReservation = (reservations || []).find((r) => r.shift_id === incomingShiftId);
+    const morningReservation = incomingShiftId ? (reservations || []).find((r) => r.shift_id === incomingShiftId) : null;
     const morningBoarded = Boolean(
       morningReservation &&
       (morningReservation.status === "BOARDED" || morningReservation.boarded_at)
     );
 
     // A shift is over if:
-    // a) Current time has passed incoming shift end time, OR
-    // b) Student marked attendance/boarded AND current time has passed departure
+    // a) Today is off, OR
+    // b) Current time has passed incoming shift end time, OR
+    // c) Student marked attendance/boarded AND current time has passed departure
     const isIncomingOver =
+      isTodayOff ||
       (incomingEndTime > 0 && currentIstMinutes >= incomingEndTime) ||
       (morningBoarded && incomingStartTime > 0 && currentIstMinutes >= incomingStartTime + 15);
 
     // Determine if the outgoing/afternoon/evening shift is over
     const outgoingEndTime = parseTimeMinutes(outgoingShift?.end_time);
     const outgoingStartTime = parseTimeMinutes(outgoingShift?.start_time);
-    const outgoingReservation = (reservations || []).find((r) => r.shift_id === outgoingShiftId);
+    const outgoingReservation = outgoingShiftId ? (reservations || []).find((r) => r.shift_id === outgoingShiftId) : null;
     const outgoingBoarded = Boolean(
       outgoingReservation &&
       (outgoingReservation.status === "BOARDED" || outgoingReservation.boarded_at || outgoingReservation.chosen_seat)
     );
 
-    const isOutgoingOver = isIncomingOver && (
+    const isOutgoingOver = isTodayOff || (isIncomingOver && (
       (outgoingEndTime > 0 && currentIstMinutes >= outgoingEndTime) ||
       (outgoingBoarded && outgoingStartTime > 0 && currentIstMinutes >= outgoingStartTime + 15)
-    );
+    ));
 
     // Find the latest shift end time across all fleet shifts today
     let latestFleetShiftEndMinutes = 0;
@@ -147,19 +158,22 @@ export async function GET(req: NextRequest) {
 
     // All shifts are over if past all fleet shift end times, or student completed outgoing, or today is off
     const isAllShiftsOver = Boolean(
+      isTodayOff ||
       (latestFleetShiftEndMinutes > 0 && currentIstMinutes >= latestFleetShiftEndMinutes) ||
-      (isIncomingOver && isOutgoingOver) ||
-      teacherSchedule?.is_today_off
+      (isIncomingOver && isOutgoingOver)
     );
 
     // Next shift assigned for student by the teacher
-    const targetShiftId = isIncomingOver && outgoingShiftId ? outgoingShiftId : incomingShiftId;
+    const targetShiftId = isTodayOff ? "" : (isIncomingOver && outgoingShiftId ? outgoingShiftId : incomingShiftId);
 
     // Check if student already has a reservation for the target shift
-    let activeReservation = (reservations || []).find((r) => r.shift_id === targetShiftId) || null;
+    let activeReservation = (!isTodayOff && targetShiftId)
+      ? ((reservations || []).find((r) => r.shift_id === targetShiftId) || null)
+      : null;
 
     // 3. If no reservation exists for the target shift and auto-assignment is enabled, create auto-assignment
-    if (!activeReservation && currentSettings.auto_assignment_enabled && student) {
+    // Strictly forbidden on days off or when all shifts are completed!
+    if (!isTodayOff && !isAllShiftsOver && !activeReservation && currentSettings.auto_assignment_enabled && student && targetShiftId) {
       const targetStopId = student.auto_assigned_stop_id || student.primary_stop_id;
       let targetRouteId = student.primary_route_id;
 
@@ -462,6 +476,21 @@ export async function GET(req: NextRequest) {
       lockStatus,
       unlockedBy: enriched?.unlocked_by || lockCache?.unlockedBy || (isRfidVerified ? "RFID" : null),
       settings: currentSettings,
+      schedule: {
+        incomingShiftId,
+        outgoingShiftId,
+        isIncomingOver,
+        isOutgoingOver,
+        isAllShiftsOver,
+        targetShiftId,
+        isTodayOff,
+        dayOfWeek: currentDayName,
+        reason: teacherSchedule?.is_today_off
+          ? "CLASS_DAY_OFF"
+          : (!teacherSchedule?.incoming_shift_id && !teacherSchedule?.outgoing_shift_id
+              ? "NO_SHIFTS_CONFIGURED"
+              : "COMMUTE_CONCLUDED"),
+      },
       teacherSchedule: {
         incomingShiftId,
         outgoingShiftId,
@@ -469,7 +498,13 @@ export async function GET(req: NextRequest) {
         isOutgoingOver,
         isAllShiftsOver,
         targetShiftId,
-        isTodayOff: Boolean(teacherSchedule?.is_today_off),
+        isTodayOff,
+        dayOfWeek: currentDayName,
+        reason: teacherSchedule?.is_today_off
+          ? "CLASS_DAY_OFF"
+          : (!teacherSchedule?.incoming_shift_id && !teacherSchedule?.outgoing_shift_id
+              ? "NO_SHIFTS_CONFIGURED"
+              : "COMMUTE_CONCLUDED"),
       },
       previousReservation: morningReservation || null,
       allReservationsToday: reservations || [],

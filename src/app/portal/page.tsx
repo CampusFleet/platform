@@ -82,12 +82,21 @@ export default async function StudentPortalPage() {
       .neq("status", "CANCELLED")
       .order("created_at", { ascending: false })
       .limit(1),
+    activeStudentRow?.class_id
+      ? supabaseAdmin
+          .from("class_shift_schedules")
+          .select("incoming_shift_id, outgoing_shift_id, is_today_off")
+          .eq("class_id", activeStudentRow.class_id)
+          .eq("day_of_week", ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][istDate.getUTCDay()])
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses } = sharedData;
   const { data: dbBookings } = perStudentResults[0];
   const { data: dbAllocations } = perStudentResults[1];
   const { data: dbReservations } = perStudentResults[2];
+  const { data: dbClassSchedule } = perStudentResults[3] || { data: null };
 
   const campusNameMap = new Map((dbCampuses || []).map((c: any) => [c.id, c.name]));
   const stopMap = new Map((dbStops || []).map((s: any) => [s.id, s]));
@@ -276,7 +285,24 @@ export default async function StudentPortalPage() {
     studentId: resolvedStudentId,
   };
 
-  const rawReservation = dbReservations?.[0];
+  const isTodayOff = Boolean(
+    dbClassSchedule?.is_today_off ||
+    (dbClassSchedule && !dbClassSchedule.incoming_shift_id && !dbClassSchedule.outgoing_shift_id)
+  );
+
+  const initialSchedule = dbClassSchedule
+    ? {
+        incomingShiftId: isTodayOff ? "" : (dbClassSchedule.incoming_shift_id || ""),
+        outgoingShiftId: isTodayOff ? "" : (dbClassSchedule.outgoing_shift_id || ""),
+        isTodayOff,
+        isAllShiftsOver: isTodayOff,
+        dayOfWeek: ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][istDate.getUTCDay()],
+        reason: dbClassSchedule.is_today_off ? "CLASS_DAY_OFF" : "NO_SHIFTS_CONFIGURED",
+      }
+    : null;
+
+  // If today is marked off for this user's class, initialReservation is strictly null to prevent flashing booking UI
+  const rawReservation = (!isTodayOff && dbReservations?.[0]) ? dbReservations[0] : null;
   const initialReservation = rawReservation
     ? {
         ...rawReservation,
@@ -303,6 +329,7 @@ export default async function StudentPortalPage() {
       initialStaff={staff}
       initialRoutes={routes}
       initialReservation={initialReservation}
+      initialSchedule={initialSchedule}
     />
   );
 }

@@ -87,6 +87,7 @@ export function ChatPortalView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [inputMessage, setInputMessage] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingConversations, setLoadingConversations] = useState(true);
 
   // Mention system
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -210,6 +211,8 @@ export function ChatPortalView() {
       }
     } catch (err) {
       console.error("Failed to load conversations:", err);
+    } finally {
+      setLoadingConversations(false);
     }
   };
 
@@ -692,7 +695,22 @@ export function ChatPortalView() {
 
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50">
-              {filteredConversations.length === 0 ? (
+              {loadingConversations ? (
+                <div className="p-3 space-y-2">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-2xl animate-pulse">
+                      <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800 shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="h-3.5 bg-gray-200 dark:bg-gray-800 rounded-md w-3/5" />
+                          <div className="h-2.5 bg-gray-100 dark:bg-gray-800/60 rounded-md w-10" />
+                        </div>
+                        <div className="h-2.5 bg-gray-100 dark:bg-gray-800/60 rounded-md w-4/5" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : filteredConversations.length === 0 ? (
                 <div className="p-8 text-center text-sm text-gray-400 space-y-1">
                   <p className="font-medium text-gray-600 dark:text-gray-300">No channels found</p>
                   <p className="text-xs text-gray-400">

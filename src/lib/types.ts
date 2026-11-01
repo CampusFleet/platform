@@ -81,6 +81,29 @@ export interface RouteStop {
   stop: Stop;
 }
 
+export interface EnrichedPickupStop {
+  id: string;
+  stopId: string;
+  name: string;
+  code: string;
+  latitude: number;
+  longitude: number;
+  landmark: string;
+  distanceKm: number;
+  walkTimeMins: number;
+  zoneId?: string;
+  zoneCode: string;
+  zoneName: string;
+  semesterFee: number;
+  routeId?: string;
+  routeName: string;
+  routeCode?: string;
+  arrivalOffsetMinutes?: number;
+  isPrimary?: boolean;
+  isAutoAssigned?: boolean;
+  isZoneMatching?: boolean;
+}
+
 export interface Route {
   id: string;
   code: string;

@@ -24,6 +24,7 @@ import {
   Navigation,
   Clock,
   Check,
+  BusFront,
 } from "lucide-react";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
@@ -148,6 +149,9 @@ export default function StudentOnboardingPage() {
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [isSavingHome, setIsSavingHome] = useState(false);
   const [homeStatusMsg, setHomeStatusMsg] = useState<string | null>(null);
+  const [isSelectingStop, setIsSelectingStop] = useState(false);
+  const [stopSearchQuery, setStopSearchQuery] = useState("");
+  const [showAllStopsPicker, setShowAllStopsPicker] = useState(false);
 
   const isPassApproved = isStudentSubscriptionActive(activeStudent);
   const isPhotoLocked = isPassApproved;
@@ -313,6 +317,9 @@ export default function StudentOnboardingPage() {
         setAutoAssignedStopId(data.homeLocation.autoAssignedStopId);
         setPrimaryStopId(data.homeLocation.autoAssignedStopId);
       }
+      if (data.homeLocation?.zoneCode && !isZoneLocked) {
+        setSelectedZoneCode(data.homeLocation.zoneCode);
+      }
       if (data.nearestStops) {
         setNearestStops(data.nearestStops);
       }
@@ -323,6 +330,65 @@ export default function StudentOnboardingPage() {
       setIsSavingHome(false);
     }
   };
+
+  const handleSelectPickupStop = async (stopId: string, stopZoneCode?: string, stopName?: string) => {
+    setPrimaryStopId(stopId);
+    if (stopZoneCode && !isZoneLocked) {
+      setSelectedZoneCode(stopZoneCode);
+    }
+    const studentId = activeStudent?.id || currentUser?.id;
+    if (!studentId) return;
+
+    setIsSelectingStop(true);
+    try {
+      const res = await fetch("/api/students/home-location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SELECT_PICKUP_STOP",
+          studentId,
+          stopId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.message || "Failed to update pickup stop");
+      } else {
+        setToast(`✓ Boarding stop updated to "${stopName || 'Selected Stop'}"`);
+        setTimeout(() => setToast(null), 3500);
+        if (data.student?.zone_code && !isZoneLocked) {
+          setSelectedZoneCode(data.student.zone_code);
+        }
+      }
+    } catch (err: any) {
+      console.warn("Error selecting pickup stop:", err);
+    } finally {
+      setIsSelectingStop(false);
+    }
+  };
+
+  // Load existing saved home location and nearest stops on mount
+  useEffect(() => {
+    const studentId = activeStudent?.id || currentUser?.id;
+    if (!studentId) return;
+
+    fetch(`/api/students/home-location?studentId=${studentId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.homeLocation) {
+          if (data.homeLocation.address) setHomeAddress(data.homeLocation.address);
+          if (data.homeLocation.latitude) setHomeLat(String(data.homeLocation.latitude));
+          if (data.homeLocation.longitude) setHomeLng(String(data.homeLocation.longitude));
+          if (data.homeLocation.autoAssignedStopId) setAutoAssignedStopId(data.homeLocation.autoAssignedStopId);
+          if (data.homeLocation.primaryStopId) setPrimaryStopId(data.homeLocation.primaryStopId);
+          if (data.homeLocation.zoneCode && !isZoneLocked) setSelectedZoneCode(data.homeLocation.zoneCode);
+          if (data.nearestStops && data.nearestStops.length > 0) {
+            setNearestStops(data.nearestStops);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [activeStudent?.id, currentUser?.id, isZoneLocked]);
 
   useEffect(() => {
     const unsub = store.subscribe(() => {
@@ -1055,51 +1121,188 @@ export default function StudentOnboardingPage() {
                   </button>
                 </div>
 
-                {/* Nearest Stops preview */}
+                {/* Nearest Stops Interactive Selection */}
                 {nearestStops && nearestStops.length > 0 && (
-                  <div className="pt-3 border-t border-gray-100 dark:border-gray-800/60 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Nearby Stops by Road Distance
-                      </h4>
-                      <span className="text-xs text-gray-400">Calculated via OSRM / Network</span>
+                  <div className="pt-4 border-t border-gray-100 dark:border-gray-800/60 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                          <BusFront className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                          Choose Bus Boarding / Pickup Stop
+                        </h4>
+                        <p className="text-[11px] text-gray-500">
+                          Select where you want to board the bus based on walking distance from home
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-mono text-gray-400">
+                        {nearestStops.length} stops in corridor
+                      </span>
                     </div>
 
-                    <div className="divide-y divide-gray-100 dark:divide-gray-800/60 border border-gray-200 dark:border-gray-800">
+                    <div className="space-y-2">
                       {nearestStops.map((stop: any, idx: number) => {
-                        const isAssigned = stop.id === autoAssignedStopId;
+                        const isChosen = stop.id === primaryStopId;
+                        const isNearest = idx === 0;
+
                         return (
-                          <div key={stop.id || idx} className="p-3 flex items-center justify-between bg-white dark:bg-black">
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs font-mono px-2 py-0.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
-                                #{idx + 1}
-                              </span>
-                              <div>
-                                <p className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                  {stop.name}
-                                  {isAssigned && (
-                                    <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 border border-green-300 dark:border-green-800">
-                                      Assigned Stop
+                          <div
+                            key={stop.id || idx}
+                            onClick={() => !isSelectingStop && handleSelectPickupStop(stop.id, stop.zoneCode, stop.name)}
+                            className={`p-3.5 border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                              isChosen
+                                ? "border-green-600 bg-green-50/40 dark:bg-green-950/20 dark:border-green-500 shadow-sm"
+                                : "border-gray-200 dark:border-gray-800 bg-white dark:bg-black hover:border-gray-400 dark:hover:border-gray-700"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="flex flex-col items-center pt-0.5">
+                                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 border ${
+                                  isNearest
+                                    ? "bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300 border-green-300 dark:border-green-700"
+                                    : "border-gray-200 dark:border-gray-700 text-gray-500"
+                                }`}>
+                                  #{idx + 1}
+                                </span>
+                              </div>
+
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                    {stop.name}
+                                  </span>
+                                  {isNearest && (
+                                    <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase bg-green-600 text-white">
+                                      ★ Recommended
                                     </span>
                                   )}
-                                </p>
+                                  {isChosen && (
+                                    <span className="text-[10px] px-2 py-0.5 font-bold uppercase bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 border border-green-300 dark:border-green-700 flex items-center gap-1">
+                                      <Check className="w-3 h-3" /> Selected Boarding Stop
+                                    </span>
+                                  )}
+                                </div>
+
                                 {stop.landmark && (
-                                  <p className="text-xs text-gray-500">Landmark: {stop.landmark}</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    Landmark: {stop.landmark}
+                                  </p>
                                 )}
+
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] pt-1">
+                                  {stop.routeName && (
+                                    <span className="px-2 py-0.5 border border-blue-200 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium">
+                                      🚌 {stop.routeName}
+                                    </span>
+                                  )}
+                                  {stop.zoneCode && (
+                                    <span className="px-2 py-0.5 border border-purple-200 dark:border-purple-900/50 bg-purple-50/60 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-medium">
+                                      🏷️ Zone {stop.zoneCode.replace("ZONE_", "")}
+                                      {stop.semesterFee ? ` • ₹${stop.semesterFee.toLocaleString()}/sem` : ""}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">
-                                {stop.distanceKm !== undefined ? `${stop.distanceKm} km` : "Nearby"}
-                              </p>
-                              <p className="text-xs text-gray-500 flex items-center justify-end gap-1">
-                                <Clock className="w-3 h-3" />
-                                {stop.walkTimeMins ? `~${stop.walkTimeMins} min walk` : "Walkable"}
-                              </p>
+
+                            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100 dark:border-gray-800 gap-2 shrink-0">
+                              <div className="text-left sm:text-right">
+                                <p className="text-sm font-extrabold text-gray-900 dark:text-white font-mono">
+                                  {stop.distanceKm !== undefined ? `${stop.distanceKm} km` : "Nearby"}
+                                </p>
+                                <p className="text-xs text-gray-500 flex items-center sm:justify-end gap-1">
+                                  <Clock className="w-3 h-3 text-gray-400" />
+                                  {stop.walkTimeMins ? `~${stop.walkTimeMins} min walk` : "Walkable"}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isSelectingStop}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectPickupStop(stop.id, stop.zoneCode, stop.name);
+                                }}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-none transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                                  isChosen
+                                    ? "bg-green-600 text-white pointer-events-none"
+                                    : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700"
+                                }`}
+                              >
+                                {isChosen ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Selected</span>
+                                  </>
+                                ) : (
+                                  <span>Choose This Stop →</span>
+                                )}
+                              </button>
                             </div>
                           </div>
                         );
                       })}
+                    </div>
+
+                    {/* Fallback: Search all campus stops */}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllStopsPicker(prev => !prev)}
+                        className="text-xs text-green-700 dark:text-green-400 hover:underline flex items-center gap-1 font-medium"
+                      >
+                        {showAllStopsPicker ? "Hide full stop catalog" : "Looking for another stop? Browse all campus route stops →"}
+                      </button>
+
+                      {showAllStopsPicker && (
+                        <div className="mt-3 p-3 border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-zinc-950 space-y-3">
+                          <input
+                            type="text"
+                            value={stopSearchQuery}
+                            onChange={(e) => setStopSearchQuery(e.target.value)}
+                            placeholder="Search stop by name, landmark, or route..."
+                            className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500"
+                          />
+                          <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+                            {stops
+                              .filter(s =>
+                                !stopSearchQuery ||
+                                s.name.toLowerCase().includes(stopSearchQuery.toLowerCase()) ||
+                                (s.landmark && s.landmark.toLowerCase().includes(stopSearchQuery.toLowerCase()))
+                              )
+                              .map(s => {
+                                const isCurrent = s.id === primaryStopId;
+                                return (
+                                  <div
+                                    key={s.id}
+                                    onClick={() => handleSelectPickupStop(s.id, s.zoneCode, s.name)}
+                                    className={`p-2.5 flex items-center justify-between text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors ${
+                                      isCurrent ? "bg-green-50/60 dark:bg-green-950/30 font-bold" : ""
+                                    }`}
+                                  >
+                                    <div>
+                                      <p className="text-gray-900 dark:text-white">{s.name}</p>
+                                      {s.landmark && <p className="text-[11px] text-gray-500">{s.landmark}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {s.zoneCode && (
+                                        <span className="text-[10px] px-1.5 py-0.5 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300">
+                                          {s.zoneCode}
+                                        </span>
+                                      )}
+                                      {isCurrent ? (
+                                        <span className="text-green-600 font-bold flex items-center gap-1 text-[11px]">
+                                          <Check className="w-3 h-3" /> Active
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-500 hover:text-green-600">Select</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1109,9 +1312,9 @@ export default function StudentOnboardingPage() {
             <div className="h-px bg-gray-100 dark:bg-gray-800/60" />
 
             {/* 5. Residential Transit Zone */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center justify-between">
-                <span>Residential Transit Zone *</span>
+                <span>Residential Transit Zone & Subscription Fee *</span>
                 {isZoneLocked && (
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300">
                     <Lock className="w-3 h-3" /> Locked
@@ -1143,9 +1346,25 @@ export default function StudentOnboardingPage() {
                   }}
                 />
               )}
-              <p className="text-xs text-gray-500">
-                Covers: {transitZones.find(z => z.code === selectedZoneCode)?.corridorDescription}
-              </p>
+
+              {/* Stop & Zone Linkage Summary Card */}
+              <div className="p-3.5 border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-zinc-950 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Selected Boarding Stop:</span>
+                  <span className="font-bold text-gray-900 dark:text-white">
+                    {stops.find(s => s.id === primaryStopId)?.name || nearestStops.find(s => s.id === primaryStopId)?.name || "Auto-assigned by location"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Zone Subscription Fee:</span>
+                  <span className="font-mono font-bold text-green-600 dark:text-green-400 text-sm">
+                    ₹{transitZones.find(z => z.code === selectedZoneCode)?.semesterFee.toLocaleString() || "12,000"} / Semester
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-400 pt-1 border-t border-gray-100 dark:border-gray-800">
+                  Corridor: {transitZones.find(z => z.code === selectedZoneCode)?.corridorDescription || "Haldwani / Kathgodam Regional Corridor"}
+                </p>
+              </div>
             </div>
 
             <div className="h-px bg-gray-100 dark:bg-gray-800/60" />

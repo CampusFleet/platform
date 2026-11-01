@@ -188,6 +188,7 @@ export default function DriverLiveRadarView({
   const [mapTheme, setMapTheme] = useState<"CARTO_DARK" | "GOOGLE_STREETS" | "GOOGLE_HYBRID">("CARTO_DARK");
   const [isFollowingBus, setIsFollowingBus] = useState(true);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
+  const [isHudMinimized, setIsHudMinimized] = useState(false);
   const [isSimulationMode, setIsSimulationMode] = useState(false);
 
   // Sync external coords if provided by parent cockpit
@@ -630,96 +631,148 @@ export default function DriverLiveRadarView({
 
       {/* ── 3. TOP GLANCEABLE TURN & MANEUVER HUD (UBER/RAPIDO STYLE) ─────── */}
       <div className="absolute top-3 left-3 right-3 sm:left-6 sm:right-6 z-30 pointer-events-none">
-        <div className="pointer-events-auto bg-black/95 border border-zinc-800 text-white rounded-3xl p-3 sm:p-4 shadow-2xl backdrop-blur-xl transition-all">
-          <div className="flex items-center justify-between gap-3">
-            {/* Left: Maneuver Direction Symbol */}
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0 shadow-inner">
+        {isHudMinimized ? (
+          /* MINIMIZED CAPSULE HUD PILL */
+          <div className="pointer-events-auto flex items-center justify-start">
+            <button
+              type="button"
+              onClick={() => setIsHudMinimized(false)}
+              className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-black/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 shadow-xl text-zinc-900 dark:text-white hover:border-zinc-400 dark:hover:border-zinc-600 transition-all cursor-pointer group active:scale-95"
+              title="Tap to expand navigation directions"
+            >
+              <div className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0">
                 {maneuverIcon}
               </div>
-
-              {/* Destination Headline & Stage Tag */}
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                      navigationStage === "HEADING_TO_START"
-                        ? "bg-amber-950/80 border-amber-600 text-amber-300"
-                        : navigationStage === "AT_STARTING_POINT"
-                        ? "bg-emerald-950/80 border-emerald-600 text-emerald-300"
-                        : navigationStage === "ARRIVING_CAMPUS"
-                        ? "bg-blue-950/80 border-blue-600 text-blue-300"
-                        : "bg-zinc-800 border-zinc-700 text-zinc-300"
-                    }`}
-                  >
-                    {navigationStage === "HEADING_TO_START"
-                      ? "🧭 DEADHEAD TO ORIGIN"
-                      : navigationStage === "AT_STARTING_POINT"
-                      ? "📍 AT ROUTE ORIGIN"
-                      : navigationStage === "ARRIVING_CAMPUS"
-                      ? "🎓 CAMPUS TERMINAL"
-                      : `NEXT STOP • ${currentStopIndex + 1}/${totalStopsCount}`}
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                    {navigationStage === "HEADING_TO_START" ? "ORIGIN" : "NEXT STOP"}
                   </span>
-
-                  {targetStopPassengers > 0 && (
-                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-600 text-emerald-300">
-                      <Users className="w-3 h-3" />
-                      <span>{targetStopPassengers} boarding</span>
-                    </span>
-                  )}
+                  <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    {navigationStage === "HEADING_TO_START"
+                      ? distanceToOriginMeters >= 1000
+                        ? `${(distanceToOriginMeters / 1000).toFixed(1)} km`
+                        : `${distanceToOriginMeters} m`
+                      : distanceToCurrentTargetMeters >= 1000
+                      ? `${(distanceToCurrentTargetMeters / 1000).toFixed(1)} km`
+                      : `${distanceToCurrentTargetMeters} m`}
+                  </span>
                 </div>
-
-                <h1 className="text-base sm:text-xl font-black tracking-tight text-white truncate mt-0.5">
+                <span className="font-bold text-zinc-900 dark:text-white text-xs truncate max-w-[180px] sm:max-w-[280px]">
                   {navigationStage === "HEADING_TO_START"
                     ? originStop?.name || "Route Starting Point"
                     : currentTargetStop?.name || "Next Transit Stop"}
-                </h1>
-
-                <p className="text-[11px] text-zinc-400 font-medium truncate">
-                  {navigationStage === "HEADING_TO_START"
-                    ? "Head to route origin stop to begin passenger service"
-                    : currentTargetStop?.landmark || `Corridor run to University Campus`}
-                </p>
+                </span>
               </div>
-            </div>
-
-            {/* Right: Distance Countdown & Speed Cluster */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {/* Distance & ETA */}
-              <div className="text-right">
-                <div className="text-lg sm:text-2xl font-black font-mono tracking-tight text-emerald-400">
-                  {navigationStage === "HEADING_TO_START"
-                    ? distanceToOriginMeters >= 1000
-                      ? `${(distanceToOriginMeters / 1000).toFixed(1)} km`
-                      : `${distanceToOriginMeters} m`
-                    : distanceToCurrentTargetMeters >= 1000
-                    ? `${(distanceToCurrentTargetMeters / 1000).toFixed(1)} km`
-                    : `${distanceToCurrentTargetMeters} m`}
+              <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors ml-1 shrink-0">
+                <ChevronDown className="w-3.5 h-3.5" />
+              </div>
+            </button>
+          </div>
+        ) : (
+          /* EXPANDED TURN & MANEUVER HUD CARD */
+          <div className="pointer-events-auto bg-white/95 dark:bg-black/95 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white rounded-3xl p-3 sm:p-4 shadow-2xl backdrop-blur-xl transition-all">
+            <div className="flex items-center justify-between gap-3">
+              {/* Left: Maneuver Direction Symbol */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0 shadow-inner">
+                  {maneuverIcon}
                 </div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                  ETA ~{Math.max(1, Math.round((navigationStage === "HEADING_TO_START" ? distanceToOriginMeters : distanceToCurrentTargetMeters) / 600))} min
+
+                {/* Destination Headline & Stage Tag */}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                        navigationStage === "HEADING_TO_START"
+                          ? "bg-amber-50 dark:bg-amber-950/80 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-300"
+                          : navigationStage === "AT_STARTING_POINT"
+                          ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-600 text-emerald-800 dark:text-emerald-300"
+                          : navigationStage === "ARRIVING_CAMPUS"
+                          ? "bg-blue-50 dark:bg-blue-950/80 border-blue-300 dark:border-blue-600 text-blue-800 dark:text-blue-300"
+                          : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+                      }`}
+                    >
+                      {navigationStage === "HEADING_TO_START"
+                        ? "🧭 DEADHEAD TO ORIGIN"
+                        : navigationStage === "AT_STARTING_POINT"
+                        ? "📍 AT ROUTE ORIGIN"
+                        : navigationStage === "ARRIVING_CAMPUS"
+                        ? "🎓 CAMPUS TERMINAL"
+                        : `NEXT STOP • ${currentStopIndex + 1}/${totalStopsCount}`}
+                    </span>
+
+                    {targetStopPassengers > 0 && (
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-600 text-emerald-800 dark:text-emerald-300">
+                        <Users className="w-3 h-3" />
+                        <span>{targetStopPassengers} boarding</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <h1 className="text-base sm:text-xl font-black tracking-tight text-zinc-900 dark:text-white truncate mt-0.5">
+                    {navigationStage === "HEADING_TO_START"
+                      ? originStop?.name || "Route Starting Point"
+                      : currentTargetStop?.name || "Next Transit Stop"}
+                  </h1>
+
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium truncate">
+                    {navigationStage === "HEADING_TO_START"
+                      ? "Head to route origin stop to begin passenger service"
+                      : currentTargetStop?.landmark || `Corridor run to University Campus`}
+                  </p>
                 </div>
               </div>
 
-              {/* Speed Cluster with Limit Circle */}
-              <div className="hidden sm:flex flex-col items-center pl-3 border-l border-zinc-800">
-                <div
-                  className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-black transition-colors ${
-                    isOverspeed
-                      ? "border-rose-500 bg-rose-950/80 text-rose-300 animate-pulse"
-                      : "border-zinc-500 bg-zinc-900 text-zinc-200"
-                  }`}
-                  title="Speed Limit 40 km/h"
+              {/* Right: Distance Countdown, Speed Cluster & Minimize Toggle */}
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                {/* Distance & ETA */}
+                <div className="text-right">
+                  <div className="text-lg sm:text-2xl font-black font-mono tracking-tight text-emerald-600 dark:text-emerald-400">
+                    {navigationStage === "HEADING_TO_START"
+                      ? distanceToOriginMeters >= 1000
+                        ? `${(distanceToOriginMeters / 1000).toFixed(1)} km`
+                        : `${distanceToOriginMeters} m`
+                      : distanceToCurrentTargetMeters >= 1000
+                      ? `${(distanceToCurrentTargetMeters / 1000).toFixed(1)} km`
+                      : `${distanceToCurrentTargetMeters} m`}
+                  </div>
+                  <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    ETA ~{Math.max(1, Math.round((navigationStage === "HEADING_TO_START" ? distanceToOriginMeters : distanceToCurrentTargetMeters) / 600))} min
+                  </div>
+                </div>
+
+                {/* Speed Cluster with Limit Circle */}
+                <div className="hidden sm:flex flex-col items-center pl-3 border-l border-zinc-200 dark:border-zinc-800">
+                  <div
+                    className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-black transition-colors ${
+                      isOverspeed
+                        ? "border-rose-500 bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 animate-pulse"
+                        : "border-zinc-400 dark:border-zinc-500 bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200"
+                    }`}
+                    title="Speed Limit 40 km/h"
+                  >
+                    40
+                  </div>
+                  <div className="text-[11px] font-mono font-black text-zinc-900 dark:text-white mt-0.5">
+                    {speed} <span className="text-[9px] font-sans text-zinc-500 dark:text-zinc-400">km/h</span>
+                  </div>
+                </div>
+
+                {/* Circular Minimize Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsHudMinimized(true)}
+                  className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer shadow-xs ml-1"
+                  title="Minimize directions"
+                  aria-label="Minimize directions"
                 >
-                  40
-                </div>
-                <div className="text-[11px] font-mono font-black text-white mt-0.5">
-                  {speed} <span className="text-[9px] font-sans text-zinc-400">km/h</span>
-                </div>
+                  <ChevronUp className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── 4. RIGHT FLOATING TACTICAL CONTROLS (RAPIDO / UBER RAIL) ─────── */}

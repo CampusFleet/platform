@@ -93,6 +93,7 @@ interface CampusFleetMapProps {
   interactiveMode?: "VIEW" | "PIN_DROP";
   showUserLocation?: boolean;
   showCampusLandmark?: boolean;
+  tileTheme?: "GOOGLE_STREETS" | "CARTO_VOYAGER" | "CARTO_DARK" | "GOOGLE_HYBRID" | "AUTO";
 }
 
 // Fetches actual road-snapped geometry via Open-Source Routing Machine (OSRM) with multi-mirror fallback
@@ -171,11 +172,14 @@ export default function CampusFleetMap({
   interactiveMode = "VIEW",
   showUserLocation = true,
   showCampusLandmark = true,
+  tileTheme = "AUTO",
 }: CampusFleetMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const busMarkerRef = useRef<any>(null);
   const fleetMarkersMapRef = useRef<Map<number, any>>(new Map());
+  const currentTileLayerRef = useRef<any>(null);
+  const currentTileThemeRef = useRef<string>("");
 
   // Dual-color Google Maps path polylines (Completed = Gray, Upcoming = Blue)
   const polylineUpcomingGlowRef = useRef<any>(null);
@@ -314,11 +318,6 @@ export default function CampusFleetMap({
 
         L.control.zoom({ position: "bottomright" }).addTo(map);
 
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          maxZoom: 19,
-        }).addTo(map);
-
         map.on("click", (e: any) => {
           if (onMapClickRef.current) {
             onMapClickRef.current(Number(e.latlng.lat.toFixed(6)), Number(e.latlng.lng.toFixed(6)));
@@ -334,6 +333,50 @@ export default function CampusFleetMap({
 
       const map = mapInstanceRef.current;
       if (!map) return;
+
+      // ─── HIGH-RELIABILITY MAP TILE ENGINE (Google Maps Streets / CartoDB) ───
+      // Resolves blocked openstreetmap.org 403s on Vercel and mobile networks
+      const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+      const activeTheme = tileTheme === "AUTO" ? (isDark ? "CARTO_DARK" : "GOOGLE_STREETS") : tileTheme;
+
+      if (!currentTileLayerRef.current || currentTileThemeRef.current !== activeTheme) {
+        if (currentTileLayerRef.current && map.hasLayer(currentTileLayerRef.current)) {
+          map.removeLayer(currentTileLayerRef.current);
+        }
+
+        let tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+        let subdomains: any = ["mt0", "mt1", "mt2", "mt3"];
+        let maxZoom = 20;
+        let attribution = '&copy; Google Maps';
+
+        if (activeTheme === "GOOGLE_HYBRID") {
+          tileUrl = "https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}";
+          subdomains = ["mt0", "mt1", "mt2", "mt3"];
+          attribution = '&copy; Google Maps';
+        } else if (activeTheme === "CARTO_DARK") {
+          tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+          subdomains = "abcd";
+          attribution = '&copy; CARTO & OpenStreetMap';
+        } else if (activeTheme === "CARTO_VOYAGER") {
+          tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+          subdomains = "abcd";
+          attribution = '&copy; CARTO & OpenStreetMap';
+        }
+
+        const tileLayer = L.tileLayer(tileUrl, {
+          maxZoom,
+          subdomains,
+          attribution,
+        });
+
+        tileLayer.addTo(map);
+        if (tileLayer.bringToBack) {
+          tileLayer.bringToBack();
+        }
+
+        currentTileLayerRef.current = tileLayer;
+        currentTileThemeRef.current = activeTheme;
+      }
 
       // Invalidate size immediately to prevent height 0 collapse in modals
       map.invalidateSize();
@@ -1135,6 +1178,7 @@ export default function CampusFleetMap({
     showUserLocation,
     showCampusLandmark,
     campusTerminalStop,
+    tileTheme,
   ]);
 
   return (

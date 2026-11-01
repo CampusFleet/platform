@@ -38,10 +38,10 @@ import type { Bus, Route, Stop, Trip, Staff, Student, Booking, Campus, LiveBusLo
 const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[400px] bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-      <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-      <span className="text-xs font-mono font-bold tracking-wider uppercase text-emerald-400">
-        Acquiring Telematics Radar Satellite Lock...
+    <div className="w-full h-full min-h-[400px] bg-zinc-100 dark:bg-black flex flex-col items-center justify-center text-zinc-500 gap-3">
+      <div className="w-7 h-7 rounded-full border-2 border-zinc-900 dark:border-white border-t-transparent animate-spin" />
+      <span className="text-xs font-semibold tracking-wider text-zinc-700 dark:text-zinc-300">
+        Loading Satellite Map View...
       </span>
     </div>
   ),
@@ -94,6 +94,15 @@ export default function FullScreenLiveRadarView({
   const [mapFocusTarget, setMapFocusTarget] = useState<"BUS" | "MY_STOP" | "CORRIDOR">("BUS");
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null);
   const [isSOSOpen, setIsSOSOpen] = useState(false);
+  const [tileTheme, setTileTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">("GOOGLE_STREETS");
+
+  const cycleTileTheme = () => {
+    setTileTheme((prev) => {
+      if (prev === "GOOGLE_STREETS") return "GOOGLE_HYBRID";
+      if (prev === "GOOGLE_HYBRID") return "CARTO_DARK";
+      return "GOOGLE_STREETS";
+    });
+  };
 
   // 1. Resolve active student
   const student = useMemo(() => {
@@ -305,38 +314,41 @@ export default function FullScreenLiveRadarView({
   const displayRouteName = assignedRoute?.name || "Campus Transit Corridor";
 
   return (
-    <div className="relative w-full h-[100dvh] bg-slate-950 text-white overflow-hidden flex flex-col font-sans select-none">
+    <div className="relative w-full h-[100dvh] bg-zinc-100 dark:bg-black text-zinc-900 dark:text-white overflow-hidden flex flex-col font-sans select-none">
       
-      {/* ─── 1. GOOGLE MAPS FLOATING TOP IN-TRANSIT HUD ─── */}
+      {/* ─── 1. TOP IN-TRANSIT HUD (Human Colors: White in Light, Black in Dark) ─── */}
       <header className="absolute top-3 inset-x-3 sm:inset-x-6 z-30 pointer-events-none flex flex-col gap-2.5">
         {/* Top Control Bar: Back Button, Mode Badge, Fullscreen & Controls */}
         <div className="flex items-center justify-between gap-2">
           <Link
             href="/portal"
-            className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
+            className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-lg flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
           >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
             <span>My Commute</span>
           </Link>
 
           <div className="flex items-center gap-2 pointer-events-auto">
             {/* Live GPS Status Pill */}
-            <div className={`px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 backdrop-blur-xl shadow-xl ${
-              isTelematicsLive
-                ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-emerald-950/30"
-                : "bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-amber-950/30"
-            }`}>
-              <span className="relative flex h-2 w-2">
-                {isTelematicsLive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isTelematicsLive ? "bg-emerald-400" : "bg-amber-400"}`} />
-              </span>
-              <span>{isTelematicsLive ? "LIVE TELEMATICS" : "CONNECTING..."}</span>
+            <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-white dark:bg-black text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 shadow-lg">
+              <span className={`w-2 h-2 rounded-full ${isTelematicsLive ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <span>{isTelematicsLive ? "LIVE GPS" : "CONNECTING..."}</span>
             </div>
+
+            {/* Map Style Quick Toggle */}
+            <button
+              onClick={cycleTileTheme}
+              className="px-3 py-1.5 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 shadow-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              title="Toggle Map Style"
+            >
+              <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>{tileTheme === "GOOGLE_STREETS" ? "Google" : tileTheme === "GOOGLE_HYBRID" ? "Satellite" : "Dark"}</span>
+            </button>
 
             {/* Fullscreen Button */}
             <button
               onClick={toggleFullScreenMode}
-              className="p-2.5 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 shadow-lg transition-all active:scale-95 cursor-pointer"
               title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Radar Mode"}
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -344,33 +356,33 @@ export default function FullScreenLiveRadarView({
           </div>
         </div>
 
-        {/* Turn-By-Turn Navigation Card (Google Maps In-Ride Style) */}
-        <div className="pointer-events-auto bg-gradient-to-r from-emerald-950/95 via-emerald-900/95 to-slate-900/95 border border-emerald-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-2xl text-white animate-in slide-in-from-top-4 duration-300">
+        {/* Turn-By-Turn Navigation Card (Clean Solid Cards - No Artificial AI Glow) */}
+        <div className="pointer-events-auto bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xl text-zinc-900 dark:text-white animate-in slide-in-from-top-4 duration-300">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/30">
-                <Navigation className="w-6 h-6 animate-pulse" />
+              <div className="w-12 h-12 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                <Navigation className="w-6 h-6" />
               </div>
               <div className="space-y-0.5">
-                <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-emerald-300 flex items-center gap-1.5">
+                <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
                   <span>Next Destination</span>
                   {nextDestination?.distMeters !== undefined && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-semibold">
                       {nextDestination.distMeters < 80 ? "Arriving Now" : `${nextDestination.distKm} km away`}
                     </span>
                   )}
                 </div>
-                <h2 className="text-base sm:text-xl font-black text-white tracking-tight line-clamp-1">
+                <h2 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight line-clamp-1">
                   {nextDestination?.name || "Corridor Route Stop"}
                 </h2>
-                <div className="text-xs text-emerald-100/80 flex items-center gap-2 flex-wrap">
-                  <span>{displayBusNumber}</span>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{displayBusNumber}</span>
                   <span>•</span>
                   <span>{displayRouteName}</span>
                   {liveLocation?.speedKmh !== undefined && (
                     <>
                       <span>•</span>
-                      <span className="font-mono font-bold text-emerald-300">{liveLocation.speedKmh} km/h</span>
+                      <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{liveLocation.speedKmh} km/h</span>
                     </>
                   )}
                 </div>
@@ -379,23 +391,23 @@ export default function FullScreenLiveRadarView({
 
             {/* Time to Next Destination */}
             <div className="text-right shrink-0">
-              <div className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                ~{nextDestination?.etaMins || 2} <span className="text-xs font-bold text-emerald-300">min</span>
+              <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight">
+                ~{nextDestination?.etaMins || 2} <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">min</span>
               </div>
-              <div className="text-[10px] font-mono text-slate-300 uppercase tracking-wider">
+              <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                 Est. Arrival
               </div>
             </div>
           </div>
 
-          {/* Special Commuter Destination Callout if different from next stop */}
+          {/* Commuter Destination Callout if different from next stop */}
           {commuterDestination && commuterDestination.id !== nextDestination?.id && (
-            <div className="mt-3 pt-3 border-t border-emerald-500/30 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2 text-amber-300 font-semibold truncate">
-                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="truncate">Your Drop-Off Stop: <strong className="text-white">{commuterDestination.name}</strong></span>
+            <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300 font-medium truncate">
+                <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+                <span className="truncate">Your Stop: <strong className="text-zinc-900 dark:text-white font-bold">{commuterDestination.name}</strong></span>
               </div>
-              <div className="font-mono text-xs text-amber-200 shrink-0 font-bold ml-2">
+              <div className="font-mono text-xs text-zinc-800 dark:text-zinc-200 font-bold ml-2">
                 ~{commuterDestination.etaMins} mins ({commuterDestination.distKm} km)
               </div>
             </div>
@@ -403,8 +415,8 @@ export default function FullScreenLiveRadarView({
         </div>
       </header>
 
-      {/* ─── 2. FULLSCREEN INTERACTIVE LEAFLET GIS CANVAS ─── */}
-      <div className="relative w-full h-full flex-1">
+      {/* ─── 2. FULLSCREEN INTERACTIVE LEAFLET GIS CANVAS (With Google Maps Streets) ─── */}
+      <div className="relative w-full flex-1 h-full min-h-[400px]">
         <CampusFleetMap
           busLocation={
             liveLocation
@@ -426,6 +438,7 @@ export default function FullScreenLiveRadarView({
           stops={orderedDestinations}
           campuses={campuses}
           selectedStopId={commuterStop?.id || selectedDestinationId || nextDestination?.id}
+          tileTheme={tileTheme}
           height="100%"
           zoom={15}
           showUserLocation={true}
@@ -441,10 +454,10 @@ export default function FullScreenLiveRadarView({
           {/* Re-center Bus Button */}
           <button
             onClick={() => setMapFocusTarget("BUS")}
-            className="p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+            className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Track Live Bus Location"
           >
-            <Crosshair className="w-5 h-5 text-emerald-400 group-hover:rotate-45 transition-transform" />
+            <Crosshair className="w-5 h-5 text-blue-600 dark:text-blue-400 group-hover:rotate-45 transition-transform" />
           </button>
 
           {/* Focus on My Stop */}
@@ -454,52 +467,61 @@ export default function FullScreenLiveRadarView({
                 setSelectedDestinationId(commuterStop.id);
                 setMapFocusTarget("MY_STOP");
               }}
-              className="p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+              className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
               title="Focus My Destination Stop"
             >
-              <MapPin className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+              <MapPin className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform" />
             </button>
           )}
 
           {/* Full Corridor View */}
           <button
             onClick={() => setMapFocusTarget("CORRIDOR")}
-            className="p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+            className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Fit Entire Source-to-Destination Corridor"
           >
-            <RouteIcon className="w-5 h-5 text-indigo-400" />
+            <RouteIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          </button>
+
+          {/* Map Layer Switcher */}
+          <button
+            onClick={cycleTileTheme}
+            className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+            title="Switch Map Layers (Google / Satellite / Dark)"
+          >
+            <Layers className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
           </button>
 
           {/* Toggle Journey Drawer */}
           <button
             onClick={() => setIsDrawerExpanded(!isDrawerExpanded)}
-            className="p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+            className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Toggle All Destinations Timeline"
           >
-            <Layers className="w-5 h-5 text-sky-400" />
+            <ChevronUp className={`w-5 h-5 text-zinc-700 dark:text-zinc-300 transition-transform ${isDrawerExpanded ? "rotate-180" : ""}`} />
           </button>
         </div>
       </div>
 
-      {/* ─── 3. GOOGLE MAPS EXPANDABLE BOTTOM JOURNEY SHEET ─── */}
+      {/* ─── 3. GOOGLE MAPS EXPANDABLE BOTTOM JOURNEY SHEET (Clean Solid Surfaces) ─── */}
       <div className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 ease-in-out ${
         isDrawerExpanded ? "max-h-[75vh]" : "max-h-[140px]"
-      } bg-slate-900/95 dark:bg-black/95 backdrop-blur-2xl border-t border-slate-800 shadow-2xl flex flex-col rounded-t-3xl`}>
+      } bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}>
         
         {/* Drag Handle & Collapsed Summary */}
         <div 
           onClick={() => setIsDrawerExpanded(!isDrawerExpanded)}
-          className="p-3.5 pb-2 border-b border-slate-800/80 cursor-pointer hover:bg-slate-800/40 transition-colors flex flex-col items-center select-none"
+          className="p-3.5 pb-2 border-b border-zinc-100 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors flex flex-col items-center select-none"
         >
-          <div className="w-12 h-1.5 rounded-full bg-slate-700 mb-2" />
+          <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 mb-2" />
           <div className="w-full flex items-center justify-between px-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-white text-sm">Destinations on Corridor</span>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
+              <span className="font-extrabold text-zinc-900 dark:text-white text-sm">Destinations on Corridor</span>
+              <span className="px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700">
                 {orderedDestinations.length} Stops
               </span>
             </div>
-            <div className="flex items-center gap-1 text-slate-400 text-xs font-semibold">
+            <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400 text-xs font-semibold">
               <span>{isDrawerExpanded ? "Collapse Map" : "View All Stops"}</span>
               {isDrawerExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
@@ -508,12 +530,12 @@ export default function FullScreenLiveRadarView({
 
         {/* Scrollable Destinations Stepper (Source -> Multiple Intermediate Destinations -> Terminus) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          <div className="text-xs text-slate-400 flex items-center justify-between pb-1">
-            <span className="font-mono uppercase font-bold text-slate-500">Journey Progression</span>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-between pb-1 font-medium">
+            <span className="font-mono uppercase text-zinc-600 dark:text-zinc-400">Journey Progression</span>
             <span>Origin: {sourceStop?.name || "Terminal"} → Campus</span>
           </div>
 
-          <div className="relative pl-6 space-y-5 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-700">
+          <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-zinc-200 dark:before:bg-zinc-800">
             {destinationsWithMetrics.map((dest, idx) => {
               const isPast = nextDestination && dest.index < nextDestination.index;
               const isNext = nextDestination?.id === dest.id;
@@ -525,23 +547,23 @@ export default function FullScreenLiveRadarView({
                   onClick={() => setSelectedDestinationId(dest.id)}
                   className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer ${
                     isCommuterTarget
-                      ? "bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-950/30"
+                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500/80 shadow-sm text-zinc-900 dark:text-white"
                       : isNext
-                      ? "bg-emerald-950/40 border-emerald-500/60 shadow-lg shadow-emerald-950/30"
+                      ? "bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-500/80 shadow-sm text-zinc-900 dark:text-white"
                       : isPast
-                      ? "bg-slate-900/40 border-slate-800 opacity-60"
-                      : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
+                      ? "bg-zinc-100/60 dark:bg-zinc-900/30 border-zinc-200/60 dark:border-zinc-800/60 opacity-60 text-zinc-500 dark:text-zinc-400"
+                      : "bg-zinc-50 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white"
                   }`}
                 >
                   {/* Timeline Node Icon */}
-                  <div className={`absolute -left-[30px] top-4 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
+                  <div className={`absolute -left-[30px] top-4 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
                     isPast
-                      ? "bg-slate-800 border-slate-600 text-slate-400"
+                      ? "bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400"
                       : isNext
-                      ? "bg-emerald-500 border-white text-slate-950 shadow-md animate-pulse"
+                      ? "bg-blue-600 border-2 border-white dark:border-black text-white shadow-md font-bold"
                       : isCommuterTarget
-                      ? "bg-amber-500 border-white text-slate-950 shadow-md"
-                      : "bg-slate-900 border-slate-600 text-slate-300"
+                      ? "bg-amber-500 border-2 border-white dark:border-black text-zinc-950 shadow-md font-bold"
+                      : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
                   }`}>
                     {isPast ? "✓" : idx + 1}
                   </div>
@@ -549,41 +571,41 @@ export default function FullScreenLiveRadarView({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-white tracking-tight">
+                        <h4 className="text-sm font-bold text-zinc-900 dark:text-white tracking-tight">
                           {dest.name}
                         </h4>
                         {isCommuterTarget && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-zinc-950 font-bold">
                             YOUR STOP
                           </span>
                         )}
                         {isNext && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white font-bold">
                             NEXT STOP
                           </span>
                         )}
                         {dest.isSource && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-mono">
                             SOURCE
                           </span>
                         )}
                         {dest.isTerminal && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500 text-white font-mono flex items-center gap-1">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-mono flex items-center gap-1">
                             <GraduationCap className="w-3 h-3" />
                             CAMPUS
                           </span>
                         )}
                       </div>
                       {dest.landmark && (
-                        <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{dest.landmark}</p>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">{dest.landmark}</p>
                       )}
                     </div>
 
                     <div className="text-right shrink-0">
-                      <div className="text-xs font-mono font-bold text-white">
+                      <div className="text-xs font-mono font-bold text-zinc-900 dark:text-white">
                         {isPast ? "Passed" : `~${dest.etaMins} mins`}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
+                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
                         {dest.distKm} km
                       </div>
                     </div>
@@ -594,14 +616,14 @@ export default function FullScreenLiveRadarView({
           </div>
 
           {/* Vehicle & Telematics Footer Summary */}
-          <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300">
-                <BusFront className="w-5 h-5 text-indigo-400" />
+              <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800">
+                <BusFront className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <div className="font-bold text-white">{displayBusNumber}</div>
-                <div className="text-[11px] text-slate-400">
+                <div className="font-bold text-zinc-900 dark:text-white">{displayBusNumber}</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   {lastPingTime ? `Last Ping: ${lastPingTime.toLocaleTimeString()}` : "Awaiting Telematics Fix"}
                 </div>
               </div>
@@ -609,7 +631,7 @@ export default function FullScreenLiveRadarView({
 
             <Link
               href="/portal"
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-center font-bold text-xs transition-all active:scale-95"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-black text-white dark:bg-white dark:hover:bg-zinc-100 dark:text-black text-center font-bold text-xs transition-all active:scale-95 shadow-md"
             >
               Return to Commute Pass & Cockpit
             </Link>

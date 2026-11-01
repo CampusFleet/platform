@@ -26,6 +26,7 @@ import {
   User,
   LayoutDashboard,
   Clock,
+  Radio,
 } from "lucide-react";
 import BusDepartureAlertModal from "@/components/portal/BusDepartureAlertModal";
 
@@ -227,11 +228,15 @@ export default function ClientPortalLayout({
   // Removed blocking loading screen to reveal the underlying UI instantly!
 
   // Dynamic Navigation Links:
+  const isRadarPage = pathname === "/portal/radar" || pathname === "/portal/tracker";
+
+  // Dynamic Navigation Links:
   // 1. If Inactive/Unpaid/Expired: ONLY show Pass Activation & Fees (other pages are hidden)
-  // 2. If Paid & Active: Show Commute Cockpit, Seat Booking, Digital Pass, Live Radar (Fee payment form deactivated)
+  // 2. If Paid & Active: Show Commute Cockpit, Live Radar, Seat Booking, Digital Pass
   const navLinks = isSubscriptionActive
     ? [
         { href: "/portal", label: t('commutePortal'), icon: Navigation, requiresPayment: false },
+        { href: "/portal/radar", label: "Live Radar", icon: Radio, requiresPayment: false },
         { href: "/portal/late", label: t('tripUpdates'), icon: Clock, requiresPayment: false },
         { href: "/portal/settings", label: t('settings'), icon: User, requiresPayment: false },
       ]
@@ -246,7 +251,9 @@ export default function ClientPortalLayout({
   }));
 
   const layoutContent = (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-16 md:pb-6 overflow-x-hidden">
+    <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col overflow-x-hidden ${
+      isRadarPage ? "h-[100dvh] pb-0 md:pb-0 overflow-hidden" : "pb-16 md:pb-6"
+    }`}>
       {/* Zero-Overflow Unified Header with Vertical Slide-Down Command Panel */}
       <UnifiedAppHeader
         role="student"
@@ -274,7 +281,11 @@ export default function ClientPortalLayout({
       />
 
       {/* Main Content Container with Top-to-Down Progressive Flow */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className={`flex-1 w-full mx-auto ${
+        isRadarPage 
+          ? "p-0 max-w-none h-[calc(100dvh-4rem)] relative overflow-hidden"
+          : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6"
+      }`}>
         {isAccessBlocked ? (
           <div className="max-w-2xl mx-auto my-10 p-6 sm:p-10 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xl text-center space-y-6 animate-in zoom-in-95">
             <div className="w-16 h-16 rounded-3xl bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center mx-auto shadow-inner">

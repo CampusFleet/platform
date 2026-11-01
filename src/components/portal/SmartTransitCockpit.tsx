@@ -33,19 +33,8 @@ import {
 import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatGrid";
 import { generateSeatLayout, getTeacherStartingSeats } from "@/lib/utils";
 import { AttendanceLockCard } from "./AttendanceLockCard";
-import LiveTrackerView from "./LiveTrackerView";
 import { telematicsService } from "@/lib/telematicsService";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, TransportSettings, Staff } from "@/lib/types";
-
-// Dynamic import for high-performance GIS Radar map
-const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-[240px] rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse flex items-center justify-center text-xs text-slate-400 font-bold">
-      Loading Live Telematics GIS Radar...
-    </div>
-  ),
-});
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -115,8 +104,6 @@ export default function SmartTransitCockpit({
   const [isCancellingSeat, setIsCancellingSeat] = useState(false);
   const [isSwitchingSeat, setIsSwitchingSeat] = useState(false);
 
-  // Modal for live bus radar
-  const [isLiveRadarOpen, setIsLiveRadarOpen] = useState(false);
 
   // Cancel confirmation modal (replaces browser confirm())
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -170,7 +157,6 @@ export default function SmartTransitCockpit({
   // Live Telematics & Radar state
   const [telematicsLocation, setTelematicsLocation] = useState<any>(null);
   const [isTelematicsLive, setIsTelematicsLive] = useState(false);
-  const [isRadarMapExpanded, setIsRadarMapExpanded] = useState(false);
   const [userGeoCoords, setUserGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isQuickUnlocking, setIsQuickUnlocking] = useState(false);
 
@@ -538,203 +524,82 @@ export default function SmartTransitCockpit({
     }
   };
 
-  const renderLiveBusRadarCard = () => {
+  const renderLiveRadarLauncherBanner = () => {
     if (!assignedBus) return null;
 
     const displayBusNum = assignedBus.busNumber ? `Bus ${assignedBus.busNumber}` : `Bus #${assignedBus.id}`;
 
     return (
-      <div className="bg-slate-900 dark:bg-black rounded-3xl p-5 sm:p-6 border border-slate-800 shadow-2xl space-y-4 text-white overflow-hidden relative animate-in fade-in duration-300">
-        {/* Ambient glowing radar ripple effect in background */}
-        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
+      <div className="space-y-3">
+        {/* Sleek Live Navigation Launcher Card (Google Maps Turn-by-Turn Mode) */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-700/80 shadow-xl text-white relative overflow-hidden animate-in fade-in duration-300">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
 
-        {/* Header: Pulsing Live Radar Status */}
-        <div className="flex flex-wrap items-center justify-between gap-3 relative z-10 pb-3 border-b border-slate-800/80">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex items-center justify-center">
-              <span className={`w-3 h-3 rounded-full ${isTelematicsLive ? "bg-emerald-400" : "bg-amber-400"}`} />
-              {isTelematicsLive && (
-                <span className="absolute w-5 h-5 rounded-full bg-emerald-400/40 animate-ping" />
-              )}
-            </div>
-            <div>
-              <div className="text-xs font-black tracking-wider uppercase text-emerald-400 flex items-center gap-1.5 font-mono">
-                <span>Live Bus Radar</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
-                  isTelematicsLive
-                    ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-300"
-                    : "bg-amber-950/80 border-amber-500/40 text-amber-300"
-                }`}>
-                  {isTelematicsLive ? "LIVE GPS STREAM" : "CONNECTING TO GPS"}
-                </span>
-              </div>
-              <div className="text-xs text-slate-400">
-                Tracking {displayBusNum} in real-time
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsRadarMapExpanded(!isRadarMapExpanded)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center gap-1.5 cursor-pointer border border-slate-700/80 active:scale-95"
-            >
-              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{isRadarMapExpanded ? "Hide Map" : "Show Live Map"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenLiveRadar) {
-                  onOpenLiveRadar();
-                } else {
-                  setIsLiveRadarOpen(true);
-                }
-              }}
-              className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer border border-slate-700/80 active:scale-95"
-              title="Open Full Screen GIS Tracker"
-            >
-              <Layers className="w-4 h-4 text-slate-300" />
-            </button>
-          </div>
-        </div>
-
-        {/* 4 Telematics Metrics Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 relative z-10">
-          {/* Metric 1: Bus & Driver */}
-          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-              <BusFront className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Vehicle & Driver</span>
-            </div>
-            <div className="text-sm font-black text-white truncate">
-              {displayBusNum}
-            </div>
-            <div className="text-[11px] text-emerald-400 font-semibold truncate flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{assignedDriverName}</span>
-            </div>
-          </div>
-
-          {/* Metric 2: Live ETA to Pick-Up Stop */}
-          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-blue-400" />
-              <span>ETA to Your Stop</span>
-            </div>
-            <div className="text-sm font-black text-white truncate">
-              {liveEtaText}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate">
-              {assignedStop?.name || "Assigned Stop"}
-            </div>
-          </div>
-
-          {/* Metric 3: Live Distance to Stop */}
-          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-pink-400" />
-              <span>Stop Proximity</span>
-            </div>
-            <div className="text-sm font-black text-white">
-              {busToStopDistMeters !== null
-                ? busToStopDistMeters > 1000
-                  ? `${(busToStopDistMeters / 1000).toFixed(2)} km`
-                  : `${busToStopDistMeters} meters`
-                : isTelematicsLive ? "At Route Area" : "Awaiting Fix"}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate">
-              {busToStopDistMeters !== null && busToStopDistMeters < 50
-                ? "Bus is at stop"
-                : "Approaching stop"}
-            </div>
-          </div>
-
-          {/* Metric 4: Speed & Telemetry */}
-          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-            <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Speed & Bearing</span>
-            </div>
-            <div className="text-sm font-black text-white">
-              {telematicsLocation?.speedKmh ? `${telematicsLocation.speedKmh} km/h` : "Stationary (0 km/h)"}
-            </div>
-            <div className="text-[11px] text-slate-400">
-              Bearing: {telematicsLocation?.headingDeg ? `${telematicsLocation.headingDeg}°` : "Facing Route"}
-            </div>
-          </div>
-        </div>
-
-        {/* Expandable Mini Live GIS Map */}
-        {isRadarMapExpanded && (
-          <div className="rounded-2xl overflow-hidden border border-slate-700/80 relative z-10 animate-in fade-in duration-300">
-            <CampusFleetMap
-              busLocation={
-                telematicsLocation?.latitude
-                  ? {
-                      busId: assignedBus.id,
-                      latitude: Number(telematicsLocation.latitude),
-                      longitude: Number(telematicsLocation.longitude),
-                      speedKmh: telematicsLocation.speedKmh ? Number(telematicsLocation.speedKmh) : 0,
-                      headingDeg: telematicsLocation.headingDeg ? Number(telematicsLocation.headingDeg) : 0,
-                      lastPingAt: telematicsLocation.timestamp || new Date().toISOString(),
-                      tripId: reservation?.trip_id || activeBooking?.tripId || "",
-                      delayMinutes: telematicsLocation.delayMinutes || 0,
-                      estimatedArrivalNextStopMins: Number(telematicsLocation.estimatedArrivalNextStopMins || 2),
-                    }
-                  : undefined
-              }
-              busName={displayBusNum}
-              tripStatus={assignedTripStatus || "IN_PROGRESS"}
-              stops={stops}
-              selectedStopId={assignedStop?.id}
-              height="260px"
-              zoom={14}
-              showUserLocation={true}
-            />
-          </div>
-        )}
-
-        {/* Quick Proximity Unlock / Status Strip */}
-        {!isLockCleared && (
-          <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs relative z-10">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Lock className="w-4 h-4" />
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <Navigation className="w-6 h-6 animate-pulse" />
               </div>
               <div>
-                <span className="font-bold text-slate-200">Seat Selection Locked: </span>
-                <span className="text-slate-400">
-                  {busToUserDistMeters !== null
-                    ? `You are ${busToUserDistMeters}m from ${displayBusNum}`
-                    : `Approach ${displayBusNum} (<2m) or tap RFID card on the bus reader to unlock`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold uppercase text-emerald-400 tracking-wider">Live Bus Radar</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    isTelematicsLive
+                      ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-300"
+                      : "bg-amber-950/80 border-amber-500/40 text-amber-300"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isTelematicsLive ? "bg-emerald-400 animate-ping" : "bg-amber-400"}`} />
+                    {isTelematicsLive ? "LIVE GPS STREAM" : "GPS READY"}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white mt-0.5">
+                  Tracking {displayBusNum} on Route
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {telematicsLocation?.speedKmh ? `${telematicsLocation.speedKmh} km/h • ` : ""}
+                  {liveEtaText ? `ETA: ${liveEtaText} • ` : ""}
+                  Fullscreen turn-by-turn multi-destination navigation
+                </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleQuickProximityUnlock}
-              disabled={isQuickUnlocking}
-              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+            <Link
+              href={`/portal/radar?busId=${assignedBus.id}`}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 shrink-0 group cursor-pointer"
             >
-              {isQuickUnlocking ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Verifying Proximity...</span>
-                </>
-              ) : (
-                <>
-                  <Radio className="w-3.5 h-3.5" />
-                  <span>Distance Unlock (&lt;2m)</span>
-                </>
-              )}
-            </button>
+              <Navigation className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+              <span>Open Live Radar Fullscreen →</span>
+            </Link>
           </div>
-        )}
+
+          {/* Quick Proximity Unlock / Status Strip if seat is locked */}
+          {!isLockCleared && (
+            <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs relative z-10">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Seat Selection Locked: Approach {displayBusNum} (&lt;2m) or tap RFID card</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleQuickProximityUnlock}
+                disabled={isQuickUnlocking}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                {isQuickUnlocking ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying Proximity...</span>
+                  </>
+                ) : (
+                  <>
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>Distance Unlock (&lt;2m)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -1324,8 +1189,8 @@ export default function SmartTransitCockpit({
           </div>
         )}
 
-        {/* ─── LIVE BUS TELEMATICS RADAR CARD (STATE-OF-THE-ART COMMUTE TRACKER) ─── */}
-        {renderLiveBusRadarCard()}
+        {/* ─── LIVE BUS TELEMATICS RADAR LAUNCHER BANNER ─── */}
+        {renderLiveRadarLauncherBanner()}
 
         {/* Assigned Bus Info Bar */}
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm">
@@ -1553,8 +1418,8 @@ export default function SmartTransitCockpit({
 
   return (
     <div className="space-y-6">
-      {/* ─── LIVE BUS TELEMATICS RADAR CARD (STATE-OF-THE-ART COMMUTE TRACKER) ─── */}
-      {renderLiveBusRadarCard()}
+      {/* ─── LIVE BUS TELEMATICS RADAR LAUNCHER BANNER ─── */}
+      {renderLiveRadarLauncherBanner()}
 
       {/* Confirmed Commute Card */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
@@ -1706,15 +1571,9 @@ export default function SmartTransitCockpit({
             <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
           </button>
 
-          {/* Live Bus Radar Button */}
-          <button
-            onClick={() => {
-              if (onOpenLiveRadar) {
-                onOpenLiveRadar();
-              } else {
-                setIsLiveRadarOpen(true);
-              }
-            }}
+          {/* Live Bus Radar Direct Navigation Link */}
+          <Link
+            href={assignedBus ? `/portal/radar?busId=${assignedBus.id}` : "/portal/radar"}
             className="flex items-center justify-between p-4 md:p-5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-all text-left group active:scale-[0.99] shadow-sm cursor-pointer"
           >
             <div className="flex items-center gap-3.5">
@@ -1723,15 +1582,15 @@ export default function SmartTransitCockpit({
               </div>
               <div>
                 <div className="text-sm md:text-base font-bold text-slate-900 dark:text-white">
-                  Live Bus Radar
+                  Live Bus Radar Fullscreen
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Real-time GPS telematics & stop ETA tracker
+                  Google Maps-style turn-by-turn navigation & multi-destination timeline
                 </div>
               </div>
             </div>
             <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
-          </button>
+          </Link>
         </div>
 
         {/* Footer Link to Settings */}
@@ -1745,42 +1604,6 @@ export default function SmartTransitCockpit({
           </Link>
         </div>
       </div>
-
-      {/* ─── MODAL: LIVE BUS RADAR ─────────────────────────────────── */}
-      {isLiveRadarOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-5xl w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 animate-in zoom-in-95 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Navigation className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Live Bus Radar
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsLiveRadarOpen(false)}
-                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="h-[650px] overflow-hidden rounded-2xl">
-              <LiveTrackerView
-                initialUser={user}
-                initialBuses={buses}
-                initialRoutes={routes}
-                initialStops={stops}
-                initialTrips={trips}
-                initialStaff={staff || []}
-                initialStudents={students || []}
-                isEmbedded={true}
-                activeBooking={activeBooking}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ─── MODAL: CANCEL SEAT CONFIRMATION (replaces browser confirm()) ─── */}
       {showCancelConfirm && (

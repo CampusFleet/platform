@@ -82,8 +82,8 @@ export function MobileBottomNav({
     setIsMoreOpen(false);
   }, [pathname]);
 
-  // Hide on onboarding to avoid flow interruption
-  if (pathname === "/portal/onboarding") {
+  // Hide on onboarding and fullscreen in-ride radar to avoid navigation dock overlap
+  if (pathname === "/portal/onboarding" || pathname === "/portal/radar" || pathname === "/portal/tracker") {
     return null;
   }
 

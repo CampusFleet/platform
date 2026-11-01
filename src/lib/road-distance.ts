@@ -30,9 +30,9 @@ function getOSRMBaseUrl(): string {
   return process.env.OSRM_BASE_URL || "https://router.project-osrm.org";
 }
 
-/** Google Maps API key (server-side only, never exposed to client) */
+/** Google Maps API key */
 function getGoogleApiKey(): string {
-  return process.env.GOOGLE_MAPS_API_KEY || "";
+  return process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────

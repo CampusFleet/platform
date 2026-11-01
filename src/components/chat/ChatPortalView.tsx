@@ -8,10 +8,19 @@ import {
   ChatConversation,
   ChatMessage,
   ChatPoll,
+  ChatTemplate,
   ChatUserSettings,
   PASTEL_AVATARS,
   getInitials,
 } from "@/types/chat";
+import { playNotificationTone } from "@/lib/chat-audio";
+import {
+  ChatSettingsMainView,
+  SettingsSection,
+  ProfileSettingsView,
+  NotificationsSettingsView,
+  MessageTemplatesView,
+} from "./settings";
 import {
   Search,
   Edit3,
@@ -97,7 +106,7 @@ export function ChatPortalView() {
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
-  const [activeSettingSection, setActiveSettingSection] = useState<string | null>(null);
+  const [activeSettingSection, setActiveSettingSection] = useState<SettingsSection | null>("main");
 
   // Poll & Media state
   const [isCreatePollOpen, setIsCreatePollOpen] = useState(false);
@@ -119,6 +128,11 @@ export function ChatPortalView() {
   const isUserScrolledUpRef = useRef(false);
   const prevConvIdRef = useRef<string | null>(null);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Dedicated container-only scroll: NEVER scrolls outer window or pushes headers off screen
   const scrollToBottom = (smooth = true) => {
@@ -157,7 +171,10 @@ export function ChatPortalView() {
     const cid = searchParams.get("c");
     const view = searchParams.get("view");
     if (cid) setActiveConvId(cid);
-    if (view === "settings") setLeftView("settings");
+    if (view === "settings") {
+      setLeftView("settings");
+      setActiveSettingSection("main");
+    }
   }, [searchParams]);
 
   // Load messages when active conversation changes
@@ -227,13 +244,73 @@ export function ChatPortalView() {
     }
   };
 
+  const handleUpdateSettings = async (updates: Partial<ChatUserSettings>): Promise<boolean> => {
+    setUserSettings((prev) => (prev ? { ...prev, ...updates } : (updates as ChatUserSettings)));
+    try {
+      const res = await fetch("/api/chat/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      return Boolean(data.success);
+    } catch (err) {
+      console.error("Failed to update chat settings:", err);
+      return false;
+    }
+  };
+
+  const handleSaveProfile = async (updates: { about: string }) => {
+    await handleUpdateSettings(updates);
+  };
+
+  const handleAddTemplate = async (newTpl: Omit<ChatTemplate, "id" | "createdAt">) => {
+    const templateItem: ChatTemplate = {
+      ...newTpl,
+      id: `tpl_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedTemplates = [...(userSettings?.templates || []), templateItem];
+    await handleUpdateSettings({ templates: updatedTemplates });
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    const updatedTemplates = (userSettings?.templates || []).filter((t) => t.id !== templateId);
+    await handleUpdateSettings({ templates: updatedTemplates });
+  };
+
   const loadMessages = async (convId: string, isPoll = false) => {
     if (!isPoll) setLoadingMessages(true);
     try {
       const res = await fetch(`/api/chat/messages?conversationId=${convId}`);
       const data = await res.json();
       if (data.success && data.messages) {
-        setMessages(data.messages);
+        const newMsgs: ChatMessage[] = data.messages;
+        if (isPoll && newMsgs.length > 0 && messagesRef.current.length > 0) {
+          const prevLastId = messagesRef.current[messagesRef.current.length - 1]?.id;
+          const newLastMsg = newMsgs[newMsgs.length - 1];
+          if (newLastMsg && newLastMsg.id !== prevLastId && newLastMsg.senderId !== currentUser?.id) {
+            // Sound notification
+            if (userSettings?.soundEnabled !== false) {
+              const tone = userSettings?.notificationTone || userSettings?.notifications?.tone || "Classic";
+              playNotificationTone(tone);
+            }
+            // Desktop push notification if enabled
+            if (
+              userSettings?.notificationsEnabled &&
+              typeof window !== "undefined" &&
+              "Notification" in window &&
+              Notification.permission === "granted" &&
+              document.visibilityState !== "visible"
+            ) {
+              new Notification(newLastMsg.senderName || "CampusFleet Chat", {
+                body: newLastMsg.text || "New message received",
+                icon: "/favicon.ico",
+              });
+            }
+          }
+        }
+        setMessages(newMsgs);
       }
     } catch (err) {
       console.error("Failed to load messages:", err);
@@ -635,7 +712,10 @@ export function ChatPortalView() {
                   <Search className="w-5 h-5" />
                 </button>
                 <button
-                  onClick={() => setLeftView("settings")}
+                  onClick={() => {
+                    setLeftView("settings");
+                    setActiveSettingSection("main");
+                  }}
                   className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   title="Chat settings"
                 >
@@ -769,112 +849,54 @@ export function ChatPortalView() {
           </>
         )}
 
-        {/* --- VIEW 2: SETTINGS (Reverse-Engineered Screenshot 2) --- */}
+        {/* --- VIEW 2: SETTINGS (Modular Sub-Views) --- */}
         {leftView === "settings" && (
-          <div className="flex-1 flex flex-col h-full bg-white dark:bg-gray-900">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-              <button
-                onClick={() => setLeftView("messages")}
-                className="p-1 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Chat settings</h2>
-            </div>
+          <div className="flex-1 flex flex-col h-full bg-white dark:bg-gray-900 overflow-hidden">
+            {(!activeSettingSection || activeSettingSection === "main") && (
+              <ChatSettingsMainView
+                fullName={currentUser?.fullName || currentUser?.email?.split("@")[0] || "Aditya Pandey"}
+                about={userSettings?.about || "Hey there! I am using CampusFleet Chat."}
+                onSelectSection={(sec) => setActiveSettingSection(sec)}
+                onBack={() => setLeftView("messages")}
+              />
+            )}
 
-            <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-              {/* User Profile Card */}
-              <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-800 flex items-center gap-4 bg-gray-50/50 dark:bg-gray-800/30">
-                <div className="w-14 h-14 rounded-full bg-amber-200 text-amber-900 font-bold text-lg flex items-center justify-center flex-shrink-0">
-                  {getInitials(currentUser?.fullName || "Aditya Pandey")}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-base text-gray-900 dark:text-white truncate">
-                    {currentUser?.fullName || "Aditya Pandey"}
-                  </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {userSettings?.about || "Hey there! I am using CampusFleet Chat."}
-                  </p>
-                </div>
-              </div>
+            {activeSettingSection === "profile" && (
+              <ProfileSettingsView
+                fullName={currentUser?.fullName || currentUser?.email?.split("@")[0] || "Aditya Pandey"}
+                about={userSettings?.about || "Hey there! I am using CampusFleet Chat."}
+                onSave={handleSaveProfile}
+                onBack={() => setActiveSettingSection("main")}
+              />
+            )}
 
-              {/* Menu Items */}
-              <div className="divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden">
-                <button
-                  onClick={() => setActiveSettingSection("profile")}
-                  className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <User className="w-5 h-5 text-gray-500" />
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">Profile</div>
-                      <div className="text-xs text-gray-400">Name and about</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
+            {activeSettingSection === "notifications" && (
+              <NotificationsSettingsView
+                settings={
+                  userSettings || {
+                    userId: currentUser?.id || "usr_guest",
+                    fullName: currentUser?.fullName || "Aditya Pandey",
+                    soundEnabled: true,
+                    notificationsEnabled: false,
+                    notificationTone: "Classic",
+                    notifications: { sound: true, mentionsOnly: false, desktop: false, tone: "Classic" },
+                    quickReplies: [],
+                    favorites: [],
+                  }
+                }
+                onUpdate={handleUpdateSettings}
+                onBack={() => setActiveSettingSection("main")}
+              />
+            )}
 
-                <button
-                  onClick={() => setActiveSettingSection("notifications")}
-                  className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Bell className="w-5 h-5 text-gray-500" />
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">Notifications & privacy</div>
-                      <div className="text-xs text-gray-400">Alerts and notification sounds</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
-
-                <button
-                  onClick={() => setActiveSettingSection("templates")}
-                  className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <MessageSquare className="w-5 h-5 text-gray-500" />
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">Message templates</div>
-                      <div className="text-xs text-gray-400">Personal quick replies</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
-
-                <button
-                  onClick={() => window.location.reload()}
-                  className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <RefreshCw className="w-5 h-5 text-gray-500" />
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">Refresh app</div>
-                      <div className="text-xs text-gray-400">Hard reload in browser or PWA</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-
-              {/* Sub-setting drawer if active */}
-              {activeSettingSection === "templates" && (
-                <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 space-y-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300">
-                    Quick Reply Templates
-                  </h4>
-                  <ul className="text-xs space-y-1 text-gray-700 dark:text-gray-300">
-                    {(userSettings?.quickReplies || []).map((q, i) => (
-                      <li key={i} className="flex items-center gap-2">
-                        <span>•</span>
-                        <span>{q}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            {activeSettingSection === "templates" && (
+              <MessageTemplatesView
+                templates={userSettings?.templates || []}
+                onAddTemplate={handleAddTemplate}
+                onDeleteTemplate={handleDeleteTemplate}
+                onBack={() => setActiveSettingSection("main")}
+              />
+            )}
           </div>
         )}
       </div>
@@ -1263,19 +1285,60 @@ export function ChatPortalView() {
 
             {/* Quick Templates Drawer */}
             {isTemplatesOpen && (
-              <div className="absolute bottom-20 right-4 sm:right-6 z-30 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl p-3 space-y-2">
-                <div className="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-700">
-                  <span className="text-xs font-bold text-gray-900 dark:text-white">Quick Reply Templates</span>
-                  <button onClick={() => setIsTemplatesOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <div className="absolute bottom-20 right-4 sm:right-6 z-30 w-80 bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-750 rounded-2xl shadow-xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between pb-1.5 border-b border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-900 dark:text-white">Quick Templates</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTemplatesOpen(false);
+                        setLeftView("settings");
+                        setActiveSettingSection("templates");
+                      }}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setIsTemplatesOpen(false)}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                  {/* User custom templates */}
+                  {(userSettings?.templates || []).map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleSendMessage(t.message)}
+                      className="w-full text-left p-2.5 rounded-xl border border-gray-100 dark:border-gray-800 hover:bg-blue-50/60 dark:hover:bg-blue-950/40 hover:border-blue-200 dark:hover:border-blue-800 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          {t.title}
+                        </span>
+                        {t.useIn && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                            {t.useIn}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-1 leading-snug">
+                        {t.message}
+                      </p>
+                    </button>
+                  ))}
+
+                  {/* Standard quick replies */}
                   {(userSettings?.quickReplies || []).map((template, idx) => (
                     <button
-                      key={idx}
+                      key={`qr_${idx}`}
                       onClick={() => handleSendMessage(template)}
-                      className="w-full text-left p-2 rounded-lg text-xs text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors"
+                      className="w-full text-left p-2 rounded-xl text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
                     >
                       {template}
                     </button>

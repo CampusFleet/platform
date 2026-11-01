@@ -2,9 +2,15 @@ import { getMongoDb } from "./mongodb";
 import { supabaseAdmin } from "./supabaseClient";
 import { createMessageId } from "./id";
 import { cacheGet, cacheSet, cacheDel, CACHE_TTL } from "./redis";
-import { ChatPoll, ChatPollOption } from "@/types/chat";
+import {
+  ChatPoll,
+  ChatPollOption,
+  ChatTemplate,
+  ChatUserSettings as FullChatUserSettings,
+} from "@/types/chat";
 
-export type { ChatPoll, ChatPollOption };
+export type { ChatPoll, ChatPollOption, ChatTemplate };
+export type ChatUserSettings = FullChatUserSettings;
 
 export interface ChatConversation {
   id: string;
@@ -64,18 +70,6 @@ export interface ChatMessage {
   isDeleted?: boolean;
   createdAt: string;
   updatedAt?: string;
-}
-
-export interface ChatUserSettings {
-  userId: string;
-  fullName: string;
-  about: string;
-  notifications: {
-    sound: boolean;
-    mentionsOnly: boolean;
-  };
-  quickReplies: string[];
-  favorites: string[];
 }
 
 export const PASTEL_AVATARS = [
@@ -972,19 +966,47 @@ export async function toggleMessageReaction(messageId: string, emoji: string, us
  * Get or create user chat settings from MongoDB
  */
 export async function getChatUserSettings(userId: string, fullName: string): Promise<ChatUserSettings> {
+  const defaultTemplates: ChatTemplate[] = [
+    {
+      id: "tpl_1",
+      title: "Running late",
+      message: "Running 5 minutes late for my bus stop.",
+      useIn: "All chats",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "tpl_2",
+      title: "Arrived at stop",
+      message: "I have reached the stop and am waiting for the bus.",
+      useIn: "All chats",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "tpl_3",
+      title: "Boarded safely",
+      message: "Boarded the bus safely, pass scanned.",
+      useIn: "All chats",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
   const db = await getMongoDb();
   if (!db) {
     return {
       userId,
       fullName,
       about: "Hey there! I am using CampusFleet Chat.",
-      notifications: { sound: true, mentionsOnly: false },
+      soundEnabled: true,
+      notificationsEnabled: false,
+      notificationTone: "Classic",
+      notifications: { sound: true, mentionsOnly: false, desktop: false, tone: "Classic" },
       quickReplies: [
         "Is the bus arriving on time?",
         "I am boarding at my registered stop.",
         "Running 5 minutes late for morning shift.",
         "Confirmed, boarding pass verified.",
       ],
+      templates: defaultTemplates,
       favorites: ["campusfleet-main"],
     };
   }
@@ -997,20 +1019,35 @@ export async function getChatUserSettings(userId: string, fullName: string): Pro
       userId,
       fullName: fullName || "CampusFleet Member",
       about: "Hey there! I am using CampusFleet Chat.",
-      notifications: { sound: true, mentionsOnly: false },
+      soundEnabled: true,
+      notificationsEnabled: false,
+      notificationTone: "Classic",
+      notifications: { sound: true, mentionsOnly: false, desktop: false, tone: "Classic" },
       quickReplies: [
         "Is the bus arriving on time?",
         "I am boarding at my registered stop.",
         "Running 5 minutes late for morning shift.",
         "Confirmed, boarding pass verified.",
       ],
+      templates: defaultTemplates,
       favorites: ["campusfleet-main"],
     };
     await setCol.insertOne(defaultSettings as any);
     return defaultSettings;
   }
 
-  return userSettings as unknown as ChatUserSettings;
+  const parsed = userSettings as unknown as ChatUserSettings;
+  if (!parsed.templates || parsed.templates.length === 0) {
+    parsed.templates = defaultTemplates;
+  }
+  if (parsed.soundEnabled === undefined) {
+    parsed.soundEnabled = parsed.notifications?.sound ?? true;
+  }
+  if (parsed.notificationTone === undefined) {
+    parsed.notificationTone = parsed.notifications?.tone || "Classic";
+  }
+
+  return parsed;
 }
 
 /**

@@ -73,18 +73,30 @@ export interface ChatMessage {
   updatedAt?: string;
 }
 
+export interface ChatTemplate {
+  id: string;
+  title: string;
+  message: string;
+  useIn?: string;
+  createdAt?: string;
+}
+
 export interface ChatUserSettings {
   userId: string;
   fullName?: string;
   about?: string;
   theme?: "system" | "dark" | "light";
   quickReplies?: string[];
+  templates?: ChatTemplate[];
   soundEnabled?: boolean;
   notificationsEnabled?: boolean;
+  notificationTone?: string;
   favorites?: string[];
   notifications?: {
     sound: boolean;
     mentionsOnly: boolean;
+    desktop?: boolean;
+    tone?: string;
   };
 }
 

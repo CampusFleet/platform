@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { LiveBusLocation, Stop, FleetBusMarkerData, Campus } from "@/lib/types";
 import { store } from "@/lib/store";
 import { MapPin, Zap, Crosshair, Building2, Navigation } from "lucide-react";
+import GoogleTransitMap from "./GoogleTransitMap";
 
 /**
  * Resolves the institutional university campus terminal location dynamically.
@@ -174,6 +175,49 @@ export default function CampusFleetMap({
   showCampusLandmark = true,
   tileTheme = "AUTO",
 }: CampusFleetMapProps) {
+  const [googleMapsError, setGoogleMapsError] = useState(false);
+  const hasGoogleKey = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
+
+  // If user requested Google mode and Google Maps API key is available and hasn't failed:
+  // Render official GoogleTransitMap!
+  if (
+    hasGoogleKey &&
+    !googleMapsError &&
+    (tileTheme === "GOOGLE_STREETS" || tileTheme === "GOOGLE_HYBRID" || tileTheme === "AUTO")
+  ) {
+    return (
+      <GoogleTransitMap
+        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        busLocation={busLocation}
+        busName={busName}
+        tripStatus={tripStatus}
+        fleetBuses={fleetBuses}
+        focusedBusId={focusedBusId}
+        onBusClick={onBusClick}
+        stops={stops}
+        campuses={campuses}
+        primaryCampus={primaryCampus}
+        routeCoordinates={routeCoordinates}
+        activeStopIndex={activeStopIndex}
+        shortestPathStopIds={shortestPathStopIds}
+        selectedStopId={selectedStopId}
+        isExpressDirect={isExpressDirect}
+        expressReason={expressReason}
+        height={height}
+        zoom={zoom}
+        onMapClick={onMapClick}
+        onStopClick={onStopClick}
+        draftPinLocation={draftPinLocation}
+        draftGeofenceRadius={draftGeofenceRadius}
+        interactiveMode={interactiveMode}
+        showUserLocation={showUserLocation}
+        showCampusLandmark={showCampusLandmark}
+        tileTheme={tileTheme}
+        onError={() => setGoogleMapsError(true)}
+      />
+    );
+  }
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const busMarkerRef = useRef<any>(null);
@@ -344,20 +388,21 @@ export default function CampusFleetMap({
           map.removeLayer(currentTileLayerRef.current);
         }
 
-        let tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
-        let subdomains: any = ["mt0", "mt1", "mt2", "mt3"];
+        // Bulletproof open-CORS tile engine (CARTO Voyager / Dark Matter with auto-fallback)
+        let tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+        let subdomains: any = "abcd";
         let maxZoom = 20;
-        let attribution = '&copy; Google Maps';
+        let attribution = '&copy; CARTO & OpenStreetMap';
 
-        if (activeTheme === "GOOGLE_HYBRID") {
-          tileUrl = "https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}";
-          subdomains = ["mt0", "mt1", "mt2", "mt3"];
-          attribution = '&copy; Google Maps';
-        } else if (activeTheme === "CARTO_DARK") {
+        if (activeTheme === "CARTO_DARK") {
           tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
           subdomains = "abcd";
           attribution = '&copy; CARTO & OpenStreetMap';
-        } else if (activeTheme === "CARTO_VOYAGER") {
+        } else if (activeTheme === "GOOGLE_HYBRID") {
+          tileUrl = "https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}";
+          subdomains = ["mt0", "mt1", "mt2", "mt3"];
+          attribution = '&copy; Google Maps';
+        } else if (activeTheme === "CARTO_VOYAGER" || activeTheme === "GOOGLE_STREETS") {
           tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
           subdomains = "abcd";
           attribution = '&copy; CARTO & OpenStreetMap';
@@ -367,6 +412,14 @@ export default function CampusFleetMap({
           maxZoom,
           subdomains,
           attribution,
+        });
+
+        // Resilient fallback: swap tile URL to CARTO Voyager if any tile errors out
+        tileLayer.on("tileerror", (errorEvent: any) => {
+          if (errorEvent.tile && !errorEvent.tile.dataset.retried) {
+            errorEvent.tile.dataset.retried = "true";
+            errorEvent.tile.src = `https://a.basemaps.cartocdn.com/rastertiles/voyager/${errorEvent.coords.z}/${errorEvent.coords.x}/${errorEvent.coords.y}.png`;
+          }
         });
 
         tileLayer.addTo(map);

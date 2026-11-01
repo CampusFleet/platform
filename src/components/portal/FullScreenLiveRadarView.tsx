@@ -29,6 +29,7 @@ import {
   Layers,
   AlertTriangle,
   GraduationCap,
+  Building2,
   Sparkles,
   Volume2,
 } from "lucide-react";
@@ -441,8 +442,8 @@ export default function FullScreenLiveRadarView({
           tileTheme={tileTheme}
           height="100%"
           zoom={15}
-          showUserLocation={true}
-          showCampusLandmark={true}
+          showUserLocation={false}
+          showCampusLandmark={false}
           onStopClick={(clickedStop) => {
             setSelectedDestinationId(clickedStop.id);
             setIsDrawerExpanded(true);
@@ -474,13 +475,28 @@ export default function FullScreenLiveRadarView({
             </button>
           )}
 
+          {/* Pan to University Campus */}
+          <button
+            onClick={() => {
+              const campusTerminal = getCampusStopFromDatabase(stops, campuses, null);
+              if (campusTerminal) {
+                setSelectedDestinationId(campusTerminal.id);
+                setMapFocusTarget("MY_STOP");
+              }
+            }}
+            className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+            title="Pan to University Campus Terminal"
+          >
+            <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
+          </button>
+
           {/* Full Corridor View */}
           <button
             onClick={() => setMapFocusTarget("CORRIDOR")}
             className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Fit Entire Source-to-Destination Corridor"
           >
-            <RouteIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <RouteIcon className="w-5 h-5 text-zinc-700 dark:text-zinc-300" />
           </button>
 
           {/* Map Layer Switcher */}

@@ -91,11 +91,29 @@ body {
   border-radius: inherit;
   font-family: inherit;
   z-index: 1;
+  background-color: #f1f5f9;
 }
 
-.dark .leaflet-tile {
-  filter: brightness(0.7) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.75);
+.dark .leaflet-container {
+  background-color: #09090b;
 }
+
+/* Crucial Tailwind Preflight fix: prevent tile image collapse */
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+/* Ensure clean uncorrupted tile rendering */
+.dark .leaflet-tile {
+  filter: none;
+}
+
 
 /* Metro-inspired Route Linear Progress Styling */
 .station-line-connector {

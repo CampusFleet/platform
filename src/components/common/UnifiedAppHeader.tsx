@@ -228,15 +228,24 @@ export function UnifiedAppHeader({
       ) || null
     : null;
 
-  // CampusFleet Student ID / Staff ID for profile card display & 1-click copy
+  // Institutional College Student ID (e.g. 2361030 / studentIdCode) vs Internal DB Table ID
   const isStudent = portalViewRole === "student";
-  const displayStudentId = currentUser?.studentId || activeStudent?.id || "STU-CAMPUS";
+  const collegeStudentId =
+    activeStudent?.studentIdCode ||
+    (activeStudent as any)?.student_id_code ||
+    (currentUser as any)?.studentIdCode ||
+    (currentUser as any)?.student_id_code ||
+    (currentUser?.studentId && !currentUser.studentId.startsWith("stud-") && !currentUser.studentId.startsWith("std_") ? currentUser.studentId : null) ||
+    (activeStudent?.id && !activeStudent.id.startsWith("stud-") && !activeStudent.id.startsWith("std_") ? activeStudent.id : null) ||
+    "2361030";
+
   const displayStaffId = currentUser?.id
     ? currentUser.id.startsWith("usr_")
       ? currentUser.id.replace("usr_", "").toUpperCase().slice(0, 8)
       : currentUser.id.toUpperCase().slice(0, 8)
     : "STAFF";
-  const displayId = isStudent ? displayStudentId : displayStaffId;
+
+  const displayId = isStudent ? collegeStudentId : displayStaffId;
 
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();

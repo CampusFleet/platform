@@ -209,8 +209,8 @@ export async function middleware(req: NextRequest) {
   // - Transport Head can access Transport Head
   const allowedPortalsForRole: Record<string, string[]> = {
     student: ["/portal"],
-    admin: ["/admin", "/transport-admin", "/transport-manager"],
-    transport_admin: ["/transport-admin", "/transport-manager"],
+    admin: ["/admin", "/transport-admin", "/transport-manager", "/portal", "/conductor", "/driver", "/teacher"],
+    transport_admin: ["/transport-admin", "/transport-manager", "/portal"],
     transport_manager: ["/transport-manager"],
     driver: ["/driver", "/conductor"],
     conductor: ["/conductor"],

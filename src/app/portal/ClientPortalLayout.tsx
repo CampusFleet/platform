@@ -10,7 +10,6 @@ import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { SOSModal } from "@/components/common/SOSModal";
 import { AuthModal } from "@/components/auth/AuthModal";
-import BusLoadingScreen from "@/components/common/BusLoadingScreen";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 // Removed reCAPTCHA
 import {
@@ -65,11 +64,11 @@ export default function ClientPortalLayout({
     return unsub;
   }, []);
 
-  // Strict Access Guard: Student portal can only be seen by enrolled students
-  const isAuthorizedStudent = !currentUser || currentUser.role === "student";
+  // Strict Access Guard: Student portal can only be seen by enrolled students or admins
+  const isAuthorizedStudent = !currentUser || currentUser.role === "student" || currentUser.role === "admin";
 
   useEffect(() => {
-    if (currentUser && currentUser.role && currentUser.role !== "student") {
+    if (currentUser && currentUser.role && currentUser.role !== "student" && currentUser.role !== "admin") {
       const destination = authService.getTargetRouteForRole(currentUser.role);
       router.replace(destination);
     }
@@ -158,8 +157,8 @@ export default function ClientPortalLayout({
 
   if (!isStoreReady) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center justify-center">
-        <BusLoadingScreen compact={false} fullScreen={false} message="Authenticating portal..." />
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex flex-col items-center justify-center">
+        <div className="w-7 h-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
       </div>
     );
   }

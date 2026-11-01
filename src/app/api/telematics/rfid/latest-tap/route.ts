@@ -19,9 +19,9 @@ const NO_CACHE_HEADERS = {
 export async function GET(req: NextRequest) {
   try {
     const unmappedList = (await cacheGet<any[]>("telematics:unmapped_rfid_list")) || [];
-    const unmappedDevices = (await cacheGet<any[]>("telematics:unmapped_device_list")) || [];
+    const rawUnmappedDevices = (await cacheGet<any[]>("telematics:unmapped_device_list")) || [];
     const latestTap = await cacheGet<any>("telematics:latest_rfid_tap");
-    const hardwareStatus = await cacheGet<any>("telematics:latest_esp32_status");
+    let hardwareStatus = await cacheGet<any>("telematics:latest_esp32_status");
 
     let mappedStudent = null;
     if (latestTap?.studentId) {
@@ -37,6 +37,46 @@ export async function GET(req: NextRequest) {
       .from("buses")
       .select("id, bus_number, registration_no, model, capacity, status, gps_device_id, rfid_device_id")
       .order("bus_number", { ascending: true });
+
+    // Deduplicate: if a device is mapped to a bus in the database, it must never appear in unmappedDevices
+    const mappedDeviceMacs = new Set(
+      (dbBuses || [])
+        .flatMap((b: any) => [
+          b.rfid_device_id ? String(b.rfid_device_id).toLowerCase().trim() : null,
+          b.gps_device_id ? String(b.gps_device_id).toLowerCase().trim() : null,
+        ])
+        .filter(Boolean)
+    );
+
+    const unmappedDevices = rawUnmappedDevices.filter(
+      (d: any) => d?.deviceId && !mappedDeviceMacs.has(String(d.deviceId).toLowerCase().trim())
+    );
+
+    // Prune Redis cache if stale unmapped items were removed
+    if (unmappedDevices.length !== rawUnmappedDevices.length) {
+      await cacheSet("telematics:unmapped_device_list", unmappedDevices, 86400).catch(() => {});
+    }
+
+    // Auto-heal hardware status if the active device is actually mapped to a bus
+    if (hardwareStatus?.deviceId) {
+      const cleanDevId = String(hardwareStatus.deviceId).toLowerCase().trim();
+      const matchedBus = (dbBuses || []).find(
+        (b: any) =>
+          (b.rfid_device_id && String(b.rfid_device_id).toLowerCase().trim() === cleanDevId) ||
+          (b.gps_device_id && String(b.gps_device_id).toLowerCase().trim() === cleanDevId)
+      );
+      if (matchedBus && (!hardwareStatus.isMapped || hardwareStatus.busId !== matchedBus.id)) {
+        hardwareStatus = {
+          ...hardwareStatus,
+          busId: matchedBus.id,
+          busNumber: matchedBus.bus_number,
+          isMapped: true,
+        };
+        await cacheSet("telematics:latest_esp32_status", hardwareStatus, 60).catch(() => {});
+        await cacheSet(`telematics:device_bus_map:${hardwareStatus.deviceId}`, matchedBus.id, 300).catch(() => {});
+        await cacheSet(`telematics:device_bus_number:${hardwareStatus.deviceId}`, matchedBus.bus_number, 300).catch(() => {});
+      }
+    }
 
     return NextResponse.json(
       {

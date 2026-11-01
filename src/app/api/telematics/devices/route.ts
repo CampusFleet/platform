@@ -21,8 +21,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    const latestHardwareStatus = await cacheGet<any>("telematics:latest_esp32_status");
-    const unmappedDevices = (await cacheGet<any[]>("telematics:unmapped_device_list")) || [];
+    let latestHardwareStatus = await cacheGet<any>("telematics:latest_esp32_status");
+    const rawUnmapped = (await cacheGet<any[]>("telematics:unmapped_device_list")) || [];
+
+    const mappedMacs = new Set(
+      (buses || [])
+        .flatMap((b) => [
+          b.rfid_device_id ? String(b.rfid_device_id).toLowerCase().trim() : null,
+          b.gps_device_id ? String(b.gps_device_id).toLowerCase().trim() : null,
+        ])
+        .filter(Boolean)
+    );
+
+    const unmappedDevices = rawUnmapped.filter(
+      (d) => d?.deviceId && !mappedMacs.has(String(d.deviceId).toLowerCase().trim())
+    );
+
+    if (latestHardwareStatus?.deviceId) {
+      const cleanDevId = String(latestHardwareStatus.deviceId).toLowerCase().trim();
+      const matchedBus = (buses || []).find(
+        (b) =>
+          (b.rfid_device_id && String(b.rfid_device_id).toLowerCase().trim() === cleanDevId) ||
+          (b.gps_device_id && String(b.gps_device_id).toLowerCase().trim() === cleanDevId)
+      );
+      if (matchedBus && (!latestHardwareStatus.isMapped || latestHardwareStatus.busId !== matchedBus.id)) {
+        latestHardwareStatus = {
+          ...latestHardwareStatus,
+          busId: matchedBus.id,
+          busNumber: matchedBus.bus_number,
+          isMapped: true,
+        };
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -34,7 +64,13 @@ export async function GET(req: NextRequest) {
         status: b.status,
         gpsDeviceId: b.gps_device_id,
         rfidDeviceId: b.rfid_device_id,
-        isOnline: latestHardwareStatus?.busId === b.id,
+        isOnline:
+          latestHardwareStatus?.busId === b.id ||
+          Boolean(
+            latestHardwareStatus?.deviceId &&
+              b.rfid_device_id &&
+              String(latestHardwareStatus.deviceId).toLowerCase().trim() === String(b.rfid_device_id).toLowerCase().trim()
+          ),
       })),
       latestHardwareStatus: latestHardwareStatus || null,
       unmappedDevices,

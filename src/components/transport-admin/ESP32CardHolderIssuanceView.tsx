@@ -306,12 +306,24 @@ function formatTimeAgo(isoString?: string | null): string {
     return buses.filter((b) => Boolean(b.rfidDeviceId));
   }, [buses]);
 
+  // Only devices that are NOT mapped to any bus in the fleet (guarantees zero duplication)
+  const validUnmappedDevices = useMemo(() => {
+    const mappedMacs = new Set(
+      buses
+        .map((b) => (b.rfidDeviceId ? b.rfidDeviceId.toLowerCase().trim() : null))
+        .filter(Boolean)
+    );
+    return unmappedDevices.filter(
+      (d) => d.deviceId && !mappedMacs.has(d.deviceId.toLowerCase().trim())
+    );
+  }, [unmappedDevices, buses]);
+
   // Combined search filtering for main table
   const filteredUnmapped = useMemo(() => {
-    if (!filterQuery.trim()) return unmappedDevices;
+    if (!filterQuery.trim()) return validUnmappedDevices;
     const q = filterQuery.toLowerCase().trim();
-    return unmappedDevices.filter((d) => d.deviceId?.toLowerCase().includes(q));
-  }, [unmappedDevices, filterQuery]);
+    return validUnmappedDevices.filter((d) => d.deviceId?.toLowerCase().includes(q));
+  }, [validUnmappedDevices, filterQuery]);
 
   const filteredAssigned = useMemo(() => {
     if (!filterQuery.trim()) return assignedBusesList;
@@ -324,6 +336,18 @@ function formatTimeAgo(isoString?: string | null): string {
         b.model?.toLowerCase().includes(q)
     );
   }, [assignedBusesList, filterQuery]);
+
+  // Resolve currently active bus from hardwareStatus deviceId or busId
+  const activeMappedBus = useMemo(() => {
+    if (!hardwareStatus?.deviceId) return null;
+    const cleanMac = hardwareStatus.deviceId.toLowerCase().trim();
+    return buses.find((b) => b.rfidDeviceId && b.rfidDeviceId.toLowerCase().trim() === cleanMac) || null;
+  }, [hardwareStatus, buses]);
+
+  const isCurrentlyMapped = Boolean(
+    activeMappedBus || (hardwareStatus?.isMapped && hardwareStatus?.busNumber && hardwareStatus?.busId > 0)
+  );
+  const activeBusNumber = activeMappedBus?.busNumber || hardwareStatus?.busNumber;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -361,9 +385,9 @@ function formatTimeAgo(isoString?: string | null): string {
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm transition-all">
           <Cpu className="w-4 h-4" />
           <span>ESP32 Bus Readers</span>
-          {unmappedDevices.length > 0 && (
+          {validUnmappedDevices.length > 0 && (
             <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
-              {unmappedDevices.length} New
+              {validUnmappedDevices.length} New
             </span>
           )}
         </div>
@@ -403,11 +427,11 @@ function formatTimeAgo(isoString?: string | null): string {
             <div className="flex flex-col">
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
                 {isHardwareActive
-                  ? (hardwareStatus?.isMapped && hardwareStatus?.busNumber && hardwareStatus?.busId > 0
-                      ? `Live: Bus ${hardwareStatus.busNumber}`
+                  ? (isCurrentlyMapped
+                      ? `Live: Bus ${activeBusNumber}`
                       : "ESP32 Active (Unassigned)")
-                  : (hardwareStatus?.isMapped && hardwareStatus?.busNumber && hardwareStatus?.busId > 0
-                      ? `Offline: Bus ${hardwareStatus.busNumber}`
+                  : (isCurrentlyMapped
+                      ? `Offline: Bus ${activeBusNumber}`
                       : "ESP32 Standby (Offline)")}
               </span>
               <span className="text-[10px] text-gray-400 font-mono">
@@ -455,7 +479,7 @@ function formatTimeAgo(isoString?: string | null): string {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              All Readers ({unmappedDevices.length + assignedBusesList.length})
+              All Readers ({validUnmappedDevices.length + assignedBusesList.length})
             </button>
             <button
               onClick={() => setActiveTab("DETECTED")}
@@ -466,7 +490,7 @@ function formatTimeAgo(isoString?: string | null): string {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span>New Devices ({unmappedDevices.length})</span>
+              <span>New Devices ({validUnmappedDevices.length})</span>
             </button>
             <button
               onClick={() => setActiveTab("ASSIGNED")}
@@ -583,7 +607,13 @@ function formatTimeAgo(isoString?: string | null): string {
               {(activeTab === "ALL" || activeTab === "ASSIGNED") &&
                 filteredAssigned.map((bus) => {
                   const isReportingLive =
-                    isHardwareActive && hardwareStatus?.busId === bus.id;
+                    isHardwareActive &&
+                    (hardwareStatus?.busId === bus.id ||
+                      Boolean(
+                        hardwareStatus?.deviceId &&
+                          bus.rfidDeviceId &&
+                          hardwareStatus.deviceId.toLowerCase().trim() === bus.rfidDeviceId.toLowerCase().trim()
+                      ));
                   const assignedRoute = routes.find((r) => r.id === bus.currentRouteId);
 
                   return (

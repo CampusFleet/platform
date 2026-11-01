@@ -67,13 +67,20 @@ export async function POST(req: NextRequest) {
         effectiveBusId = cachedBusId;
         resolvedBusNumber = cachedBusNumber || "";
       } else {
-        // Query database: check rfid_device_id, gps_device_id, or bus id
-        const { data: matchedBus } = await supabaseAdmin
+        // Query database: check rfid_device_id, gps_device_id, or bus id (avoiding bigint cast error on MACs)
+        const cleanDevId = rawDeviceId.trim();
+        const isNumeric = /^\d+$/.test(cleanDevId);
+        const busQuery = supabaseAdmin
           .from("buses")
-          .select("id, bus_number")
-          .or(`rfid_device_id.eq.${rawDeviceId},gps_device_id.eq.${rawDeviceId},id.eq.${rawDeviceId}`)
-          .limit(1)
-          .maybeSingle();
+          .select("id, bus_number");
+
+        const { data: matchedBus, error: busLookupErr } = isNumeric
+          ? await busQuery.or(`rfid_device_id.eq.${cleanDevId},gps_device_id.eq.${cleanDevId},id.eq.${cleanDevId}`).limit(1).maybeSingle()
+          : await busQuery.or(`rfid_device_id.eq.${cleanDevId},gps_device_id.eq.${cleanDevId}`).limit(1).maybeSingle();
+
+        if (busLookupErr) {
+          console.error("[api/telematics/rfid] Error resolving bus for deviceId:", cleanDevId, busLookupErr);
+        }
 
         if (matchedBus?.id) {
           effectiveBusId = matchedBus.id;
@@ -82,6 +89,16 @@ export async function POST(req: NextRequest) {
             cacheSet(`telematics:device_bus_map:${rawDeviceId}`, effectiveBusId, 300),
             cacheSet(`telematics:device_bus_number:${rawDeviceId}`, resolvedBusNumber, 300),
           ]);
+
+          // Clean up this device from unmapped list if it was previously cached as unmapped
+          try {
+            const unmappedDevices = (await cacheGet<any[]>("telematics:unmapped_device_list")) || [];
+            const cleanLower = cleanDevId.toLowerCase();
+            if (unmappedDevices.some((d: any) => d.deviceId && d.deviceId.toLowerCase().trim() === cleanLower)) {
+              const cleaned = unmappedDevices.filter((d: any) => !d.deviceId || d.deviceId.toLowerCase().trim() !== cleanLower);
+              await cacheSet("telematics:unmapped_device_list", cleaned, 86400);
+            }
+          } catch (_) {}
         } else {
           // Explicitly unmapped in database: cache as UNMAPPED for 60s
           effectiveBusId = "";

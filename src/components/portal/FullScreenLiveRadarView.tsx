@@ -99,6 +99,9 @@ export default function FullScreenLiveRadarView({
   const [routeMetrics, setRouteMetrics] = useState<{
     totalDistanceKm: number;
     totalDurationMins: number;
+    sourceProvenance: "google_directions_api";
+    isGoogleAuthoritative: true;
+    isDegradedFallback: false;
     legs: { distanceKm: number; durationMins: number; distanceText: string; durationText: string }[];
   } | null>(null);
 
@@ -263,20 +266,51 @@ export default function FullScreenLiveRadarView({
 
   // Calculate distance & ETA to every destination along the corridor using real Google Maps road data
   const destinationsWithMetrics = useMemo(() => {
+    // Strictly verify authoritative Google provenance
+    const isGoogleAuth = Boolean(
+      routeMetrics?.isGoogleAuthoritative === true &&
+      routeMetrics?.sourceProvenance === "google_directions_api" &&
+      !routeMetrics?.isDegradedFallback &&
+      routeMetrics?.legs &&
+      routeMetrics.legs.length > 0
+    );
+
+    // Compute cumulative distance along the Google route corridor:
+    // Stop 0 (Origin): cumulative 0 km, 0 min
+    // Stop 1: leg 0
+    // Stop 2: leg 0 + leg 1
+    // Stop i: sum(legs[0..i-1])
+    const cumulativeGoogleDistancesKm: number[] = [0];
+    const cumulativeGoogleDurationsMins: number[] = [0];
+
+    if (isGoogleAuth && routeMetrics?.legs) {
+      let runDist = 0;
+      let runDur = 0;
+      for (const leg of routeMetrics.legs) {
+        runDist += leg.distanceKm;
+        runDur += leg.durationMins;
+        cumulativeGoogleDistancesKm.push(Math.round(runDist * 100) / 100);
+        cumulativeGoogleDurationsMins.push(Math.round(runDur * 10) / 10);
+      }
+    }
+
     return orderedDestinations.map((dest, idx) => {
-      // If we have actual Google Directions leg-by-leg road metrics, use them!
-      const leg = routeMetrics?.legs?.[idx];
       let distKm = "";
       let etaMins = 1;
+      let isAuthenticGoogle = false;
 
-      if (leg) {
-        distKm = leg.distanceKm.toFixed(1);
-        etaMins = Math.max(1, Math.round(leg.durationMins));
+      if (isGoogleAuth && idx < cumulativeGoogleDistancesKm.length) {
+        distKm = cumulativeGoogleDistancesKm[idx].toFixed(1);
+        etaMins = Math.max(1, Math.round(cumulativeGoogleDurationsMins[idx]));
+        isAuthenticGoogle = true;
       } else {
+        // Ephemeral client-only estimation strictly before Google Directions loads
+        // Isolated to UI display only: NEVER written to Google cache or passed to map
         const straightKm = calculateHaversineDistanceKm(currentBusLat, currentBusLng, dest.latitude, dest.longitude);
         distKm = (straightKm * 1.3).toFixed(1);
         const effectiveSpeed = busSpeedKmh > 8 ? busSpeedKmh : 28;
         etaMins = Math.max(1, Math.round((parseFloat(distKm) / effectiveSpeed) * 60));
+        isAuthenticGoogle = false;
       }
 
       const distMeters = Math.round(parseFloat(distKm) * 1000);
@@ -293,6 +327,7 @@ export default function FullScreenLiveRadarView({
         isCommuterTarget,
         isSource,
         isTerminal,
+        isAuthenticGoogle,
       };
     });
   }, [orderedDestinations, currentBusLat, currentBusLng, busSpeedKmh, commuterStop, routeMetrics]);
@@ -637,6 +672,11 @@ export default function FullScreenLiveRadarView({
                       <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
                         {dest.distKm} km
                       </div>
+                      {dest.isAuthenticGoogle && (
+                        <div className="text-[9px] text-blue-600 dark:text-blue-400 font-mono font-medium">
+                          Google Road
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

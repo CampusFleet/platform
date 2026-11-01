@@ -9,12 +9,28 @@ import { Crosshair, Building2, Navigation } from "lucide-react";
 export interface RouteMetrics {
   totalDistanceKm: number;
   totalDurationMins: number;
+  sourceProvenance: "google_directions_api";
+  isGoogleAuthoritative: true;
+  isDegradedFallback: false;
   legs: {
     distanceKm: number;
     durationMins: number;
     distanceText: string;
     durationText: string;
   }[];
+}
+
+// In-Memory cache for Google Directions results (retains native LatLng and Bounds class prototypes)
+const inMemoryGoogleDirectionsCache = new Map<string, google.maps.DirectionsResult>();
+
+interface AuthoritativeGoogleDirectionsEnvelope {
+  version: "4.0";
+  provider: "google";
+  sourceProvenance: "google_directions_api";
+  isGoogleAuthoritative: true;
+  isDegradedFallback: false;
+  cachedAt: number;
+  directionsResult: google.maps.DirectionsResult;
 }
 
 export interface GoogleTransitMapProps {
@@ -399,7 +415,7 @@ export default function GoogleTransitMap({
 
     if (waypoints.length < 2) return;
 
-    const cacheKey = `cf_gdir_${waypoints.map((w) => `${w[0].toFixed(5)},${w[1].toFixed(5)}`).join(";")}`;
+    const cacheKey = `cf_google_authoritative_directions_v4_${waypoints.map((w) => `${w[0].toFixed(5)},${w[1].toFixed(5)}`).join(";")}`;
 
     // Skip redundant network queries if route sequence has not changed
     if (cacheKey === cachedRouteKeyRef.current) return;
@@ -427,6 +443,9 @@ export default function GoogleTransitMap({
         onRouteMetricsCalculated?.({
           totalDistanceKm: Math.round((totalDistMeters / 1000) * 100) / 100,
           totalDurationMins: Math.round((totalDurSec / 60) * 10) / 10,
+          sourceProvenance: "google_directions_api",
+          isGoogleAuthoritative: true,
+          isDegradedFallback: false,
           legs,
         });
       }
@@ -438,19 +457,38 @@ export default function GoogleTransitMap({
       }
     }
 
-    // 1. Check client-side storage cache first (0ms load, zero API cost)
+    // 1. Check in-memory native cache first (zero latency, preserves LatLng class prototypes)
+    const inMem = inMemoryGoogleDirectionsCache.get(cacheKey);
+    if (inMem) {
+      applyRouteResult(inMem);
+      return;
+    }
+
+    // 2. Check client-side storage cache with strict security envelope validation
     try {
       const cachedRaw = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
       if (cachedRaw) {
-        const cachedParsed = JSON.parse(cachedRaw);
-        if (cachedParsed?.routes?.length > 0) {
-          applyRouteResult(cachedParsed);
+        const envelope = JSON.parse(cachedRaw);
+        if (
+          envelope?.version === "4.0" &&
+          envelope?.provider === "google" &&
+          envelope?.sourceProvenance === "google_directions_api" &&
+          envelope?.isGoogleAuthoritative === true &&
+          envelope?.directionsResult?.routes?.length > 0
+        ) {
+          applyRouteResult(envelope.directionsResult);
+          inMemoryGoogleDirectionsCache.set(cacheKey, envelope.directionsResult);
           return;
+        } else {
+          // Detected non-Google, degraded, or corrupted data: purge immediately
+          sessionStorage.removeItem(cacheKey);
         }
       }
-    } catch {}
+    } catch {
+      try { sessionStorage.removeItem(cacheKey); } catch {}
+    }
 
-    // 2. Query Google Maps DirectionsService directly (official Google road curves)
+    // 3. Query Google Maps DirectionsService directly (official Google road curves)
     const origin = { lat: waypoints[0][0], lng: waypoints[0][1] };
     const destination = { lat: waypoints[waypoints.length - 1][0], lng: waypoints[waypoints.length - 1][1] };
     const intermediate = waypoints.slice(1, -1).slice(0, 23).map(([lat, lng]) => ({
@@ -468,12 +506,25 @@ export default function GoogleTransitMap({
       (result, status) => {
         if (!isMounted) return;
         if (status === google.maps.DirectionsStatus.OK && result) {
+          inMemoryGoogleDirectionsCache.set(cacheKey, result);
           applyRouteResult(result);
           try {
-            sessionStorage.setItem(cacheKey, JSON.stringify(result));
+            const envelope: AuthoritativeGoogleDirectionsEnvelope = {
+              version: "4.0",
+              provider: "google",
+              sourceProvenance: "google_directions_api",
+              isGoogleAuthoritative: true,
+              isDegradedFallback: false,
+              cachedAt: Date.now(),
+              directionsResult: result,
+            };
+            sessionStorage.setItem(cacheKey, JSON.stringify(envelope));
           } catch {}
         } else {
-          console.warn("[GoogleTransitMap] DirectionsService status:", status);
+          console.warn("[GoogleTransitMap] DirectionsService query returned non-OK status:", status);
+          if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
+            onError?.(`Google Directions service error: ${status}`);
+          }
         }
       }
     );

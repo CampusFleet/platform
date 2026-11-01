@@ -102,7 +102,7 @@ interface CampusFleetMapProps {
 async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[number, number][]> {
   if (coordinates.length < 2) return coordinates;
 
-  const coordKey = `cf_leaf_${coordinates.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
+  const coordKey = `cf_isolated_osrm_leaf_v4_${coordinates.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
   if (typeof window !== "undefined") {
     try {
       const cached = sessionStorage.getItem(coordKey);

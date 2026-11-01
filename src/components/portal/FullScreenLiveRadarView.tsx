@@ -85,12 +85,23 @@ export default function FullScreenLiveRadarView({
   const [campuses] = useState<Campus[]>(() => initialCampuses.length > 0 ? initialCampuses : store.getCampuses());
 
   // Real-time telematics live stream state
-  const [liveLocation, setLiveLocation] = useState<LiveBusLocation | null>(null);
-  const [isTelematicsLive, setIsTelematicsLive] = useState(false);
+  const [liveLocation, setLiveLocation] = useState<LiveBusLocation | null>(() => {
+    const cached = store.getLiveLocation();
+    if (cached && (cached.latitude !== 0 || cached.longitude !== 0)) {
+      return cached;
+    }
+    return null;
+  });
+  const [isTelematicsLive, setIsTelematicsLive] = useState<boolean>(() => {
+    const cached = store.getLiveLocation();
+    return Boolean(cached && (cached.latitude !== 0 || cached.longitude !== 0));
+  });
   const [isPolling, setIsPolling] = useState(false);
+  const [isInitialFetchDone, setIsInitialFetchDone] = useState(false);
   const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
 
-  // Fullscreen UI states
+  // Fullscreen UI & Navigation Card states
+  const [isNavCardMinimized, setIsNavCardMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
   const [mapFocusTarget, setMapFocusTarget] = useState<"BUS" | "MY_STOP" | "CORRIDOR">("BUS");
@@ -157,7 +168,27 @@ export default function FullScreenLiveRadarView({
     return buses[0] || null;
   }, [selectedBusId, initialReservation, activeBooking, buses, student, trips]);
 
-  // 3. Resolve assigned route corridor
+  // 3a. Resolve assigned active trip
+  const activeTrip = useMemo(() => {
+    if (initialReservation?.trip_id) {
+      const match = trips.find((t) => t.id === initialReservation.trip_id);
+      if (match) return match;
+    }
+    if (activeBooking?.tripId) {
+      const match = trips.find((t) => t.id === activeBooking.tripId);
+      if (match) return match;
+    }
+    if (assignedBus?.id) {
+      const match =
+        trips.find((t) => t.busId === assignedBus.id && t.status === "IN_PROGRESS") ||
+        trips.find((t) => t.busId === assignedBus.id && (t.status === "SCHEDULED" || t.status === "DELAYED")) ||
+        trips.find((t) => t.busId === assignedBus.id);
+      if (match) return match;
+    }
+    return trips[0] || null;
+  }, [initialReservation, activeBooking, assignedBus, trips]);
+
+  // 3b. Resolve assigned route corridor
   const assignedRoute = useMemo(() => {
     if (initialReservation?.route_id) {
       const match = routes.find((r) => r.id === initialReservation.route_id);
@@ -167,15 +198,56 @@ export default function FullScreenLiveRadarView({
       const match = routes.find((r) => r.id === student.primaryRouteId);
       if (match) return match;
     }
-    if (assignedBus) {
-      const activeTrip = trips.find((t) => t.busId === assignedBus.id && (t.status === "IN_PROGRESS" || t.status === "SCHEDULED" || t.status === "DELAYED"));
-      if (activeTrip?.routeId) {
-        const match = routes.find((r) => r.id === activeTrip.routeId);
-        if (match) return match;
-      }
+    if (activeTrip?.routeId) {
+      const match = routes.find((r) => r.id === activeTrip.routeId);
+      if (match) return match;
     }
     return routes[0] || null;
-  }, [initialReservation, student, assignedBus, routes, trips]);
+  }, [initialReservation, student, activeTrip, routes]);
+
+  // 3c. Human-grade live telematics / schedule status description
+  const telematicsStatus = useMemo(() => {
+    if (isTelematicsLive && !liveLocation?.isStale) {
+      return {
+        label: liveLocation?.source === "driver_gps" ? "DRIVER GPS" : "LIVE GPS",
+        dotClass: "bg-emerald-500 animate-pulse ring-2 ring-emerald-500/30",
+        speedText: liveLocation?.speedKmh && liveLocation.speedKmh > 0 ? `• ${liveLocation.speedKmh} km/h` : null,
+      };
+    }
+    if (isTelematicsLive && liveLocation?.isStale) {
+      return {
+        label: "GPS IDLE",
+        dotClass: "bg-amber-500",
+        speedText: null,
+      };
+    }
+    if (!isInitialFetchDone) {
+      return {
+        label: "SYNCING...",
+        dotClass: "bg-amber-400 animate-pulse",
+        speedText: null,
+      };
+    }
+    if (activeTrip?.status === "IN_PROGRESS") {
+      return {
+        label: "BUS EN ROUTE",
+        dotClass: "bg-amber-500",
+        speedText: null,
+      };
+    }
+    if (activeTrip?.status === "SCHEDULED" || !activeTrip) {
+      return {
+        label: "ON SCHEDULE",
+        dotClass: "bg-blue-500",
+        speedText: null,
+      };
+    }
+    return {
+      label: "TERMINAL STANDBY",
+      dotClass: "bg-zinc-400",
+      speedText: null,
+    };
+  }, [isTelematicsLive, liveLocation, isInitialFetchDone, activeTrip]);
 
   // 4. Resolve commuter's own pickup/drop-off stop
   const commuterStop = useMemo(() => {
@@ -300,7 +372,10 @@ export default function FullScreenLiveRadarView({
       } catch {
         // graceful offline fallback
       } finally {
-        if (isMounted) setIsPolling(false);
+        if (isMounted) {
+          setIsPolling(false);
+          setIsInitialFetchDone(true);
+        }
       }
     };
 
@@ -431,29 +506,13 @@ export default function FullScreenLiveRadarView({
           </Link>
 
           <div className="flex items-center gap-2 pointer-events-auto">
-            {/* Live GPS Status Pill */}
+            {/* Live GPS / Operational Status Pill */}
             <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-white dark:bg-black text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 shadow-lg">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  isTelematicsLive && !liveLocation?.isStale
-                    ? "bg-emerald-500 animate-pulse ring-2 ring-emerald-500/30"
-                    : isTelematicsLive
-                    ? "bg-amber-500"
-                    : "bg-zinc-400"
-                }`}
-              />
-              <span>
-                {isTelematicsLive
-                  ? liveLocation?.isStale
-                    ? "GPS IDLE"
-                    : liveLocation?.source === "driver_gps"
-                    ? "DRIVER GPS"
-                    : "LIVE TELEMETRY"
-                  : "CONNECTING..."}
-              </span>
-              {liveLocation?.speedKmh !== undefined && liveLocation.speedKmh > 0 && (
+              <span className={`w-2 h-2 rounded-full shrink-0 ${telematicsStatus.dotClass}`} />
+              <span>{telematicsStatus.label}</span>
+              {telematicsStatus.speedText && (
                 <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">
-                  • {liveLocation.speedKmh} km/h
+                  {telematicsStatus.speedText}
                 </span>
               )}
             </div>
@@ -479,63 +538,121 @@ export default function FullScreenLiveRadarView({
           </div>
         </div>
 
-        {/* Turn-By-Turn Navigation Card (Clean Solid Cards - No Artificial AI Glow) */}
-        <div className="pointer-events-auto bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xl text-zinc-900 dark:text-white animate-in slide-in-from-top-4 duration-300">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 shadow-md">
-                <Navigation className="w-6 h-6" />
+        {/* Turn-By-Turn Navigation Card (Collapsible into Floating Circular Widget) */}
+        {isNavCardMinimized ? (
+          <div className="flex items-center gap-2 pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+            {/* Circular Toggle Button with Live Navigation Compass */}
+            <button
+              type="button"
+              onClick={() => setIsNavCardMinimized(false)}
+              className="relative w-12 h-12 rounded-full bg-white dark:bg-black border-2 border-blue-600 dark:border-blue-500 shadow-2xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all cursor-pointer group"
+              title="Tap to expand navigation directions"
+              aria-label="Expand navigation card"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md">
+                <Navigation className="w-4 h-4 transition-transform group-hover:rotate-12" />
               </div>
-              <div className="space-y-0.5">
-                <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                  <span>Next Destination</span>
-                  {nextDestination?.distMeters !== undefined && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-semibold">
-                      {nextDestination.distMeters < 80 ? "Arriving Now" : `${nextDestination.distKm} km away`}
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight line-clamp-1">
-                  {nextDestination?.name || "Corridor Route Stop"}
-                </h2>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{displayBusNumber}</span>
-                  <span>•</span>
-                  <span>{displayRouteName}</span>
-                  {liveLocation?.speedKmh !== undefined && (
-                    <>
-                      <span>•</span>
-                      <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{liveLocation.speedKmh} km/h</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+              <span className="absolute -top-1 -right-1.5 px-1.5 py-0.5 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[10px] font-mono font-black shadow-md border border-zinc-700 dark:border-zinc-300 leading-none">
+                ~{nextDestination?.etaMins || 2}m
+              </span>
+            </button>
 
-            {/* Time to Next Destination */}
-            <div className="text-right shrink-0">
-              <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight">
-                ~{nextDestination?.etaMins || 2} <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">min</span>
+            {/* Compact Glance Capsule Next to Circle */}
+            <button
+              type="button"
+              onClick={() => setIsNavCardMinimized(false)}
+              className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-black/95 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-xl text-xs text-zinc-800 dark:text-zinc-200 hover:border-zinc-400 dark:hover:border-zinc-600 transition-all cursor-pointer group"
+              title="Tap to expand navigation directions"
+            >
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                    NEXT STOP
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold font-mono">
+                    {nextDestination?.distMeters !== undefined && nextDestination.distMeters < 80 ? "Arriving" : `${nextDestination?.distKm || 0} km`}
+                  </span>
+                </div>
+                <span className="font-bold text-zinc-900 dark:text-white text-xs truncate max-w-[180px] sm:max-w-[280px]">
+                  {nextDestination?.name || "Route Stop"}
+                </span>
               </div>
-              <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Est. Arrival
+              <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors ml-1 shrink-0">
+                <ChevronDown className="w-3.5 h-3.5" />
               </div>
-            </div>
+            </button>
           </div>
-
-          {/* Commuter Destination Callout if different from next stop */}
-          {commuterDestination && commuterDestination.id !== nextDestination?.id && (
-            <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300 font-medium truncate">
-                <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
-                <span className="truncate">Your Stop: <strong className="text-zinc-900 dark:text-white font-bold">{commuterDestination.name}</strong></span>
+        ) : (
+          <div className="pointer-events-auto bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-2xl text-zinc-900 dark:text-white animate-in slide-in-from-top-4 duration-300">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                  <Navigation className="w-6 h-6" />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                    <span>Next Destination</span>
+                    {nextDestination?.distMeters !== undefined && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-semibold">
+                        {nextDestination.distMeters < 80 ? "Arriving Now" : `${nextDestination.distKm} km away`}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight line-clamp-1">
+                    {nextDestination?.name || "Corridor Route Stop"}
+                  </h2>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300">{displayBusNumber}</span>
+                    <span>•</span>
+                    <span>{displayRouteName}</span>
+                    {liveLocation?.speedKmh !== undefined && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{liveLocation.speedKmh} km/h</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="font-mono text-xs text-zinc-800 dark:text-zinc-200 font-bold ml-2">
-                ~{commuterDestination.etaMins} mins ({commuterDestination.distKm} km)
+
+              {/* Time to Next Destination + Circular Minimize Toggle */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <div className="text-right">
+                  <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight font-mono">
+                    ~{nextDestination?.etaMins || 2} <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-sans">min</span>
+                  </div>
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Est. Arrival
+                  </div>
+                </div>
+
+                {/* Circular Minimize Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsNavCardMinimized(true)}
+                  className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer shadow-xs ml-1"
+                  title="Minimize directions into circle"
+                  aria-label="Minimize directions"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Commuter Destination Callout if different from next stop */}
+            {commuterDestination && commuterDestination.id !== nextDestination?.id && (
+              <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300 font-medium truncate">
+                  <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span className="truncate">Your Stop: <strong className="text-zinc-900 dark:text-white font-bold">{commuterDestination.name}</strong></span>
+                </div>
+                <div className="font-mono text-xs text-zinc-800 dark:text-zinc-200 font-bold ml-2">
+                  ~{commuterDestination.etaMins} mins ({commuterDestination.distKm} km)
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* ─── 2. FULLSCREEN INTERACTIVE LEAFLET GIS CANVAS (With Google Maps Streets) ─── */}
@@ -575,7 +692,7 @@ export default function FullScreenLiveRadarView({
         />
 
         {/* ─── FLOATING GIS ACTION BUTTONS (Right Side) ─── */}
-        <div className="absolute right-3 sm:right-6 top-52 sm:top-48 z-20 flex flex-col gap-2.5">
+        <div className={`absolute right-3 sm:right-6 z-20 flex flex-col gap-2.5 transition-all duration-300 ${isNavCardMinimized ? "top-20 sm:top-20" : "top-52 sm:top-48"}`}>
           {/* Re-center Bus Button */}
           <button
             onClick={() => setMapFocusTarget("BUS")}

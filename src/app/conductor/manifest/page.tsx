@@ -7,23 +7,18 @@ import { store } from "@/lib/store";
 
 export default function ManifestPage() {
   const { 
-    activeTrip, bus, tripBookings, students, stops,
-    boardedCount, pendingCount, waitlistCount, roamingCount, showToast
+    activeTrip, bus, route, shift, tripBookings, students, stops,
+    boardedCount, pendingCount, waitlistCount, roamingCount, showToast,
+    markAttendance, refreshLiveState, isSyncing
   } = useConductorContext();
 
   if (!activeTrip) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        No active trip selected. Please select a trip from the header.
+      <div className="p-8 text-center text-zinc-500 font-mono">
+        No active trip selected. Please select a bus from the top bar to view manifest.
       </div>
     );
   }
-
-  const handleMarkAttendance = (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW") => {
-    store.recordAttendance(studentId, activeTrip.id, "QR_SCAN", status, "Conductor Desk 1-Tap Manifest Check");
-    const student = students.find(s => s.id === studentId || s.userId === studentId);
-    showToast(`✓ ${student?.fullName || ""} marked as ${status}!`);
-  };
 
   const handleMarkRoamingHold = async (studentId: string, bookingId: string) => {
     try {
@@ -43,7 +38,7 @@ export default function ManifestPage() {
         const student = students.find(s => s.id === studentId || s.userId === studentId);
         showToast(`🎒 Seat held for ${student?.fullName || "Student"}! Roaming Campus without bag on seat.`);
       }
-    } catch (e) {
+    } catch {
       showToast("Failed to mark roaming hold.");
     }
   };
@@ -54,12 +49,16 @@ export default function ManifestPage() {
       students={students}
       stops={stops}
       bus={bus}
+      route={route}
+      shift={shift}
       boardedCount={boardedCount}
       pendingCount={pendingCount}
       waitlistCount={waitlistCount}
       roamingCount={roamingCount}
-      onMarkAttendance={handleMarkAttendance}
+      onMarkAttendance={markAttendance}
       onMarkRoamingHold={handleMarkRoamingHold}
+      onRefresh={refreshLiveState}
+      isSyncing={isSyncing}
     />
   );
 }

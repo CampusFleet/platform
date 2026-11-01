@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, Sparkles, Shield, X, QrCode } from "lucide-react";
+import { CheckCircle2, Sparkles, X, QrCode, Phone, MapPin, AlertTriangle, Clock, UserCheck } from "lucide-react";
 import { Booking, Student, Trip } from "@/lib/types";
 import { QRPassScanner } from "@/components/scanner/QRPassScanner";
+import { getSafePhotoUrl } from "@/lib/image-utils";
+import type { EnrichedPassenger } from "../ConductorContext";
 
 interface SeatInspectorModalProps {
   seatData: {
@@ -36,70 +38,141 @@ export function SeatInspectorModal({
   const [showScanner, setShowScanner] = useState(false);
   const tripBookings = bookings.filter(b => b.tripId === trip.id);
 
+  const student = seatData.student;
+  const booking = seatData.booking;
+  const fullName = student?.fullName || (booking as any)?.fullName || "University Passenger";
+  const studentCollegeId = student?.studentIdCode || (booking as any)?.studentIdCode || "";
+  const photoUrl = student?.photoUrl || (booking as any)?.photoUrl || "";
+  const phone = student?.phone || (booking as any)?.phone;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 space-y-5 text-gray-900 dark:text-white shadow-2xl overflow-y-auto max-h-[90vh]">
-        <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
-          <div className="font-black text-lg flex items-center gap-2">
-            <span className="px-3 py-1 rounded-xl bg-blue-600 dark:bg-blue-500 text-white shadow-sm font-mono">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 space-y-5 text-white shadow-2xl overflow-y-auto max-h-[90vh]">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white font-mono font-black text-sm shadow-md shadow-blue-500/20">
               Seat {seatData.seatCode}
             </span>
+            <span className="text-xs font-bold text-zinc-400">Inspector</span>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+            className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {seatData.booking ? (
+        {booking ? (
           <div className="space-y-4">
-            <div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mb-1">Reserved Passenger:</div>
-              <div className="text-xl font-black text-gray-900 dark:text-white">
-                {seatData.student?.fullName || "University Commuter"}
+            {/* Passenger Identity Card */}
+            <div className="flex items-center gap-3.5 bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800">
+              {photoUrl ? (
+                <div className="relative w-14 h-16 rounded-xl overflow-hidden border-2 border-emerald-500/70 bg-black shrink-0 shadow-md">
+                  <img
+                    src={getSafePhotoUrl(photoUrl)}
+                    alt={fullName}
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                    onError={e => {
+                      if (photoUrl && e.currentTarget.src !== photoUrl) {
+                        e.currentTarget.src = photoUrl;
+                      }
+                    }}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-0 inset-x-0 bg-emerald-600 text-[8px] text-white font-black text-center py-0.2 uppercase tracking-tighter">
+                    OK
+                  </div>
+                </div>
+              ) : (
+                <div className="w-14 h-16 rounded-xl border border-dashed border-red-500/60 bg-red-950/30 flex flex-col items-center justify-center text-red-400 shrink-0 p-1 text-center">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  <span className="text-[7px] font-black uppercase tracking-tighter text-red-400 mt-1">
+                    Check ID
+                  </span>
+                </div>
+              )}
+
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="font-bold text-base text-white truncate">{fullName}</div>
+
+                {studentCollegeId && (
+                  <div className="inline-block font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    ID: {studentCollegeId}
+                  </div>
+                )}
+
+                {student?.department && (
+                  <div className="text-[11px] text-zinc-400 truncate">
+                    {student.department} {student.semester ? `• Sem ${student.semester}` : ""}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 space-y-2 text-xs">
+            {/* Status & Details Box */}
+            <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 space-y-2.5 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-gray-500 dark:text-gray-400">Status:</span>
-                <span className={`font-black px-2 py-0.5 rounded-lg ${
-                  seatData.booking.status === "BOARDED" 
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" 
-                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
-                }`}>
-                  {seatData.booking.status}
+                <span className="text-zinc-400">Boarding Status:</span>
+                <span
+                  className={`font-black px-2.5 py-1 rounded-lg text-[11px] ${
+                    booking.status === "BOARDED"
+                      ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                      : "bg-blue-950 text-blue-400 border border-blue-800"
+                  }`}
+                >
+                  {booking.status === "BOARDED" ? "BOARDED ✓" : "CONFIRMED / AWAITING"}
                 </span>
               </div>
+
               <div className="flex justify-between items-center">
-                <span className="text-gray-500 dark:text-gray-400">Booking Code:</span>
-                <span className="font-mono font-bold text-gray-700 dark:text-gray-300">
-                  {seatData.booking.bookingCode}
+                <span className="text-zinc-400">Ticket Code:</span>
+                <span className="font-mono font-bold text-zinc-300">
+                  {booking.bookingCode || `BK-${booking.id.substring(0, 6)}`}
                 </span>
               </div>
+
+              {phone && (
+                <div className="flex justify-between items-center pt-1 border-t border-zinc-800">
+                  <span className="text-zinc-400">Phone Contact:</span>
+                  <a
+                    href={`tel:${phone}`}
+                    className="inline-flex items-center gap-1 text-emerald-400 font-mono font-bold hover:underline"
+                  >
+                    <Phone className="w-3 h-3" />
+                    <span>{phone}</span>
+                  </a>
+                </div>
+              )}
             </div>
 
-            {seatData.booking.status !== "BOARDED" && (
+            {/* Action Buttons */}
+            {booking.status !== "BOARDED" ? (
               <button
                 onClick={() => {
-                  if (seatData.booking?.studentId) {
-                    onMarkAttendance(seatData.booking.studentId, "BOARDED");
+                  if (booking.studentId) {
+                    onMarkAttendance(booking.studentId, "BOARDED");
                   }
                   onClose();
                 }}
-                className="w-full py-3.5 bg-green-600 hover:bg-green-500 text-white font-black text-sm rounded-2xl shadow-lg shadow-green-600/20 flex items-center justify-center gap-2 transition-transform active:scale-95"
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-transform active:scale-95 cursor-pointer"
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Confirm Boarding</span>
+                <span>Confirm Passenger Boarded</span>
               </button>
+            ) : (
+              <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-2xl text-center text-xs text-emerald-300 font-bold flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Passenger Verified & Onboard</span>
+              </div>
             )}
           </div>
         ) : showScanner ? (
           <div className="space-y-4">
-            <h4 className="font-black text-sm text-center text-gray-900 dark:text-white">
-              Scan Student Pass to Assign
+            <h4 className="font-black text-sm text-center text-white">
+              Scan Student Pass to Assign to Seat {seatData.seatCode}
             </h4>
             <QRPassScanner
               trip={trip}
@@ -112,30 +185,30 @@ export function SeatInspectorModal({
             />
             <button
               onClick={() => setShowScanner(false)}
-              className="w-full py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold text-xs rounded-xl transition-colors"
+              className="w-full py-2.5 bg-zinc-900 text-zinc-300 font-bold text-xs rounded-xl hover:text-white transition-colors cursor-pointer"
             >
-              Cancel Scan
+              Cancel Scanner
             </button>
           </div>
         ) : (
-          <div className="text-center py-4 space-y-5">
-            <div className="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
-              This seat is currently unreserved and available on this trip.
+          <div className="text-center py-4 space-y-4">
+            <div className="text-xs text-zinc-400 font-mono bg-zinc-900 p-3.5 rounded-2xl border border-zinc-800">
+              Seat {seatData.seatCode} is currently unreserved and available on this trip.
             </div>
 
-            {/* NEW: Conductor Manual Allocation */}
             <button
               onClick={() => setShowScanner(true)}
-              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-transform active:scale-95"
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-transform active:scale-95 cursor-pointer"
             >
               <QrCode className="w-5 h-5" />
               <span>Scan Student Pass to Assign</span>
             </button>
 
+            {/* Waitlist Allocation Options */}
             {tripBookings.filter(b => b.status === "WAITLISTED").length > 0 && (
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/40 rounded-2xl space-y-3 text-left shadow-sm">
-                <div className="text-xs font-black text-yellow-800 dark:text-yellow-400 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-yellow-500" />
+              <div className="p-4 bg-amber-950/20 border border-amber-800/40 rounded-2xl space-y-3 text-left shadow-sm">
+                <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
                   <span>Allocate to Waitlisted Passenger:</span>
                 </div>
                 {tripBookings
@@ -148,13 +221,17 @@ export function SeatInspectorModal({
                         key={wlBooking.id}
                         onClick={async () => {
                           await onAssignWaitlist(wlBooking.id, seatData.seatCode);
-                          onToast(`✓ Allocated Seat ${seatData.seatCode} to ${wlStudent?.fullName || "Waitlisted Student"}`);
+                          onToast(`✓ Allocated Seat ${seatData.seatCode} to ${wlStudent?.fullName || "Student"}`);
                           onClose();
                         }}
-                        className="w-full py-3 px-4 bg-white dark:bg-gray-800 border border-yellow-200 dark:border-yellow-700/50 hover:border-yellow-400 dark:hover:border-yellow-500 text-gray-900 dark:text-white font-bold text-xs rounded-xl flex items-center justify-between transition-colors shadow-sm active:scale-95 cursor-pointer"
+                        className="w-full py-2.5 px-3 bg-zinc-900 border border-amber-700/40 hover:border-amber-500 text-white font-bold text-xs rounded-xl flex items-center justify-between transition-colors cursor-pointer active:scale-95"
                       >
-                        <span>{wlStudent?.fullName || "Student"} (WL-{wlBooking.waitlistPosition || 1})</span>
-                        <span className="font-mono text-[10px] bg-yellow-100 dark:bg-yellow-900/60 text-yellow-800 dark:text-yellow-400 px-2 py-1 rounded-md">Assign →</span>
+                        <span className="truncate max-w-[180px]">
+                          {wlStudent?.fullName || "Student"} (WL-{wlBooking.waitlistPosition || 1})
+                        </span>
+                        <span className="font-mono text-[10px] bg-amber-950 text-amber-300 border border-amber-700 px-2 py-0.5 rounded-md">
+                          Assign →
+                        </span>
                       </button>
                     );
                   })}

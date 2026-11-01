@@ -9,8 +9,8 @@ import { Student, Booking } from "@/lib/types";
 
 export default function SeatMapPage() {
   const { 
-    activeTrip, bus, tripBookings, students, bookings,
-    boardedCount, pendingCount, showToast
+    activeTrip, bus, route, shift, tripBookings, students, bookings,
+    boardedCount, pendingCount, showToast, markAttendance
   } = useConductorContext();
 
   const [selectedSeatForModal, setSelectedSeatForModal] = useState<{
@@ -24,22 +24,18 @@ export default function SeatMapPage() {
 
   if (!activeTrip) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        No active trip selected. Please select a trip from the header.
+      <div className="p-8 text-center text-zinc-500 font-mono">
+        No active trip selected. Please select a bus from the top bar to inspect seating floorplan.
       </div>
     );
   }
-
-  const handleMarkAttendance = (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW") => {
-    store.recordAttendance(studentId, activeTrip.id, "QR_SCAN", status, "Conductor Desk 1-Tap Manifest Check");
-    const student = students.find(s => s.id === studentId || s.userId === studentId);
-    showToast(`✓ ${student?.fullName || "Student"} marked as ${status}!`);
-  };
 
   return (
     <>
       <SeatMapTab
         bus={bus}
+        route={route}
+        shift={shift}
         tripBookings={tripBookings}
         students={students}
         boardedCount={boardedCount}
@@ -53,7 +49,9 @@ export default function SeatMapPage() {
           bookings={bookings}
           students={students}
           onClose={() => setSelectedSeatForModal(null)}
-          onMarkAttendance={handleMarkAttendance}
+          onMarkAttendance={(studentId, status) => {
+            markAttendance(studentId, status, "SEAT_MAP_SELECT", `Assigned to Seat ${selectedSeatForModal.seatCode}`);
+          }}
           onAssignWaitlist={async (bookingId, seatCode) => {
             await store.assignWaitlistSeat(bookingId, seatCode);
           }}

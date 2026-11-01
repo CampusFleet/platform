@@ -8,7 +8,9 @@ import { CrewBusSelectorModal } from "@/components/common/CrewBusSelectorModal";
 
 export default function ConductorHubPage() {
   const { 
-    currentUser, trips, activeTrip, bus, route, attendanceRecords, setSelectedTripId, showToast 
+    currentUser, trips, activeTrip, bus, route, shift, attendanceRecords, 
+    tripBookings, boardedCount, pendingCount, haltRequests,
+    setSelectedTripId, showToast 
   } = useConductorContext();
 
   const [isCrewSelectorOpen, setIsCrewSelectorOpen] = useState(false);
@@ -20,16 +22,18 @@ export default function ConductorHubPage() {
       (a.busId === bus?.id || a.tripId === activeTrip?.id)
   );
 
+  const pendingSOS = haltRequests.filter(r => r.status === "PENDING").length;
+
   const conductorModules: HubModule[] = [
     {
       title: "Boarding Scanner",
-      description: "Optical QR scanner to check-in students at the bus door.",
+      description: "High-speed optical QR scanner to check-in students at the bus door.",
       icon: QrCode,
       href: "/conductor/scanner"
     },
     {
       title: "Passenger Manifest",
-      description: "Live roster, waitlist overrides, and 1-tap manual check-in.",
+      description: "Live roster with student passport photos, college IDs, and 1-tap check-in.",
       icon: FileText,
       href: "/conductor/manifest"
     },
@@ -40,41 +44,60 @@ export default function ConductorHubPage() {
       href: "/conductor/seat-map"
     },
     {
+      title: "SOS & Late Halts",
+      description: pendingSOS > 0 ? `⚠️ ${pendingSOS} Active Late Student Requests` : "Manage real-time halt requests from late students.",
+      icon: AlertTriangle,
+      href: "/conductor/late-requests"
+    },
+    {
       title: "Attendance Audit",
-      description: "Review check-in timestamps, sync status, and exceptions.",
+      description: "Review signed timestamps, RFID tap-in logs, and compliance audit trail.",
       icon: ShieldCheck,
       href: "/conductor/audit"
     },
     {
       title: "Bus Check-in QR",
-      description: "Self-service digital backup QR code for this specific bus.",
+      description: "Printable A4 depot door poster and backup QR codes for this vehicle.",
       icon: QrCode,
       href: "/conductor/bus-qr"
     }
   ];
 
+  const capacity = bus?.capacity || 40;
+  const occupancyPercent = Math.min(100, Math.round((boardedCount / (capacity || 1)) * 100));
+
   return (
     <div className="space-y-6">
       {/* Active Duty Bus & Attendance Status Hero Card */}
-      <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 flex items-center justify-center shrink-0">
-            <BusFront className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+      <div className="bg-zinc-950 dark:bg-black rounded-3xl p-5 sm:p-6 border border-zinc-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5 text-white">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 shadow-inner">
+            <BusFront className="w-7 h-7 text-blue-400" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-black text-base text-gray-900 dark:text-white">
-                {bus?.busNumber || "Bus TBA"}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-black text-lg sm:text-xl text-white">
+                {bus?.busNumber || "Vehicle Standby"}
               </span>
-              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold border border-gray-200 dark:border-gray-700">
-                {bus?.registrationNo || "UK-07-FLEET"}
+              <span className="text-xs font-mono px-2.5 py-0.5 rounded-lg bg-zinc-800 text-zinc-300 font-bold border border-zinc-700">
+                {bus?.registrationNo || "CAMPUS-FLEET"}
               </span>
-              <span className="text-xs font-mono text-gray-400">
-                • {activeTrip?.tripCode || "Standby"}
-              </span>
+              {shift?.name && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {shift.name}
+                </span>
+              )}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
-              {route?.name || "Campus Transit Corridor"}
+            <div className="text-xs text-zinc-400 mt-1 font-medium flex items-center gap-2">
+              <span>{route?.name || "Campus Transit Corridor"}</span>
+              {tripBookings.length > 0 && (
+                <>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-emerald-400 font-mono font-bold">
+                    {boardedCount} / {tripBookings.length} Boarded ({occupancyPercent}%)
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

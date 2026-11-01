@@ -71,10 +71,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Query Student from Database view (with verified official photo)
+    // 2. Query Student from Database view (with verified official photo and college student ID)
     let { data: studentsFound, error: studentErr } = await supabaseAdmin
       .from("students_full")
-      .select("id, full_name, email, phone, class_id, class_name, transport_access_suspended, photo_url, department, semester, payment_status, primary_route_id, primary_stop_id")
+      .select("id, full_name, email, phone, class_id, class_name, transport_access_suspended, photo_url, department, semester, payment_status, primary_route_id, primary_stop_id, student_id_code")
       .or(`id.eq.${searchId},user_id.eq.${searchId}`)
       .limit(1);
 
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       // Maybe the searchId was an old booking code? Let's check bookings just in case for backward compatibility
       const { data: oldBooking } = await supabaseAdmin.from("bookings").select("student_id").eq("booking_code", searchId).limit(1);
       if (oldBooking && oldBooking.length > 0) {
-          const { data: st } = await supabaseAdmin.from("students_full").select("id, full_name, email, phone, class_id, class_name, transport_access_suspended, photo_url, department, semester, payment_status, primary_route_id, primary_stop_id").eq("id", oldBooking[0].student_id).limit(1);
+          const { data: st } = await supabaseAdmin.from("students_full").select("id, full_name, email, phone, class_id, class_name, transport_access_suspended, photo_url, department, semester, payment_status, primary_route_id, primary_stop_id, student_id_code").eq("id", oldBooking[0].student_id).limit(1);
           if (st && st[0]) {
               student = st[0];
           }
@@ -263,6 +263,7 @@ export async function POST(req: NextRequest) {
         student: {
           id: student.id,
           fullName: student.full_name,
+          studentIdCode: student.student_id_code || "",
           photoUrl: officialPhotoUrl,
           department: student.department,
           semester: student.semester,
@@ -369,6 +370,7 @@ export async function POST(req: NextRequest) {
         student: {
           id: student.id,
           fullName: student.full_name,
+          studentIdCode: student.student_id_code || "",
           photoUrl: officialPhotoUrl,
           className: student.class_name,
         },

@@ -88,6 +88,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
     { href: "/conductor/seat-map", label: t('seatMap'), icon: LayoutGrid },
     { href: "/conductor/late-requests", label: t('sosHalt'), icon: AlertTriangle },
     { href: "/conductor/audit", label: t('audit'), icon: ShieldCheck },
+    { href: "/conductor/bus-qr", label: "Bus QR", icon: QrCode },
   ];
 
   const currentNavLinks = topLevelLinks;
@@ -101,7 +102,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
   else if (pathname.includes("/bus-qr")) currentTitle = "Bus QR";
 
   return (
-    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
+    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
       <UnifiedAppHeader
         role="conductor"
         portalTitle={currentTitle}

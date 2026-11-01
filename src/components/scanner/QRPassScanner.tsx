@@ -971,8 +971,13 @@ export function QRPassScanner({
               {/* Student Details */}
               <div className="flex-1 space-y-2 text-center sm:text-left w-full">
                 <div>
-                  <div className="text-base sm:text-lg font-black text-white">
-                    {pendingVerification.student.fullName}
+                  <div className="text-base sm:text-lg font-black text-white flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                    <span>{pendingVerification.student.fullName}</span>
+                    {pendingVerification.student.studentIdCode && (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-gray-800 text-green-300 border border-gray-700">
+                        ID: {pendingVerification.student.studentIdCode}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs font-mono text-green-300 flex items-center justify-center sm:justify-start gap-2">
                     {pendingVerification.student.semester && (

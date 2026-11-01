@@ -1,21 +1,43 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search, Users, MapPin, CheckCircle2, XCircle, Footprints, FileText, AlertTriangle, ShieldCheck } from "lucide-react";
-import { Booking, Student, Stop, Bus } from "@/lib/types";
+import React, { useState, useMemo } from "react";
+import {
+  Search,
+  Users,
+  MapPin,
+  CheckCircle2,
+  XCircle,
+  Footprints,
+  FileText,
+  AlertTriangle,
+  Phone,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  ChevronRight,
+  UserCheck,
+  ShieldAlert,
+  Clock,
+} from "lucide-react";
+import { Booking, Student, Stop, Bus, Route, Shift } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
+import type { EnrichedPassenger } from "../ConductorContext";
 
 interface ManifestTabProps {
-  tripBookings: Booking[];
+  tripBookings: (EnrichedPassenger | Booking)[];
   students: Student[];
   stops: Stop[];
   bus?: Bus;
+  route?: Route;
+  shift?: Shift;
   boardedCount: number;
   pendingCount: number;
   waitlistCount: number;
   roamingCount: number;
   onMarkAttendance: (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW") => void;
-  onMarkRoamingHold: (studentId: string, bookingId: string) => void;
+  onMarkRoamingHold?: (studentId: string, bookingId: string) => void;
+  onRefresh?: () => void;
+  isSyncing?: boolean;
 }
 
 export function ManifestTab({
@@ -23,282 +45,517 @@ export function ManifestTab({
   students,
   stops,
   bus,
+  route,
+  shift,
   boardedCount,
   pendingCount,
   waitlistCount,
   roamingCount,
   onMarkAttendance,
   onMarkRoamingHold,
+  onRefresh,
+  isSyncing,
 }: ManifestTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [manifestFilter, setManifestFilter] = useState<"ALL" | "BOARDED" | "PENDING" | "WAITLIST" | "ROAMING">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "AWAITING" | "BOARDED" | "WAITLIST" | "ROAMING">("ALL");
+  const [selectedStopId, setSelectedStopId] = useState<string>("ALL");
 
-  const filteredBookings = tripBookings.filter(b => {
-    const s = students.find(stud => stud.id === b.studentId || stud.userId === b.studentId);
-    const stop = stops.find(st => st.id === b.boardingStopId);
-    const query = searchQuery.toLowerCase();
+  // Build high-speed lookup maps
+  const studentMap = useMemo(() => {
+    const map = new Map<string, Student>();
+    students.forEach(s => {
+      if (s.id) map.set(s.id, s);
+      if (s.userId) map.set(s.userId, s);
+    });
+    return map;
+  }, [students]);
 
-    const matchesQuery =
-      !query ||
-      s?.fullName.toLowerCase().includes(query) ||
-      b.seatNumber?.toLowerCase().includes(query) ||
-      b.bookingCode?.toLowerCase().includes(query) ||
-      stop?.name.toLowerCase().includes(query);
+  const stopMap = useMemo(() => {
+    const map = new Map<string, Stop>();
+    stops.forEach(s => map.set(s.id, s));
+    return map;
+  }, [stops]);
 
-    if (!matchesQuery) return false;
+  // Derive Stop-by-Stop aggregation for active trip roster
+  const stopSummaries = useMemo(() => {
+    const counts: Record<string, { stop: Stop; total: number; boarded: number; pending: number }> = {};
 
-    if (manifestFilter === "BOARDED") return b.status === "BOARDED";
-    if (manifestFilter === "PENDING") return b.status === "CONFIRMED";
-    if (manifestFilter === "WAITLIST") return b.status === "WAITLISTED";
-    if (manifestFilter === "ROAMING") return b.roamingStatus === "ROAMING" || (b as any).roaming_status === "ROAMING" || b.roamingStatus === "RUNNING_TO_BUS";
-    return true;
-  });
+    tripBookings.forEach(b => {
+      const stopId = b.boardingStopId || "";
+      if (!stopId) return;
+      if (!counts[stopId]) {
+        const foundStop = stopMap.get(stopId) || {
+          id: stopId,
+          name: "Designated Stop",
+          code: stopId.substring(0, 4),
+          latitude: 0,
+          longitude: 0,
+          landmark: "",
+          geofenceRadiusMeters: 50,
+        };
+        counts[stopId] = { stop: foundStop, total: 0, boarded: 0, pending: 0 };
+      }
+      counts[stopId].total += 1;
+      if (b.status === "BOARDED") counts[stopId].boarded += 1;
+      else counts[stopId].pending += 1;
+    });
+
+    return Object.values(counts);
+  }, [tripBookings, stopMap]);
+
+  // Filter passengers by search, stop, and status
+  const filteredPassengers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    return tripBookings.filter(b => {
+      const s = (b as EnrichedPassenger).student || studentMap.get(b.studentId);
+      const stop = stopMap.get(b.boardingStopId || "");
+
+      // 1. Stop Filter
+      if (selectedStopId !== "ALL" && b.boardingStopId !== selectedStopId) {
+        return false;
+      }
+
+      // 2. Status Filter
+      if (statusFilter === "BOARDED" && b.status !== "BOARDED") return false;
+      if (statusFilter === "AWAITING" && b.status !== "CONFIRMED") return false;
+      if (statusFilter === "WAITLIST" && b.status !== "WAITLISTED") return false;
+      if (statusFilter === "ROAMING" && b.roamingStatus !== "ROAMING") return false;
+
+      // 3. Search Query
+      if (!q) return true;
+
+      const fullName = (s?.fullName || (b as any).fullName || "").toLowerCase();
+      const studentIdCode = (s?.studentIdCode || (b as any).studentIdCode || "").toLowerCase();
+      const phone = (s?.phone || "").toLowerCase();
+      const seat = (b.seatNumber || (b as any).seatCode || "").toLowerCase();
+      const stopName = (stop?.name || "").toLowerCase();
+      const dept = (s?.department || "").toLowerCase();
+
+      return (
+        fullName.includes(q) ||
+        studentIdCode.includes(q) ||
+        phone.includes(q) ||
+        seat.includes(q) ||
+        stopName.includes(q) ||
+        dept.includes(q)
+      );
+    });
+  }, [tripBookings, selectedStopId, statusFilter, searchQuery, studentMap, stopMap]);
+
+  const capacity = bus?.capacity || 40;
+  const occupancyPercent = Math.min(100, Math.round((boardedCount / (capacity || 1)) * 100));
 
   return (
-    <div className="bg-white dark:bg-gray-800/80 backdrop-blur-xl rounded-3xl p-5 sm:p-6 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300 min-w-0">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-            <FileText className="w-5 h-5" />
-          </div>
+    <div className="space-y-5 animate-in fade-in duration-200">
+      {/* ── TOP OPERATIONAL HERO: Bus & Boarding Meter ── */}
+      <div className="bg-zinc-950 dark:bg-black border border-zinc-800/90 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden text-white">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h3 className="font-black text-lg text-gray-900 dark:text-white">
-              Passenger Manifest Roster
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Real-time list of all students booked on {bus?.busNumber || "this vehicle"}.
-            </p>
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="font-mono text-xl sm:text-2xl font-black text-white tracking-tight">
+                {bus?.busNumber || "Duty Bus"}
+              </span>
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700">
+                {bus?.registrationNo || "CAMPUS-FLEET"}
+              </span>
+              {shift?.name && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {shift.name}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-zinc-400 flex items-center gap-1.5 font-medium">
+              <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>{route?.name || "Transit Route Corridor"}</span>
+              {shift?.startTime && <span>• Departs {shift.startTime}</span>}
+            </div>
           </div>
-        </div>
 
-        {/* Search Box */}
-        <div className="relative max-w-xs w-full">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search name, student ID, seat..."
-            className="w-full text-xs pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700/80 rounded-2xl text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono shadow-inner transition-all"
-          />
-        </div>
-      </div>
-
-      {/* Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 max-w-full no-scrollbar [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <button
-          onClick={() => setManifestFilter("ALL")}
-          className={`flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-            manifestFilter === "ALL"
-              ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          }`}
-        >
-          All ({tripBookings.length})
-        </button>
-        <button
-          onClick={() => setManifestFilter("PENDING")}
-          className={`flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-            manifestFilter === "PENDING"
-              ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          }`}
-        >
-          Awaiting ({pendingCount})
-        </button>
-        <button
-          onClick={() => setManifestFilter("BOARDED")}
-          className={`flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-            manifestFilter === "BOARDED"
-              ? "bg-green-600 text-white shadow-md shadow-green-500/20"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          }`}
-        >
-          Boarded ({boardedCount})
-        </button>
-        <button
-          onClick={() => setManifestFilter("WAITLIST")}
-          className={`flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-            manifestFilter === "WAITLIST"
-              ? "bg-yellow-600 text-white shadow-md shadow-yellow-500/20"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          }`}
-        >
-          Waitlist ({waitlistCount})
-        </button>
-        <button
-          onClick={() => setManifestFilter("ROAMING")}
-          className={`flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-            manifestFilter === "ROAMING"
-              ? "bg-yellow-500 text-gray-950 shadow-md shadow-yellow-500/20"
-              : "bg-yellow-50 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-300 border border-yellow-300/40 hover:bg-yellow-100 dark:hover:bg-yellow-900/60"
-          }`}
-        >
-          🎒 Roaming Campus ({roamingCount})
-        </button>
-      </div>
-
-      {/* Manifest List Table */}
-      <div className="divide-y divide-gray-100 dark:divide-gray-800/60 overflow-hidden">
-        {filteredBookings.length === 0 ? (
-          <div className="p-12 text-center text-xs text-gray-400 font-mono space-y-2">
-            <Users className="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600" />
-            <div>No passengers match the selected filter.</div>
-          </div>
-        ) : (
-          filteredBookings.map(b => {
-            const s = students.find(stud => stud.id === b.studentId || stud.userId === b.studentId);
-            const stop = stops.find(st => st.id === b.boardingStopId);
-            const isBoarded = b.status === "BOARDED";
-            const isAbsent = b.status === "ABSENT" || b.status === "NO_SHOW";
-            const isWaitlisted = b.status === "WAITLISTED";
-
-            const seatCode = b.seatNumber || (b as any).seat_number || (
-              isWaitlisted
-                ? (b.waitlistPosition ? `WL-${b.waitlistPosition}` : "WL")
-                : (b.passengerType === "STANDING_TILL_MERGE" || (b as any).passenger_type === "STANDING_TILL_MERGE" ? "STND" : "PASS")
-            );
-
-            return (
+          {/* Occupancy Gauge */}
+          <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3.5 min-w-[240px] space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-zinc-400">Boarding Progress</span>
+              <span className="text-emerald-400 font-mono font-black">
+                {boardedCount} / {tripBookings.length} Boarded ({occupancyPercent}%)
+              </span>
+            </div>
+            <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden">
               <div
-                key={b.id}
-                className={`p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                  isBoarded
-                    ? "bg-green-50/50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/30"
-                    : isAbsent
-                    ? "bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 opacity-70"
-                    : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-12 h-12 min-w-[3rem] rounded-2xl flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-sm border px-1 text-center overflow-hidden select-none ${
-                      isBoarded
-                        ? "bg-green-600 border-green-500 text-white"
-                        : isWaitlisted
-                        ? "bg-yellow-100 dark:bg-yellow-500/10 text-yellow-800 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30"
-                        : "bg-blue-100 dark:bg-blue-600/10 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-500/30"
+                className="bg-emerald-500 h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${occupancyPercent}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400 pt-0.5">
+              <span>Awaiting: <strong className="text-blue-400">{pendingCount}</strong></span>
+              <span>Waitlist: <strong className="text-amber-400">{waitlistCount}</strong></span>
+              <span>Capacity: <strong className="text-white">{capacity}</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── STOP-BY-STOP HORIZONTAL FILTER ── */}
+      {stopSummaries.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-blue-400" /> Filter by Boarding Stop
+            </span>
+            <span className="text-[11px] text-zinc-500">
+              {selectedStopId === "ALL" ? "Showing all stops" : "Stop filter active"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              onClick={() => setSelectedStopId("ALL")}
+              className={`flex-shrink-0 whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                selectedStopId === "ALL"
+                  ? "bg-white text-zinc-950 shadow-md shadow-white/10"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700"
+              }`}
+            >
+              All Stops ({tripBookings.length})
+            </button>
+
+            {stopSummaries.map(({ stop, total, boarded, pending }) => {
+              const isSelected = selectedStopId === stop.id;
+              return (
+                <button
+                  key={stop.id}
+                  onClick={() => setSelectedStopId(stop.id)}
+                  className={`flex-shrink-0 whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    isSelected
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 border border-blue-500"
+                      : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700"
+                  }`}
+                >
+                  <span className="truncate max-w-[160px]">{stop.name}</span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${
+                      isSelected ? "bg-blue-700 text-white font-black" : "bg-zinc-800 text-zinc-300 font-bold"
                     }`}
                   >
-                    <span className="truncate">{seatCode}</span>
-                  </div>
+                    {boarded}/{total}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-                  {/* Student ID Photo for Conductor Visual Validation */}
-                  {s?.photoUrl ? (
-                    <div className="relative w-10 h-12 rounded-xl overflow-hidden border-2 border-green-500/80 bg-gray-950 shrink-0 shadow-xs" title="Official Passport Photo Verified">
-                      <img
-                        src={getSafePhotoUrl(s.photoUrl)}
-                        alt={s.fullName}
-                        crossOrigin="anonymous"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          if (s?.photoUrl && e.currentTarget.src !== s.photoUrl) {
-                            e.currentTarget.src = s.photoUrl;
-                          }
-                        }}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-0 inset-x-0 bg-green-600/90 text-[7px] text-white font-black text-center py-0.5 uppercase tracking-tighter">
-                        Photo OK
+      {/* ── SEARCH & STATUS FILTER BAR ── */}
+      <div className="bg-zinc-950 dark:bg-black border border-zinc-800 rounded-3xl p-4 sm:p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Status Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              onClick={() => setStatusFilter("ALL")}
+              className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === "ALL"
+                  ? "bg-zinc-200 dark:bg-white text-zinc-950 shadow-sm"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white"
+              }`}
+            >
+              All ({tripBookings.length})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter("AWAITING")}
+              className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === "AWAITING"
+                  ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30 font-black"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-blue-400"
+              }`}
+            >
+              Awaiting ({pendingCount})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter("BOARDED")}
+              className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === "BOARDED"
+                  ? "bg-emerald-600 text-white shadow-sm shadow-emerald-600/30 font-black"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-emerald-400"
+              }`}
+            >
+              Boarded ({boardedCount})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter("WAITLIST")}
+              className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === "WAITLIST"
+                  ? "bg-amber-600 text-white shadow-sm font-black"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-amber-400"
+              }`}
+            >
+              Waitlist ({waitlistCount})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter("ROAMING")}
+              className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === "ROAMING"
+                  ? "bg-purple-600 text-white shadow-sm font-black"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-purple-400"
+              }`}
+            >
+              🎒 Roaming ({roamingCount})
+            </button>
+          </div>
+
+          {/* Real-time search */}
+          <div className="relative max-w-xs w-full">
+            <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search Name, College ID, Seat..."
+              className="w-full text-xs pl-10 pr-8 py-2.5 bg-zinc-900 border border-zinc-800 rounded-2xl text-white placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-sans"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-3 text-zinc-500 hover:text-white"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── PASSENGER LIST CARDS ── */}
+        <div className="divide-y divide-zinc-900">
+          {filteredPassengers.length === 0 ? (
+            <div className="p-12 text-center text-xs text-zinc-500 space-y-3 font-mono">
+              <Users className="w-10 h-10 mx-auto text-zinc-700" />
+              <div>No passengers match the current filter or search criteria.</div>
+              {(selectedStopId !== "ALL" || statusFilter !== "ALL" || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedStopId("ALL");
+                    setStatusFilter("ALL");
+                    setSearchQuery("");
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold hover:text-white"
+                >
+                  Reset All Filters
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredPassengers.map(b => {
+              const enriched = b as EnrichedPassenger;
+              const s = enriched.student || studentMap.get(b.studentId);
+              const stop = stopMap.get(b.boardingStopId || "");
+              const isBoarded = b.status === "BOARDED";
+              const isAbsent = b.status === "ABSENT" || b.status === "NO_SHOW";
+              const isWaitlisted = b.status === "WAITLISTED";
+
+              const seatDisplay =
+                b.seatNumber ||
+                enriched.seatCode ||
+                (isWaitlisted
+                  ? b.waitlistPosition
+                    ? `WL-${b.waitlistPosition}`
+                    : "WL"
+                  : "PASS");
+
+              const studentFullName = s?.fullName || enriched.fullName || "Student Commuter";
+              const studentCollegeId = s?.studentIdCode || enriched.studentIdCode || "";
+              const studentPhoto = s?.photoUrl || enriched.photoUrl || "";
+              const studentPhone = s?.phone || enriched.phone;
+
+              return (
+                <div
+                  key={b.id || `passenger-${b.studentId}`}
+                  className={`p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all ${
+                    isBoarded
+                      ? "bg-emerald-950/20 border border-emerald-900/30"
+                      : isAbsent
+                      ? "bg-red-950/20 border border-red-900/30 opacity-60"
+                      : "hover:bg-zinc-900/50 border border-transparent"
+                  }`}
+                >
+                  {/* Left: Identity Details & Photo */}
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    {/* Monospace Seat Badge */}
+                    <div
+                      className={`w-12 h-12 min-w-[3rem] rounded-2xl flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-sm border px-1 text-center select-none ${
+                        isBoarded
+                          ? "bg-emerald-600 border-emerald-500 text-white"
+                          : isWaitlisted
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          : "bg-blue-600/10 text-blue-400 border-blue-500/30"
+                      }`}
+                    >
+                      <span className="truncate">{seatDisplay}</span>
+                    </div>
+
+                    {/* Official Passport Photo with verification badge */}
+                    {studentPhoto ? (
+                      <div
+                        className="relative w-11 h-13 rounded-xl overflow-hidden border-2 border-emerald-500/70 bg-black shrink-0 shadow-sm"
+                        title="Official Passport Photo Verified"
+                      >
+                        <img
+                          src={getSafePhotoUrl(studentPhoto)}
+                          alt={studentFullName}
+                          crossOrigin="anonymous"
+                          referrerPolicy="no-referrer"
+                          onError={e => {
+                            if (studentPhoto && e.currentTarget.src !== studentPhoto) {
+                              e.currentTarget.src = studentPhoto;
+                            }
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-0 inset-x-0 bg-emerald-600 text-[7px] text-white font-black text-center py-0.2 uppercase tracking-tighter">
+                          OK
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="w-10 h-12 rounded-xl border border-dashed border-red-400 dark:border-red-800 bg-red-50 dark:bg-red-950/40 flex flex-col items-center justify-center text-red-500 shrink-0 p-0.5 text-center" title="No Official Photo Uploaded - Conductor must inspect physical ID!">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span className="text-[6px] font-black uppercase tracking-tighter text-red-600 dark:text-red-400 leading-none mt-0.5">Check ID</span>
-                    </div>
-                  )}
+                    ) : (
+                      <div
+                        className="w-11 h-13 rounded-xl border border-dashed border-red-500/60 bg-red-950/30 flex flex-col items-center justify-center text-red-400 shrink-0 p-1 text-center"
+                        title="No photo on file - Conductor must inspect physical university ID!"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                        <span className="text-[6px] font-black uppercase tracking-tighter text-red-400 leading-none mt-0.5">
+                          Check ID
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                      <span className="truncate max-w-[150px] sm:max-w-none">{s?.fullName || "Student Passenger"}</span>
-                      {b.roamingStatus === "ROAMING" || (b as any).roaming_status === "ROAMING" ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-700 font-bold shrink-0 flex items-center gap-1">
-                          <Footprints className="w-3 h-3 text-yellow-600 dark:text-yellow-500" />
-                          Roaming
+                    {/* Identity Details */}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-white truncate max-w-[170px] sm:max-w-xs">
+                          {studentFullName}
                         </span>
-                      ) : b.roamingStatus === "RUNNING_TO_BUS" ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-400 border border-orange-300 dark:border-orange-700 font-bold shrink-0 animate-pulse">
-                          🏃 Sprinting
-                        </span>
-                      ) : null}
-                      {s?.campus && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium shrink-0 border border-gray-200 dark:border-gray-700">
-                          {s.campus.split(",")[0]}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
-                      <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300">
-                        <MapPin className="w-3 h-3 text-gray-400 shrink-0" /> {stop?.name || "Boarding Stop"}
-                      </span>
-                      {b.boardedAt && (
-                        <>
-                          <span className="text-gray-300 dark:text-gray-600">•</span>
-                          <span className="text-green-600 dark:text-green-400 font-bold">
-                            Boarded at {new Date(b.boardedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+
+                        {/* College Student ID Badge */}
+                        {studentCollegeId && (
+                          <span
+                            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700 shrink-0"
+                            title="Official College Student Roll ID"
+                          >
+                            {studentCollegeId}
                           </span>
-                        </>
+                        )}
+
+                        {/* Roaming Indicator */}
+                        {b.roamingStatus === "ROAMING" ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-300 border border-purple-800 font-bold shrink-0 flex items-center gap-1">
+                            <Footprints className="w-3 h-3 text-purple-400" />
+                            Roaming
+                          </span>
+                        ) : b.roamingStatus === "RUNNING_TO_BUS" ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-300 border border-amber-700 font-bold shrink-0 animate-pulse">
+                            🏃 Sprinting
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Department & Stop Info */}
+                      <div className="text-xs text-zinc-400 flex items-center gap-2 flex-wrap font-sans">
+                        <span className="flex items-center gap-1 text-zinc-300">
+                          <MapPin className="w-3 h-3 text-blue-400 shrink-0" />
+                          {stop?.name || "Assigned Stop"}
+                        </span>
+
+                        {s?.department && (
+                          <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-zinc-400">{s.department}</span>
+                          </>
+                        )}
+
+                        {s?.semester && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400">
+                            Sem {s.semester}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Boarded time stamp */}
+                      {b.boardedAt && (
+                        <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1 pt-0.5">
+                          <Clock className="w-3 h-3 text-emerald-400" />
+                          <span>
+                            Boarded at{" "}
+                            {new Date(b.boardedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {enriched.unlockedBy && (
+                            <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 ml-1">
+                              {enriched.unlockedBy}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 dark:border-gray-800/40 shrink-0">
-                  {isBoarded ? (
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      <span className="px-3.5 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 border border-green-200 dark:border-green-800/60 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm">
-                        <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-500" />
-                        Boarded ✓
-                      </span>
-                      {((b as any).unlocked_by === "RFID" || (b as any).unlockedBy === "RFID") && (
-                        <span className="px-2 py-1 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-[10px] font-black uppercase tracking-wider">
-                          RFID
+                  {/* Right: Thumb-Friendly Action Buttons (min 48px) */}
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-800 shrink-0">
+                    {/* Call Student Phone */}
+                    {studentPhone && (
+                      <a
+                        href={`tel:${studentPhone}`}
+                        className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-all cursor-pointer"
+                        title={`Call ${studentFullName} (${studentPhone})`}
+                      >
+                        <Phone className="w-4 h-4 text-emerald-400" />
+                      </a>
+                    )}
+
+                    {isBoarded ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-3.5 py-2.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Boarded ✓</span>
                         </span>
-                      )}
-                      {((b as any).unlocked_by === "LOCATION_DISTANCE" || (b as any).unlockedBy === "LOCATION_DISTANCE") && (
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-[10px] font-black uppercase tracking-wider">
-                          GPS Dist
-                        </span>
-                      )}
-                    </div>
-                  ) : isAbsent ? (
-                    <span className="px-3.5 py-1.5 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 border border-red-200 dark:border-red-800/60 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm">
-                      <XCircle className="w-4 h-4 text-red-600 dark:text-red-500" />
-                      Marked Absent
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => onMarkAttendance(b.studentId, "BOARDED")}
-                        className="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-black rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Board</span>
-                      </button>
-                      <button
-                        onClick={() => onMarkRoamingHold(b.studentId, b.id)}
-                        className="px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/60 text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer"
-                        title="Hold seat digitally: student can roam campus without bag on seat"
-                      >
-                        <Footprints className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-500" />
-                        <span>Hold (Roam)</span>
-                      </button>
-                      <button
-                        onClick={() => onMarkAttendance(b.studentId, "ABSENT")}
-                        className="p-2 bg-gray-50 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 border border-gray-200 dark:border-gray-700 hover:border-red-200 dark:hover:border-red-800/60 rounded-xl transition-all active:scale-95 cursor-pointer"
-                        title="Mark Absent"
-                      >
-                        <XCircle className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() => onMarkAttendance(b.studentId, "ABSENT")}
+                          className="px-2.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold transition-all cursor-pointer"
+                          title="Undo / Mark not boarded"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => onMarkAttendance(b.studentId, "BOARDED")}
+                          className="flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-black shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Board</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => onMarkAttendance(b.studentId, "ABSENT")}
+                          className="min-h-[44px] px-3 py-2.5 rounded-xl bg-zinc-900 hover:bg-red-950/60 hover:text-red-400 border border-zinc-800 text-zinc-400 text-xs font-bold transition-all cursor-pointer"
+                          title="Mark Absent / No Show"
+                        >
+                          Absent
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );

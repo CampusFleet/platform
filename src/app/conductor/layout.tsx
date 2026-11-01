@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getOrFetchWithCache } from "@/lib/redis";
 import ConductorLayoutClient from "@/components/conductor/ConductorLayoutClient";
 import { ConductorProvider } from "@/components/conductor/ConductorContext";
-import type { Trip, Bus, Route, Booking, Stop, Shift } from "@/lib/types";
+import type { Trip, Bus, Route, Booking, Stop, Shift, Student, AttendanceRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +31,8 @@ export default async function ConductorLayout({
     redirect("/portal");
   }
 
-  // 3. Parallel fetch: cached shared fleet data + shorter-TTL bookings
-  const [sharedData, bookingsData] = await Promise.all([
+  // 3. Parallel fetch: cached shared fleet data, bookings, students roster, and attendance logs
+  const [sharedData, bookingsData, studentsData, attendanceData] = await Promise.all([
     // Shared fleet data — identical for all conductors, cached 20s with jitter
     getOrFetchWithCache({
       key: "conductor:shared_fleet_data",
@@ -61,14 +61,36 @@ export default async function ConductorLayout({
       ttl: 15,
       allowEmpty: true,
       fetchFn: async () => {
-        const { data } = await supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(250);
+        const { data } = await supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(300);
         return data;
+      },
+    }),
+    // Authoritative Student Directory (photos, college student IDs, route assignments)
+    getOrFetchWithCache({
+      key: "conductor:students_full",
+      ttl: 20,
+      allowEmpty: true,
+      fetchFn: async () => {
+        const { data } = await supabaseAdmin.from("students_full").select("*");
+        return data || [];
+      },
+    }),
+    // Active Attendance records (live check-ins, scans, RFID taps)
+    getOrFetchWithCache({
+      key: "conductor:attendance_records",
+      ttl: 10,
+      allowEmpty: true,
+      fetchFn: async () => {
+        const { data } = await supabaseAdmin.from("attendance_records").select("*").order("timestamp", { ascending: false }).limit(300);
+        return data || [];
       },
     }),
   ]);
 
   const { dbTrips, dbBuses, dbRoutes, dbStops, dbShifts } = sharedData;
   const dbBookings = bookingsData;
+  const dbStudents = studentsData;
+  const dbAttendance = attendanceData;
 
   // 4. Transform PostgreSQL rows to strongly typed domain models
   const trips: Trip[] = (dbTrips || []).map((t: any) => ({
@@ -159,6 +181,71 @@ export default async function ConductorLayout({
     isSpecial: Boolean(sh.is_special),
   }));
 
+  // Deduplicate and transform live students roster
+  const studentMap = new Map<string, any>();
+  for (const s of dbStudents || []) {
+    if (s.id && !studentMap.has(s.id)) {
+      studentMap.set(s.id, s);
+    }
+  }
+
+  const students: Student[] = Array.from(studentMap.values()).map((s: any) => ({
+    id: s.id,
+    userId: s.user_id || s.id,
+    fullName: s.full_name || s.name || "Student Commuter",
+    email: s.email || "",
+    phone: s.phone || null,
+    department: s.department || "Engineering",
+    semester: s.semester ? String(s.semester) : "5th",
+    primaryStopId: s.primary_stop_id || "",
+    primaryRouteId: s.primary_route_id || "",
+    campusId: s.campus_id || s.campus || "",
+    campus: s.campus || "",
+    emergencyContact: s.emergency_contact || {
+      name: s.emergency_contact_name || null,
+      relationship: s.emergency_contact_relation || null,
+      phone: s.emergency_contact_phone || null,
+    },
+    transportAccessSuspended: Boolean(s.transport_access_suspended),
+    hasActiveSubscription: Boolean(s.has_active_subscription),
+    subscriptionExpiryDate: s.subscription_expiry_date,
+    classId: s.class_id,
+    className: s.class_name,
+    zoneCode: s.zone_code || "ZONE_B",
+    paymentStatus: s.payment_status || (s.has_active_subscription ? "APPROVED" : "UNPAID"),
+    totalFeeDue: Number(s.total_fee_due || 0),
+    totalFeePaid: Number(s.total_fee_paid || 0),
+    photoUrl: s.photo_url || "",
+    photoLocked: Boolean(s.photo_locked),
+    homeLatitude: s.home_latitude ?? undefined,
+    homeLongitude: s.home_longitude ?? undefined,
+    studentIdCode: s.student_id_code || "",
+    rfidCardId: s.rfid_card_id || "",
+  }));
+
+  const attendanceRecords: AttendanceRecord[] = (dbAttendance || []).map((a: any) => ({
+    id: a.id,
+    studentId: a.student_id,
+    userId: a.user_id,
+    userRole: a.user_role,
+    userName: a.user_name,
+    tripId: a.trip_id,
+    busId: a.bus_id,
+    bookingId: a.booking_id,
+    method: a.method || "QR_SCAN",
+    verifiedBy: a.verified_by || "Conductor",
+    signatureToken: a.signature_token,
+    deviceId: a.device_id,
+    status: a.status || "BOARDED",
+    notes: a.notes,
+    timestamp: a.timestamp || new Date().toISOString(),
+    lockStatus: a.lock_status,
+    unlockedBy: a.unlocked_by,
+    distanceMeters: a.distance_meters,
+    rfidCardId: a.rfid_card_id,
+    unlockTimestamp: a.unlock_timestamp,
+  }));
+
   const userRole = (session.role as string) || "";
   const isStaffOrAdmin = userRole === "admin" || userRole === "transport_admin" || userRole === "transport_manager";
   const visibleTrips = trips.filter(t => {
@@ -189,6 +276,8 @@ export default async function ConductorLayout({
       initialBookings={bookings}
       initialStops={stops}
       initialShifts={shifts}
+      initialStudents={students}
+      initialAttendanceRecords={attendanceRecords}
     >
       <ConductorLayoutClient>
         {children}

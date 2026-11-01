@@ -68,6 +68,13 @@ export interface ChatMessage {
   }[];
   isEdited?: boolean;
   isDeleted?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
+  isStarred?: boolean;
+  isPinned?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -129,7 +136,7 @@ export async function syncConversationsFromDatabase(): Promise<void> {
     console.warn("Could not purge legacy corridor groups:", err);
   }
 
-  // 1. Ensure Main Official Group exists (CampusFleet Main Group)
+  // 1. Ensure Main Official Group & Core Transit Operations Channels exist
   await convCol.updateOne(
     { id: "campusfleet-main" },
     {
@@ -151,6 +158,90 @@ export async function syncConversationsFromDatabase(): Promise<void> {
           text: "Welcome to CampusFleet Main Group! All students, faculty, and fleet operations crew are synchronized here.",
           senderId: "system",
           senderName: "Operations Desk",
+          createdAt: now,
+        },
+      },
+    },
+    { upsert: true }
+  );
+
+  // 1b. Operations & Dispatch Desk (Transit standard: Dispatcher & Crew line)
+  await convCol.updateOne(
+    { id: "ops-dispatch" },
+    {
+      $set: {
+        id: "ops-dispatch",
+        type: "GROUP",
+        category: "ops",
+        name: "Operations & Dispatch Desk",
+        description: "Live transit operations, route diversions, driver-dispatcher coordination, passenger halts & schedule shifts.",
+        avatarInitials: "OD",
+        avatarBg: "bg-indigo-600 text-white",
+        isAutoAssigned: true,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+        lastMessage: {
+          text: "Operations desk online. Dispatchers and crew can broadcast route changes and relief requests here.",
+          senderId: "system",
+          senderName: "Dispatch Central",
+          createdAt: now,
+        },
+      },
+    },
+    { upsert: true }
+  );
+
+  // 1c. Priority Emergency & Incident Command
+  await convCol.updateOne(
+    { id: "emergency-sos" },
+    {
+      $set: {
+        id: "emergency-sos",
+        type: "GROUP",
+        category: "emergency",
+        name: "Emergency & Incident Response",
+        description: "Priority incident command for panic alerts, traffic accidents, vehicle breakdowns & security escalations.",
+        avatarInitials: "SOS",
+        avatarBg: "bg-rose-600 text-white",
+        isAutoAssigned: true,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+        lastMessage: {
+          text: "Priority Emergency Channel active. Monitored 24/7 by Campus Security and Transport Wardens.",
+          senderId: "system",
+          senderName: "Safety Desk",
+          createdAt: now,
+        },
+      },
+    },
+    { upsert: true }
+  );
+
+  // 1d. Fleet Maintenance & Depots
+  await convCol.updateOne(
+    { id: "fleet-maintenance" },
+    {
+      $set: {
+        id: "fleet-maintenance",
+        type: "GROUP",
+        category: "maintenance",
+        name: "Fleet Maintenance & Depots",
+        description: "Vehicle pre/post trip inspection logs, mechanical repairs, RFID telematics health & garage servicing.",
+        avatarInitials: "FM",
+        avatarBg: "bg-amber-600 text-white",
+        isAutoAssigned: true,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+        lastMessage: {
+          text: "Depot Maintenance Channel active. Log defect reports and garage servicing schedules here.",
+          senderId: "system",
+          senderName: "Depot Engineering",
           createdAt: now,
         },
       },
@@ -373,41 +464,45 @@ export async function getUserConversations(userId: string, userRole: string): Pr
     if (userRec?.campus_id) userCampusIds.add(userRec.campus_id);
     if (userRec?.campus) userCampusIds.add(userRec.campus);
 
-    // B. Check student record (Class, Campus, and Bus)
-    const { data: student } = await supabaseAdmin
-      .from("students")
-      .select("id, campus_id, campus, class_id, primary_route_id")
-      .or(`user_id.eq.${userId},id.eq.${userId}`)
-      .maybeSingle();
+    const isSupervisor = ["transport_admin", "transport_manager", "admin"].includes(userRole);
 
-    if (student) {
-      if (student.campus_id) userCampusIds.add(student.campus_id);
-      if (student.campus) userCampusIds.add(student.campus);
-      if (student.class_id) userClassIds.add(student.class_id);
+    // B. Check student record (Class, Campus, and Bus) - strictly for commuter passengers ONLY!
+    if (!isSupervisor && (userRole === "student" || !userRole)) {
+      const { data: student } = await supabaseAdmin
+        .from("students")
+        .select("id, campus_id, campus, class_id, primary_route_id")
+        .or(`user_id.eq.${userId},id.eq.${userId}`)
+        .maybeSingle();
 
-      // Bus from active or recent confirmed bookings
-      const { data: studentBookings } = await supabaseAdmin
-        .from("bookings")
-        .select("bus_id, buses(bus_number)")
-        .or(`student_id.eq.${student.id},user_id.eq.${userId}`)
-        .order("created_at", { ascending: false })
-        .limit(3);
+      if (student) {
+        if (student.campus_id) userCampusIds.add(student.campus_id);
+        if (student.campus) userCampusIds.add(student.campus);
+        if (student.class_id) userClassIds.add(student.class_id);
 
-      if (studentBookings && studentBookings.length > 0) {
-        for (const bk of studentBookings) {
-          const bNum = (bk as any)?.buses?.bus_number;
-          if (bNum) userBusNumbers.add(String(bNum));
+        // Bus from active or recent confirmed bookings
+        const { data: studentBookings } = await supabaseAdmin
+          .from("bookings")
+          .select("bus_id, buses(bus_number)")
+          .or(`student_id.eq.${student.id},user_id.eq.${userId}`)
+          .order("created_at", { ascending: false })
+          .limit(3);
+
+        if (studentBookings && studentBookings.length > 0) {
+          for (const bk of studentBookings) {
+            const bNum = (bk as any)?.buses?.bus_number;
+            if (bNum) userBusNumbers.add(String(bNum));
+          }
         }
-      }
 
-      // Bus from primary route fallback
-      if (userBusNumbers.size === 0 && student.primary_route_id) {
-        const { data: routeBus } = await supabaseAdmin
-          .from("buses")
-          .select("bus_number")
-          .eq("current_route_id", student.primary_route_id)
-          .maybeSingle();
-        if (routeBus?.bus_number) userBusNumbers.add(String(routeBus.bus_number));
+        // Bus from primary route fallback
+        if (userBusNumbers.size === 0 && student.primary_route_id) {
+          const { data: routeBus } = await supabaseAdmin
+            .from("buses")
+            .select("bus_number")
+            .eq("current_route_id", student.primary_route_id)
+            .maybeSingle();
+          if (routeBus?.bus_number) userBusNumbers.add(String(routeBus.bus_number));
+        }
       }
     }
 
@@ -484,8 +579,27 @@ export async function getUserConversations(userId: string, userRole: string): Pr
     { type: "DIRECT", memberIds: userId },
   ];
 
+  if (isSupervisor) {
+    // Supervisors (Admin, Transport Admin, Transport Manager):
+    // Full operational oversight across dispatch, emergency, maintenance, campuses & all fleet buses
+    allowedOr.push(
+      { id: "ops-dispatch" },
+      { id: "emergency-sos" },
+      { id: "fleet-maintenance" },
+      { category: "campus" },
+      { category: "bus" }
+    );
+  } else if (userRole === "driver" || userRole === "conductor") {
+    // Transit Crew: Operations dispatch line, SOS emergency line, maintenance line
+    allowedOr.push(
+      { id: "ops-dispatch" },
+      { id: "emergency-sos" },
+      { id: "fleet-maintenance" }
+    );
+  }
+
   // 3. User's Assigned Campus Channel(s)
-  if (userCampusIds.size > 0) {
+  if (userCampusIds.size > 0 && !isSupervisor) {
     const cList = Array.from(userCampusIds);
     const cFormatted = [...cList, ...cList.map((c) => (c.startsWith("campus-") ? c : `campus-${c}`))];
     allowedOr.push({
@@ -499,7 +613,7 @@ export async function getUserConversations(userId: string, userRole: string): Pr
 
   // 4. User's Assigned Class Channel(s) ONLY
   // Strictly only classes the user is enrolled in (student) or teaches (teacher). Zero leakage!
-  if (userClassIds.size > 0) {
+  if (userClassIds.size > 0 && !isSupervisor) {
     const clList = Array.from(userClassIds);
     const clGroupIds = clList.map((cid) => `class-${cid}`);
     allowedOr.push({
@@ -512,7 +626,7 @@ export async function getUserConversations(userId: string, userRole: string): Pr
   }
 
   // 5. User's Assigned Bus Channel(s) ONLY
-  if (userBusNumbers.size > 0) {
+  if (userBusNumbers.size > 0 && !isSupervisor) {
     const bList = Array.from(userBusNumbers);
     const bGroupIds = bList.map((b) => `bus-${b}`);
     const bNumeric = bList.map((b) => Number(b)).filter((n) => !isNaN(n));
@@ -522,13 +636,6 @@ export async function getUserConversations(userId: string, userRole: string): Pr
         { id: { $in: bGroupIds } },
         { busNumber: { $in: [...bList, ...bNumeric] } },
       ],
-    });
-  } else if (isSupervisor && userCampusIds.size > 0) {
-    // Transport supervisors see the transit bus channels operating within their campus
-    const cList = Array.from(userCampusIds);
-    allowedOr.push({
-      category: "bus",
-      campusId: { $in: cList },
     });
   }
 
@@ -721,6 +828,7 @@ export async function sendChatMessage(params: {
   text: string;
   poll?: ChatMessage["poll"];
   attachments?: ChatMessage["attachments"];
+  replyTo?: ChatMessage["replyTo"];
 }): Promise<ChatMessage | null> {
   const db = await getMongoDb();
   if (!db) return null;
@@ -759,6 +867,7 @@ export async function sendChatMessage(params: {
     poll: params.poll,
     mentions: mentions.length > 0 ? mentions : undefined,
     attachments: params.attachments,
+    replyTo: params.replyTo,
     reactions: [],
     createdAt: now,
   };

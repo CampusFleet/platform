@@ -21,6 +21,9 @@ import {
   NotificationsSettingsView,
   MessageTemplatesView,
 } from "./settings";
+import { GroupDetailsModal } from "./GroupDetailsModal";
+import { MessageActionsMenu } from "./MessageActionsMenu";
+import { useTheme } from "@/components/common/ThemeProvider";
 import {
   Search,
   Edit3,
@@ -60,6 +63,12 @@ import {
   Pencil,
   ThumbsUp,
   Heart,
+  LayoutGrid,
+  Sun,
+  Moon,
+  CornerUpLeft,
+  Star,
+  Pin,
 } from "lucide-react";
 
 const QUICK_REACTIONS = [
@@ -86,6 +95,7 @@ const MENTION_ROLES = [
 export function ChatPortalView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { theme, setTheme } = useTheme();
 
   // Active view states
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -93,9 +103,20 @@ export function ChatPortalView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [leftView, setLeftView] = useState<"messages" | "settings">("messages");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "favorites" | "groups">("all");
   const [inputMessage, setInputMessage] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(true);
+
+  // Replying & Context Menu states
+  const [replyingTo, setReplyingTo] = useState<{ id: string; senderName: string; text: string } | null>(null);
+  const [activeMessageMenuId, setActiveMessageMenuId] = useState<string | null>(null);
+
+  // Mobile layout & navbar states
+  const [isChatBoxActive, setIsChatBoxActive] = useState(false);
+  const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
+  const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
+  const [inChatSearchQuery, setInChatSearchQuery] = useState("");
 
   // Mention system
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -323,7 +344,9 @@ export function ChatPortalView() {
     const textToSend = (customText || inputMessage).trim();
     if (!textToSend || !activeConvId) return;
 
+    const currentReply = replyingTo;
     setInputMessage("");
+    setReplyingTo(null);
     setIsMentionOpen(false);
     setIsTemplatesOpen(false);
 
@@ -336,6 +359,7 @@ export function ChatPortalView() {
       senderName: currentUser?.fullName || currentUser?.email?.split("@")[0] || "Me",
       senderRole: currentUser?.role || "student",
       text: textToSend,
+      replyTo: currentReply ? currentReply : undefined,
       createdAt: new Date().toISOString(),
       reactions: [],
     };
@@ -354,6 +378,7 @@ export function ChatPortalView() {
           senderId: currentUser?.id,
           senderName: currentUser?.fullName || currentUser?.email?.split("@")[0] || "Me",
           senderRole: currentUser?.role || "student",
+          replyTo: currentReply ? currentReply : undefined,
         }),
       });
       const data = await res.json();
@@ -612,11 +637,20 @@ export function ChatPortalView() {
     inputRef.current?.focus();
   };
 
-  // Filter conversations
+  // Filter conversations matching search query and active tab filter
   const filteredConversations = conversations.filter((c) => {
+    // Tab filter
+    if (activeFilter === "unread" && (c.unreadCount || 0) <= 0) return false;
+    if (activeFilter === "favorites" && !(userSettings?.favorites || []).includes(c.id)) return false;
+    if (activeFilter === "groups" && c.type !== "GROUP" && c.category === "direct") return false;
+
+    // Search query
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
     return (
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.lastMessage?.text?.toLowerCase().includes(searchQuery.toLowerCase())
+      c.name.toLowerCase().includes(q) ||
+      Boolean(c.description && c.description.toLowerCase().includes(q)) ||
+      Boolean(c.lastMessage?.text && c.lastMessage.text.toLowerCase().includes(q))
     );
   });
 
@@ -685,66 +719,216 @@ export function ChatPortalView() {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex w-full h-full bg-white dark:bg-gray-900 border-x border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-      
+    <div className="flex-1 min-h-0 flex flex-col w-full h-full bg-white dark:bg-gray-900 border-x border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden relative">
       {/* ======================================================== */}
-      {/* LEFT COLUMN: Sidebar (Messages / Settings / New Chat)   */}
+      {/* MOBILE MINIMAL NAVBAR (Matching Haveloc Image 1)         */}
+      {/* Collapses when chat box is active (Matching Image 2)      */}
       {/* ======================================================== */}
       <div
-        className={`w-full md:w-[380px] lg:w-[420px] flex-shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full min-h-0 bg-white dark:bg-gray-900 transition-all ${
-          activeConvId ? "hidden md:flex" : "flex"
+        className={`md:hidden flex-shrink-0 transition-all duration-200 overflow-hidden bg-white dark:bg-gray-900 border-b border-gray-200/80 dark:border-gray-800 z-30 ${
+          isChatBoxActive
+            ? "max-h-0 opacity-0 py-0 border-0 pointer-events-none -translate-y-full"
+            : "max-h-12 opacity-100 px-3 py-1.5 flex items-center justify-between"
         }`}
       >
-        {/* --- VIEW 1: MESSAGES (Default) --- */}
-        {leftView === "messages" && (
-          <>
-            {/* Header */}
-            <div className="p-4 border-b border-gray-100 dark:border-gray-800/80 flex items-center justify-between">
-              <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                Messages
-              </h1>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  title="Search messages"
-                >
-                  <Search className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setLeftView("settings");
-                    setActiveSettingSection("main");
-                  }}
-                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  title="Chat settings"
-                >
-                  <SettingsIcon className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
+        {/* Left: Stylized Logo (matching 'h' in screenshot 1) */}
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="flex items-center gap-1.5 text-gray-900 dark:text-white font-black hover:opacity-80 transition-opacity cursor-pointer pl-1"
+          aria-label="Home"
+        >
+          <span className="font-serif italic text-2xl font-bold text-gray-900 dark:text-white tracking-tighter select-none">
+            h
+          </span>
+        </button>
 
-            {/* Search Pill */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-              <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search channels and messages..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2 text-sm rounded-full bg-gray-100 dark:bg-gray-800/80 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 border border-transparent transition-all"
+        {/* Right: 9-dots Grid, Moon/Sun Theme Toggle, Profile Circle */}
+        <div className="flex items-center gap-1">
+          {/* 9-dots app grid */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAppsMenuOpen(!isAppsMenuOpen)}
+              className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              title="Transit Apps & Portals"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+
+            {isAppsMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsAppsMenuOpen(false)}
                 />
-                {searchQuery && (
+                <div className="absolute right-0 top-9 z-50 w-52 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    onClick={() => {
+                      setIsAppsMenuOpen(false);
+                      router.push("/");
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Transit Home
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsAppsMenuOpen(false);
+                      router.push("/student");
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Commuter Pass
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsAppsMenuOpen(false);
+                      router.push("/track");
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Live Bus Tracking
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsAppsMenuOpen(false);
+                      setLeftView("settings");
+                      setActiveSettingSection("main");
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Chat Settings
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Dark Mode Moon / Sun Toggle */}
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+            title="Toggle Dark / Light Mode"
+          >
+            {theme === "dark" ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-gray-600" />
+            )}
+          </button>
+
+          {/* Profile User Icon with Circle (matching screenshot 1) */}
+          <button
+            type="button"
+            onClick={() => {
+              setLeftView("settings");
+              setActiveSettingSection("profile");
+            }}
+            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+            title="User Profile"
+          >
+            <div className="w-6 h-6 rounded-full border border-gray-400 dark:border-gray-500 flex items-center justify-center">
+              <User className="w-3.5 h-3.5" />
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Two-Column Viewport */}
+      <div className="flex-1 min-h-0 flex w-full h-full overflow-hidden">
+        {/* ======================================================== */}
+        {/* LEFT COLUMN: Sidebar (Messages / Settings / New Chat)   */}
+        {/* ======================================================== */}
+        <div
+          className={`w-full md:w-[380px] lg:w-[420px] flex-shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full min-h-0 bg-white dark:bg-gray-900 transition-all ${
+            activeConvId ? "hidden md:flex" : "flex"
+          }`}
+        >
+          {/* --- VIEW 1: MESSAGES (Default) --- */}
+          {leftView === "messages" && (
+            <>
+              {/* Header */}
+              <div className="p-4 border-b border-gray-100 dark:border-gray-800/80 flex items-center justify-between">
+                <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                  Messages
+                </h1>
+                <div className="flex items-center gap-1">
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                    title="Search messages"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Search className="w-5 h-5" />
                   </button>
-                )}
+                  <button
+                    onClick={() => {
+                      setLeftView("settings");
+                      setActiveSettingSection("main");
+                    }}
+                    className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                    title="Chat settings"
+                  >
+                    <SettingsIcon className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            </div>
+
+              {/* Search Pill */}
+              <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                <div className="relative flex items-center">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search channels and messages..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 text-sm rounded-full bg-gray-100 dark:bg-gray-800/80 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 border border-transparent transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Filter Pills: All | Unread | Favorites | Groups (Matching Haveloc Screenshot 5) */}
+              <div className="px-4 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-gray-100 dark:border-gray-800">
+                {(["all", "unread", "favorites", "groups"] as const).map((filter) => {
+                  const isActive = activeFilter === filter;
+                  const label = filter.charAt(0).toUpperCase() + filter.slice(1);
+                  const unreadTotal = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+
+                  return (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setActiveFilter(filter)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow-2xs"
+                          : "bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700/70"
+                      }`}
+                    >
+                      <span>{label}</span>
+                      {filter === "unread" && unreadTotal > 0 && (
+                        <span className={`ml-1.5 px-1.5 py-0.2 text-[10px] rounded-full font-bold ${
+                          isActive
+                            ? "bg-white/20 text-white dark:bg-black/20 dark:text-gray-900"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300"
+                        }`}>
+                          {unreadTotal}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50">
@@ -911,20 +1095,24 @@ export function ChatPortalView() {
       >
         {activeConversation ? (
           <>
-            {/* Conversation Header (Matching Screenshot 5) */}
-            <div className="h-16 flex-shrink-0 px-3 sm:px-6 border-b border-gray-200/80 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-gray-900 z-10 gap-2">
+            {/* Conversation Header: strictly sticky top-0, matching Image 1 & Image 2 */}
+            <div className="sticky top-0 z-20 flex-shrink-0 h-14 sm:h-16 px-3 sm:px-6 border-b border-gray-200/80 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-gray-900 gap-2">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                {/* Mobile Back Button */}
+                {/* Mobile Back Button: <- arrow */}
                 <button
-                  onClick={() => setActiveConvId(null)}
-                  className="md:hidden p-1.5 -ml-1 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex-shrink-0"
+                  onClick={() => {
+                    setActiveConvId(null);
+                    router.push("/chat", { scroll: false });
+                  }}
+                  className="md:hidden p-1.5 -ml-1 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex-shrink-0 cursor-pointer"
                   aria-label="Back to conversations"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
 
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${getAvatarColor(
+                  onClick={() => setIsDetailsOpen(true)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 cursor-pointer ${getAvatarColor(
                     activeConversation.name,
                     0
                   )}`}
@@ -934,82 +1122,88 @@ export function ChatPortalView() {
 
                 <div className="min-w-0 flex-1">
                   <h2
-                    className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate leading-tight"
+                    onClick={() => setIsDetailsOpen(true)}
+                    className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate leading-tight cursor-pointer"
                     title={activeConversation.name}
                   >
                     {activeConversation.name}
                   </h2>
                   <button
-                    onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                    className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline block text-left"
+                    type="button"
+                    onClick={() => setIsDetailsOpen(true)}
+                    className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline block text-left cursor-pointer"
                   >
                     details
                   </button>
                 </div>
               </div>
 
-              {/* Action Icons */}
+              {/* Header Actions: Search & More vertical dots (matching Image 1) */}
               <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                 <button
-                  onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  title="Group Details & Members"
+                  type="button"
+                  onClick={() => setInChatSearchOpen(!inChatSearchOpen)}
+                  className={`p-2 rounded-full transition-colors cursor-pointer ${
+                    inChatSearchOpen
+                      ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                      : "text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                  }`}
+                  title="Search in conversation"
                 >
-                  <Users className="w-5 h-5" />
+                  <Search className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
                 <button
-                  onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  title="Options"
+                  type="button"
+                  onClick={() => setIsDetailsOpen(true)}
+                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  title="Conversation info & options"
                 >
-                  <MoreVertical className="w-5 h-5" />
+                  <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Slide-over Group Details Drawer */}
-            {isDetailsOpen && (
-              <div className="absolute top-16 right-0 w-80 h-[calc(100%-64px)] bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-xl z-20 flex flex-col p-4 animate-in slide-in-from-right duration-200">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
-                  <h3 className="font-bold text-sm text-gray-900 dark:text-white">Group Information</h3>
-                  <button onClick={() => setIsDetailsOpen(false)} className="text-gray-400 hover:text-gray-600">
-                    <X className="w-4 h-4" />
+            {/* In-Chat Search Bar */}
+            {inChatSearchOpen && (
+              <div className="sticky top-14 sm:top-16 z-20 flex-shrink-0 px-4 py-2 bg-gray-50 dark:bg-gray-850 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2 animate-in slide-in-from-top-2 duration-150">
+                <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search in this conversation..."
+                  value={inChatSearchQuery}
+                  onChange={(e) => setInChatSearchQuery(e.target.value)}
+                  className="flex-1 bg-transparent text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none"
+                  autoFocus
+                />
+                {inChatSearchQuery && (
+                  <button
+                    onClick={() => setInChatSearchQuery("")}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                </div>
-                <div className="py-4 space-y-4 flex-1 overflow-y-auto">
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-blue-600 text-white font-black text-xl flex items-center justify-center mx-auto mb-2">
-                      {activeConversation.avatarInitials}
-                    </div>
-                    <h4 className="font-bold text-sm text-gray-900 dark:text-white">{activeConversation.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{activeConversation.description || "CampusFleet transit communication channel"}</p>
-                    <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/40">
-                      <Sparkles className="w-3 h-3" />
-                      <span>Automated Dynamic Channel</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
-                    <div className="text-xs font-bold uppercase tracking-wider text-gray-400">Enrolled Members</div>
-                    <p className="text-xs text-gray-500">
-                      {activeConversation.isAutoAssigned
-                        ? "All registered students, faculty, and route crew are automatically synchronized with this channel."
-                        : `${activeConversation.memberIds.length} members enrolled.`}
-                    </p>
-                  </div>
-
-                  <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
-                    <div className="text-xs font-bold uppercase tracking-wider text-gray-400">Mention Guide</div>
-                    <div className="text-xs space-y-1.5 text-gray-600 dark:text-gray-300">
-                      <div className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-blue-500" /> <code>@transportadmin</code> — Alert Admin Desk</div>
-                      <div className="flex items-center gap-1.5"><Compass className="w-3.5 h-3.5 text-amber-500" /> <code>@transportmanager</code> — Alert Fleet Manager</div>
-                      <div className="flex items-center gap-1.5"><GraduationCap className="w-3.5 h-3.5 text-emerald-500" /> <code>@teacher</code> — Alert Faculty</div>
-                      <div className="flex items-center gap-1.5"><BusFront className="w-3.5 h-3.5 text-indigo-500" /> <code>@driver</code> — Alert Route Bus Driver</div>
-                    </div>
-                  </div>
-                </div>
+                )}
+                <button
+                  onClick={() => {
+                    setInChatSearchOpen(false);
+                    setInChatSearchQuery("");
+                  }}
+                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline px-1 cursor-pointer"
+                >
+                  Done
+                </button>
               </div>
             )}
+
+            {/* Haveloc-Style Group Details Modal */}
+            <GroupDetailsModal
+              isOpen={isDetailsOpen}
+              onClose={() => setIsDetailsOpen(false)}
+              conversation={activeConversation}
+              messages={messages}
+              currentUserRole={currentUser?.role}
+              onClearChat={() => setMessages([])}
+            />
 
             {/* Message Thread (Matching Screenshot 5) */}
             <div
@@ -1176,6 +1370,24 @@ export function ChatPortalView() {
                             : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-tl-xs"
                         }`}
                       >
+                        {/* Replied message quote banner inside bubble */}
+                        {msg.replyTo && (
+                          <div
+                            className={`mb-2 p-2 rounded-xl border-l-4 text-xs ${
+                              isMe
+                                ? "bg-blue-700/60 border-white text-white/90"
+                                : "bg-gray-200/70 dark:bg-gray-700/60 border-blue-500 text-gray-700 dark:text-gray-200"
+                            }`}
+                          >
+                            <div className="font-bold text-[11px] opacity-90 truncate">
+                              {msg.replyTo.senderName}
+                            </div>
+                            <div className="text-[11px] opacity-80 truncate line-clamp-1">
+                              {msg.replyTo.text}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="whitespace-pre-wrap break-words">
                           {renderFormattedText(msg.text)}
                           {msg.isEdited && (
@@ -1214,41 +1426,75 @@ export function ChatPortalView() {
                       </div>
                     )}
 
-                    {/* Hover quick reaction & CRUD buttons */}
-                    <div className="hidden group-hover:flex items-center gap-1 mt-0.5 opacity-90">
-                      {QUICK_REACTIONS.map((qr) => {
-                        const Icon = qr.icon;
-                        return (
-                          <button
-                            key={qr.id}
-                            onClick={() => handleReaction(msg.id, qr.emoji)}
-                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                            title={qr.label}
-                          >
-                            <Icon className={`w-3.5 h-3.5 ${qr.color}`} />
-                          </button>
-                        );
-                      })}
+                    {/* Hover quick reaction, menu trigger & CRUD buttons */}
+                    <div className="relative flex items-center gap-1 mt-0.5 opacity-90">
+                      <div className="hidden group-hover:flex items-center gap-1">
+                        {QUICK_REACTIONS.map((qr) => {
+                          const Icon = qr.icon;
+                          return (
+                            <button
+                              key={qr.id}
+                              onClick={() => handleReaction(msg.id, qr.emoji)}
+                              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                              title={qr.label}
+                            >
+                              <Icon className={`w-3.5 h-3.5 ${qr.color}`} />
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Menu trigger button for Haveloc message actions */}
+                      <button
+                        type="button"
+                        onClick={() => setActiveMessageMenuId(activeMessageMenuId === msg.id ? null : msg.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-all cursor-pointer"
+                        title="More options"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Floating MessageActionsMenu */}
+                      <MessageActionsMenu
+                        isOpen={activeMessageMenuId === msg.id}
+                        onClose={() => setActiveMessageMenuId(null)}
+                        onReact={(emoji) => {
+                          handleReaction(msg.id, emoji);
+                          setActiveMessageMenuId(null);
+                        }}
+                        onReply={() => {
+                          setReplyingTo({
+                            id: msg.id,
+                            senderName: msg.senderName,
+                            text: msg.text,
+                          });
+                          setActiveMessageMenuId(null);
+                          inputRef.current?.focus();
+                        }}
+                        onCopy={() => {
+                          navigator.clipboard.writeText(msg.text);
+                          setActiveMessageMenuId(null);
+                        }}
+                        onDelete={() => {
+                          handleDeleteMessage(msg.id);
+                          setActiveMessageMenuId(null);
+                        }}
+                        isMe={isMe}
+                      />
+
                       {isMe && (
-                        <>
+                        <div className="hidden group-hover:flex items-center gap-1">
                           <button
                             onClick={() => {
                               setEditingMessageId(msg.id);
                               setEditingMessageText(msg.text);
                             }}
                             title="Edit message"
-                            className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+                            className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
                           >
                             <Pencil className="w-3 h-3" />
                           </button>
-                          <button
-                            onClick={() => handleDeleteMessage(msg.id)}
-                            title="Delete message"
-                            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1421,73 +1667,108 @@ export function ChatPortalView() {
             />
 
             {/* Bottom Input Toolbar: Always fixed at bottom */}
-            <div className="flex-shrink-0 p-3 sm:p-4 bg-white dark:bg-gray-900 border-t border-gray-200/80 dark:border-gray-800 z-10 sticky bottom-0">
-              <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800/80 rounded-full px-3 py-1.5 border border-transparent focus-within:border-gray-300 dark:focus-within:border-gray-700 transition-all">
-                {/* + Attachment button */}
-                <button
-                  type="button"
-                  onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
-                  title="Add attachment or poll"
-                >
-                  <Plus className={`w-4 h-4 transition-transform duration-200 ${isAttachmentOpen ? "rotate-45" : ""}`} />
-                </button>
-
-                {/* Emoji button */}
-                <button
-                  type="button"
-                  onClick={() => insertMention("@transportadmin")}
-                  className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
-                  title="Mention Transport Admin"
-                >
-                  <Smile className="w-4 h-4" />
-                </button>
-
-                {/* Text input */}
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Type a message (type @ to alert roles)"
-                  value={inputMessage}
-                  onChange={handleInputChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none min-w-0"
-                />
-
-                {/* Quick Templates Icon */}
-                <button
-                  type="button"
-                  onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
-                  className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
-                  title="Quick templates"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                </button>
-
-                {/* Send Button */}
-                {inputMessage.trim() ? (
+            <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200/80 dark:border-gray-800 z-10 sticky bottom-0">
+              {/* Replying quote banner (Matching Haveloc Screenshot 5 & WhatsApp 2) */}
+              {replyingTo && (
+                <div className="flex items-center justify-between px-4 py-2 bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/40 animate-in slide-in-from-bottom-2 duration-150">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <div className="w-1 h-8 rounded-full bg-blue-500 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 block truncate">
+                        Replying to {replyingTo.senderName}
+                      </span>
+                      <span className="text-xs text-gray-600 dark:text-gray-300 line-clamp-1">
+                        {replyingTo.text}
+                      </span>
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleSendMessage()}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xs transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-200/50 dark:hover:bg-gray-800 cursor-pointer"
+                    title="Cancel reply"
                   >
-                    <Send className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ) : (
+                </div>
+              )}
+
+              <div className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800/80 rounded-full px-3 py-1.5 border border-transparent focus-within:border-gray-300 dark:focus-within:border-gray-700 transition-all">
+                  {/* + Attachment button */}
                   <button
                     type="button"
-                    onClick={() => handleSendMessage("Check-in: Arrived at stop")}
-                    className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
-                    title="Send quick check-in"
+                    onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
+                    className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
+                    title="Add attachment or poll"
                   >
-                    <Mic className="w-4 h-4" />
+                    <Plus className={`w-4 h-4 transition-transform duration-200 ${isAttachmentOpen ? "rotate-45" : ""}`} />
                   </button>
-                )}
+
+                  {/* Emoji button */}
+                  <button
+                    type="button"
+                    onClick={() => insertMention("@transportadmin")}
+                    className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-full transition-colors flex-shrink-0 cursor-pointer"
+                    title="Mention Transport Admin"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+
+                  {/* Text input */}
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Type a message (type @ to alert roles)"
+                    value={inputMessage}
+                    onChange={handleInputChange}
+                    onFocus={() => {
+                      setIsChatBoxActive(true);
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setIsChatBoxActive(false);
+                      }, 150);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none min-w-0"
+                  />
+
+                  {/* Quick Templates Icon */}
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
+                    className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
+                    title="Quick templates"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+
+                  {/* Send Button */}
+                  {inputMessage.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage()}
+                      className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xs transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage("Check-in: Arrived at stop")}
+                      className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors flex-shrink-0 cursor-pointer"
+                      title="Send quick check-in"
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -1505,6 +1786,8 @@ export function ChatPortalView() {
             </p>
           </div>
         )}
+      </div>
+      {/* End Two-Column Viewport */}
       </div>
 
       {/* Create Poll Modal  */}

@@ -69,6 +69,13 @@ export interface ChatMessage {
     count: number;
     userIds: string[];
   }[];
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
+  isStarred?: boolean;
+  isPinned?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

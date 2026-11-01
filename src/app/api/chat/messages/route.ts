@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
     const body = await req.json();
-    const { conversationId, text, attachments, poll } = body;
+    const { conversationId, text, attachments, poll, replyTo } = body;
 
     if (!conversationId || (!text && (!attachments || attachments.length === 0) && !poll)) {
       return NextResponse.json({ success: false, error: "conversationId and text, poll, or attachment are required" }, { status: 400 });
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       text: text || (poll ? `📊 ${poll.question}` : ""),
       poll,
       attachments,
+      replyTo,
     });
 
     if (!message) {

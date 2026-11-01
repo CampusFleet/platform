@@ -361,7 +361,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: "tripId is required" }, { status: 400 });
       }
 
-      // Deactivate any previous alerts for this trip
+      // Fetch trip details to ensure relational consistency (ACID: Consistency)
+      const { data: tripData } = await supabaseAdmin
+        .from("trips")
+        .select("id, bus_id, bus:buses(bus_number)")
+        .eq("id", tripId)
+        .single();
+
+      // Deactivate any previous alerts for this trip (ACID: Isolation)
       await supabaseAdmin
         .from("bus_departure_alerts")
         .update({ status: "RESOLVED" })
@@ -369,11 +376,14 @@ export async function POST(req: NextRequest) {
         .eq("status", "ACTIVE");
 
       const alertId = `alert-recall-${Date.now()}`;
-      const alertMsg = message || "🚨 Bus is full and preparing for immediate departure! Please confirm if you are onboard.";
+      const busLabel = (tripData?.bus as any)?.bus_number || "Campus Shuttle";
+      const alertMsg = message || `🚨 Bus ${busLabel} is preparing for immediate departure! Please return and confirm if you are onboard.`;
 
+      // Persist to relational database (ACID: Durability)
       await supabaseAdmin.from("bus_departure_alerts").insert({
         id: alertId,
         trip_id: tripId,
+        bus_id: tripData?.bus_id || null,
         alert_type: "MANUAL_RECALL",
         message: alertMsg,
         triggered_at: timestamp,
@@ -381,7 +391,7 @@ export async function POST(req: NextRequest) {
         status: "ACTIVE",
       });
 
-      // Disseminate to all booked students for this trip
+      // Disseminate push notifications to all booked students for this trip
       const { data: tripBookings } = await supabaseAdmin
         .from("bookings")
         .select("student_id")
@@ -391,13 +401,24 @@ export async function POST(req: NextRequest) {
       if (tripBookings && tripBookings.length > 0) {
         const notifs = tripBookings.map((b) => ({
           user_id: b.student_id,
-          title: "🚨 Bus Full & Departing Now!",
+          title: `🚨 ${busLabel} Departing Now!`,
           message: alertMsg,
           type: "BOARDING",
           is_read: false,
         }));
         await supabaseAdmin.from("notifications").insert(notifs);
       }
+
+      // Immutable Audit Log entry for ACID audit compliance
+      await supabaseAdmin.from("audit_logs").insert({
+        user_id: conductorName || "conductor",
+        user_role: "conductor",
+        action: "BUS_DEPARTURE_ALERT_TRIGGERED",
+        entity: "Trip",
+        entity_id: tripId,
+        reason: `Departure recall alarm broadcasted to ${(tripBookings || []).length} passengers on ${busLabel}.`,
+        new_value: { alertId, status: "ACTIVE", triggeredAt: timestamp, message: alertMsg },
+      });
 
       return NextResponse.json({
         success: true,
@@ -421,6 +442,18 @@ export async function POST(req: NextRequest) {
         .eq("status", "ACTIVE");
 
       await invalidateTrip(tripId);
+
+      // Audit Log resolution for ACID compliance
+      await supabaseAdmin.from("audit_logs").insert({
+        user_id: conductorName || "conductor",
+        user_role: "conductor",
+        action: "BUS_DEPARTURE_ALERT_DISMISSED",
+        entity: "Trip",
+        entity_id: tripId,
+        reason: `Conductor ${conductorName} dismissed and resolved departure recall alarm.`,
+        new_value: { status: "RESOLVED", resolvedAt: timestamp },
+      });
+
       return NextResponse.json({
         success: true,
         message: "Departure alert resolved.",

@@ -69,6 +69,17 @@ export interface EnrichedPassenger extends Booking {
   unlockedBy?: string;
 }
 
+export interface BusDepartureAlert {
+  id: string;
+  tripId: string;
+  busId?: string | number;
+  alertType: string;
+  message: string;
+  triggeredAt: string;
+  triggeredBy?: string;
+  status: string;
+}
+
 interface ConductorContextValue {
   currentUser: any;
   trips: Trip[];
@@ -94,6 +105,13 @@ interface ConductorContextValue {
   waitlistCount: number;
   absentCount: number;
   roamingCount: number;
+  onboardConfirmedCount: number;
+  runningCount: number;
+  outsideCount: number;
+
+  activeDepartureAlert: BusDepartureAlert | null;
+  triggerDepartureAlert: (customMessage?: string) => Promise<boolean>;
+  dismissDepartureAlert: () => Promise<boolean>;
 
   selectedTripId: string;
   setSelectedTripId: (id: string) => void;
@@ -129,6 +147,7 @@ export function ConductorProvider({
     initialAttendanceRecords.length > 0 ? initialAttendanceRecords : store.getAttendanceRecords()
   );
   const [haltRequests, setHaltRequests] = useState<HaltRequest[]>([]);
+  const [activeDepartureAlert, setActiveDepartureAlert] = useState<BusDepartureAlert | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [selectedTripId, setSelectedTripId] = useState<string>("");
@@ -229,6 +248,10 @@ export function ConductorProvider({
           }
           prevHaltCountRef.current = pending;
           setHaltRequests(data.haltRequests);
+        }
+
+        if (data.activeDepartureAlert !== undefined) {
+          setActiveDepartureAlert(data.activeDepartureAlert);
         }
       }
     } catch {
@@ -406,11 +429,83 @@ export function ConductorProvider({
   const waitlistCount = tripBookings.filter(b => b.status === "WAITLISTED").length;
   const absentCount = tripBookings.filter(b => b.status === "ABSENT" || b.status === "NO_SHOW").length;
   const roamingCount = tripBookings.filter(b => b.roamingStatus === "ROAMING").length;
+  const onboardConfirmedCount = tripBookings.filter(b => b.roamingStatus === "ONBOARD_CONFIRMED").length;
+  const runningCount = tripBookings.filter(b => b.roamingStatus === "RUNNING_TO_BUS").length;
+  const outsideCount = tripBookings.filter(b => b.status === "CONFIRMED" && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   }, []);
+
+  // Trigger Bus Departure Recall Alert (Audible Siren + Haptics + Modal broadcast)
+  const triggerDepartureAlert = useCallback(
+    async (customMessage?: string) => {
+      if (!activeTrip) return false;
+      try {
+        const res = await fetch("/api/boarding/roaming", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "TRIGGER_DEPARTURE_ALERT",
+            tripId: activeTrip.id,
+            conductorName: currentUser?.fullName || "Conductor",
+            message: customMessage,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          playTransitNotification("sos");
+          setActiveDepartureAlert({
+            id: data.alertId || `alert-${Date.now()}`,
+            tripId: activeTrip.id,
+            busId: activeTrip.busId,
+            alertType: "MANUAL_RECALL",
+            message: customMessage || "Bus is preparing for departure! Please board immediately.",
+            triggeredAt: new Date().toISOString(),
+            triggeredBy: currentUser?.fullName || "Conductor",
+            status: "ACTIVE",
+          });
+          showToast(`🚨 Departure Recall Alarm broadcasted to ${outsideCount} outside students!`);
+          await refreshLiveState();
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.error("Failed to trigger departure alert:", err);
+        return false;
+      }
+    },
+    [activeTrip, currentUser?.fullName, outsideCount, refreshLiveState, showToast]
+  );
+
+  // Dismiss / Silence Departure Recall Alert once boarding is resolved
+  const dismissDepartureAlert = useCallback(async () => {
+    if (!activeTrip) return false;
+    try {
+      const res = await fetch("/api/boarding/roaming", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "DISMISS_ALERT",
+          tripId: activeTrip.id,
+          conductorName: currentUser?.fullName || "Conductor",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActiveDepartureAlert(null);
+        playTransitNotification("success");
+        showToast("✓ Departure Alert dismissed.");
+        await refreshLiveState();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to dismiss alert:", err);
+      return false;
+    }
+  }, [activeTrip, currentUser?.fullName, refreshLiveState, showToast]);
 
   // 1-Tap Attendance Handler with instant optimistic update
   const markAttendance = useCallback(
@@ -487,6 +582,12 @@ export function ConductorProvider({
         waitlistCount,
         absentCount,
         roamingCount,
+        onboardConfirmedCount,
+        runningCount,
+        outsideCount,
+        activeDepartureAlert,
+        triggerDepartureAlert,
+        dismissDepartureAlert,
         selectedTripId,
         setSelectedTripId,
         showToast,

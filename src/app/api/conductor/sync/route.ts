@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
 
     const todayDate = new Date().toISOString().split("T")[0];
 
-    // Parallel fetch: Trip attendance, updated bookings, and Redis SOS halt requests
-    const [attendanceRes, bookingsRes, haltRequests] = await Promise.all([
+    // Parallel fetch: Trip attendance, updated bookings, Redis SOS halt requests, and active Departure Alert
+    const [attendanceRes, bookingsRes, haltRequests, departureAlertRes] = await Promise.all([
       supabaseAdmin
         .from("attendance_records")
         .select("*")
@@ -50,7 +50,16 @@ export async function GET(req: NextRequest) {
           return [];
         }
       })(),
+      supabaseAdmin
+        .from("bus_departure_alerts")
+        .select("*")
+        .eq("trip_id", tripId)
+        .eq("status", "ACTIVE")
+        .order("triggered_at", { ascending: false })
+        .limit(1),
     ]);
+
+    const activeAlert = departureAlertRes.data && departureAlertRes.data.length > 0 ? departureAlertRes.data[0] : null;
 
     const attendance = (attendanceRes.data || []).map((a: any) => ({
       id: a.id,
@@ -97,6 +106,18 @@ export async function GET(req: NextRequest) {
       attendance,
       bookings,
       haltRequests,
+      activeDepartureAlert: activeAlert
+        ? {
+            id: activeAlert.id,
+            tripId: activeAlert.trip_id,
+            busId: activeAlert.bus_id,
+            alertType: activeAlert.alert_type,
+            message: activeAlert.message,
+            triggeredAt: activeAlert.triggered_at,
+            triggeredBy: activeAlert.triggered_by,
+            status: activeAlert.status,
+          }
+        : null,
       serverTime: new Date().toISOString(),
     });
   } catch (err: any) {

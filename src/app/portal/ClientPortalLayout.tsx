@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   Clock,
 } from "lucide-react";
+import BusDepartureAlertModal from "@/components/portal/BusDepartureAlertModal";
 
 export default function ClientPortalLayout({
   children,
@@ -46,6 +47,12 @@ export default function ClientPortalLayout({
   const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isStoreReady, setIsStoreReady] = useState(store.isReady());
+  const [departureAlertData, setDepartureAlertData] = useState<{
+    activeAlert: any;
+    studentBooking: any;
+    trip: any;
+    bus: any;
+  } | null>(null);
 
   // ── Sticky Subscription Guard ──────────────────────────────────────
   // Once we confirm subscription is active, we NEVER downgrade it to
@@ -97,6 +104,60 @@ export default function ClientPortalLayout({
   const isSubscriptionActive = initialIsSubscribed || confirmedActiveRef.current || isSubscriptionActiveNow;
 
   const hasCompleteProfile = Boolean(activeStudent?.phone && activeStudent.phone.trim() !== "");
+
+  // ── Bus Departure Recall Siren Listener ────────────────────────────
+  // Polls active departure recall alerts for this student every 5 seconds.
+  // If an alert is triggered while student is off-bus, launches modal & siren.
+  useEffect(() => {
+    if (!activeStudent?.id) return;
+
+    let isMounted = true;
+    const checkDepartureAlert = async () => {
+      try {
+        const res = await fetch(`/api/boarding/roaming?studentId=${activeStudent.id}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isMounted) return;
+
+        if (data.activeAlert && data.studentBooking) {
+          const isConfirmed = data.studentBooking.roamingStatus === "ONBOARD_CONFIRMED";
+          if (!isConfirmed) {
+            setDepartureAlertData({
+              activeAlert: data.activeAlert,
+              studentBooking: data.studentBooking,
+              trip: data.trip,
+              bus: data.trip
+                ? {
+                    id: data.trip.busId,
+                    busNumber: data.trip.busNumber,
+                    registrationNo: data.trip.registrationNo,
+                    capacity: data.trip.capacity,
+                  }
+                : null,
+            });
+          } else {
+            setDepartureAlertData(null);
+          }
+        } else {
+          setDepartureAlertData(null);
+        }
+      } catch {
+        // Silently catch background poll hiccups
+      }
+    };
+
+    checkDepartureAlert();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        checkDepartureAlert();
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeStudent?.id]);
   
   const isOnboardingPage = pathname === "/portal/onboarding";
   const isPaymentPage = pathname === "/portal/payments";
@@ -293,6 +354,21 @@ export default function ClientPortalLayout({
         onClose={() => setIsAuthOpen(false)}
         initialRole="student"
       />
+
+      {/* Global Campus Bus Departure Alert Siren & Takeover Modal */}
+      {departureAlertData?.activeAlert && (
+        <BusDepartureAlertModal
+          booking={departureAlertData.studentBooking}
+          trip={departureAlertData.trip}
+          bus={departureAlertData.bus}
+          activeAlert={departureAlertData.activeAlert}
+          onStatusChange={(newStatus) => {
+            if (newStatus === "ONBOARD_CONFIRMED") {
+              setDepartureAlertData(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 

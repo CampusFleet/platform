@@ -8,8 +8,10 @@ import { store } from "@/lib/store";
 export default function ManifestPage() {
   const { 
     activeTrip, bus, route, shift, tripBookings, students, stops,
-    boardedCount, pendingCount, waitlistCount, roamingCount, showToast,
-    markAttendance, refreshLiveState, isSyncing
+    boardedCount, pendingCount, waitlistCount, roamingCount,
+    onboardConfirmedCount, runningCount, outsideCount,
+    activeDepartureAlert, triggerDepartureAlert, dismissDepartureAlert,
+    showToast, markAttendance, refreshLiveState, isSyncing
   } = useConductorContext();
 
   if (!activeTrip) {
@@ -55,6 +57,12 @@ export default function ManifestPage() {
       pendingCount={pendingCount}
       waitlistCount={waitlistCount}
       roamingCount={roamingCount}
+      onboardConfirmedCount={onboardConfirmedCount}
+      runningCount={runningCount}
+      outsideCount={outsideCount}
+      activeDepartureAlert={activeDepartureAlert}
+      onTriggerDepartureAlert={triggerDepartureAlert}
+      onDismissDepartureAlert={dismissDepartureAlert}
       onMarkAttendance={markAttendance}
       onMarkRoamingHold={handleMarkRoamingHold}
       onRefresh={refreshLiveState}

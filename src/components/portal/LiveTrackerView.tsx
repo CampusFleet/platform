@@ -39,7 +39,6 @@ import type { Bus, Route, Stop, Trip, Staff, Student, Booking } from "@/lib/type
 import { telematicsService } from "@/lib/telematicsService";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import BusFullnessRoamingBanner from "./BusFullnessRoamingBanner";
-import BusDepartureAlertModal from "./BusDepartureAlertModal";
 
 export interface LiveTrackerProps {
   initialUser?: any;
@@ -366,20 +365,6 @@ export default function LiveTrackerView({
           roamingStatus={roamingData.bookingRoamingStatus || "ROAMING"}
         />
       )}
-
-      <BusDepartureAlertModal
-        trip={activeTrip}
-        bus={assignedBus}
-        activeAlert={roamingData?.activeAlert}
-        onStatusChange={(newStatus) => {
-          if (roamingData) {
-            setRoamingData({
-              ...roamingData,
-              bookingRoamingStatus: newStatus,
-            });
-          }
-        }}
-      />
 
       {isEmbedded && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">

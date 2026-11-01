@@ -10,6 +10,7 @@ export default function ConductorHubPage() {
   const { 
     currentUser, trips, activeTrip, bus, route, shift, attendanceRecords, 
     tripBookings, boardedCount, pendingCount, haltRequests,
+    activeDepartureAlert,
     setSelectedTripId, showToast 
   } = useConductorContext();
 
@@ -33,7 +34,9 @@ export default function ConductorHubPage() {
     },
     {
       title: "Passenger Manifest",
-      description: "Live roster with student passport photos, college IDs, and 1-tap check-in.",
+      description: activeDepartureAlert 
+        ? "🚨 DEPARTURE ALARM ACTIVE • Ringing on outside students' devices."
+        : "Live roster with student passport photos, college IDs, and departure alarms.",
       icon: FileText,
       href: "/conductor/manifest"
     },

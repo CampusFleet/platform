@@ -18,10 +18,13 @@ import {
   UserCheck,
   ShieldAlert,
   Clock,
+  Volume2,
+  BellRing,
+  X,
 } from "lucide-react";
 import { Booking, Student, Stop, Bus, Route, Shift } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
-import type { EnrichedPassenger } from "../ConductorContext";
+import type { EnrichedPassenger, BusDepartureAlert } from "../ConductorContext";
 
 interface ManifestTabProps {
   tripBookings: (EnrichedPassenger | Booking)[];
@@ -34,6 +37,12 @@ interface ManifestTabProps {
   pendingCount: number;
   waitlistCount: number;
   roamingCount: number;
+  onboardConfirmedCount?: number;
+  runningCount?: number;
+  outsideCount?: number;
+  activeDepartureAlert?: BusDepartureAlert | null;
+  onTriggerDepartureAlert?: (customMessage?: string) => Promise<boolean>;
+  onDismissDepartureAlert?: () => Promise<boolean>;
   onMarkAttendance: (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW") => void;
   onMarkRoamingHold?: (studentId: string, bookingId: string) => void;
   onRefresh?: () => void;
@@ -51,6 +60,12 @@ export function ManifestTab({
   pendingCount,
   waitlistCount,
   roamingCount,
+  onboardConfirmedCount = 0,
+  runningCount = 0,
+  outsideCount,
+  activeDepartureAlert,
+  onTriggerDepartureAlert,
+  onDismissDepartureAlert,
   onMarkAttendance,
   onMarkRoamingHold,
   onRefresh,
@@ -59,6 +74,9 @@ export function ManifestTab({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "AWAITING" | "BOARDED" | "WAITLIST" | "ROAMING">("ALL");
   const [selectedStopId, setSelectedStopId] = useState<string>("ALL");
+  const [isRecallModalOpen, setIsRecallModalOpen] = useState(false);
+  const [recallMessage, setRecallMessage] = useState("");
+  const [isSubmittingRecall, setIsSubmittingRecall] = useState(false);
 
   // Build high-speed lookup maps
   const studentMap = useMemo(() => {
@@ -194,6 +212,82 @@ export function ManifestTab({
               <span>Capacity: <strong className="text-white">{capacity}</strong></span>
             </div>
           </div>
+        </div>
+
+        {/* ── BUS DEPARTURE NOTIFICATION COMMAND CENTER ── */}
+        <div className="relative z-10 pt-4 mt-4 border-t border-zinc-850">
+          {activeDepartureAlert ? (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-red-950/80 via-zinc-900 to-amber-950/60 border border-red-500/50 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-3.5 w-3.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500"></span>
+                </span>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black uppercase tracking-wider text-red-300 flex items-center gap-1.5">
+                      <Volume2 className="w-3.5 h-3.5 text-red-400 animate-bounce" />
+                      Departure Recall Alarm Ringing
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-red-900/60 text-red-200 border border-red-800 font-bold">
+                      ACID Durability Active
+                    </span>
+                  </div>
+                  <div className="text-xs text-zinc-300 mt-1 flex items-center gap-2 flex-wrap font-sans">
+                    <span className="text-emerald-400 font-mono font-bold">
+                      ✓ {onboardConfirmedCount} Confirmed In Bus
+                    </span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      🏃 {runningCount} Sprinting (2m Hold)
+                    </span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-zinc-400 font-mono">
+                      ⏳ {outsideCount !== undefined ? outsideCount : pendingCount} Awaiting
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (onDismissDepartureAlert) await onDismissDepartureAlert();
+                }}
+                className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-black border border-zinc-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <span>Dismiss / Silence Alarm</span>
+              </button>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs text-zinc-400">
+                <div className="font-bold text-white flex items-center gap-1.5">
+                  <BellRing className="w-3.5 h-3.5 text-amber-400" />
+                  Bus Departure Notification System
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">
+                  If students are outside the bus, sound an instant alarm on their phones to return on time.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultMsg = `🚨 Bus ${bus?.busNumber || "Duty Bus"} is preparing for immediate departure! Please return and confirm onboard.`;
+                  setRecallMessage(defaultMsg);
+                  setIsRecallModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white text-xs font-black shadow-lg shadow-red-950/40 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <Volume2 className="w-4 h-4 animate-pulse" />
+                <span>Sound Departure Alarm</span>
+                <span className="px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono">
+                  {outsideCount !== undefined ? outsideCount : pendingCount}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -449,15 +543,20 @@ export function ManifestTab({
                           </span>
                         )}
 
-                        {/* Roaming Indicator */}
-                        {b.roamingStatus === "ROAMING" ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-300 border border-purple-800 font-bold shrink-0 flex items-center gap-1">
-                            <Footprints className="w-3 h-3 text-purple-400" />
-                            Roaming
+                        {/* Roaming & Departure Alert Response Indicators */}
+                        {b.roamingStatus === "ONBOARD_CONFIRMED" ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/70 text-emerald-300 border border-emerald-700 font-bold shrink-0 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            Confirmed In Bus
                           </span>
                         ) : b.roamingStatus === "RUNNING_TO_BUS" ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-300 border border-amber-700 font-bold shrink-0 animate-pulse">
-                            🏃 Sprinting
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-300 border border-amber-700 font-bold shrink-0 animate-pulse flex items-center gap-1">
+                            <span>🏃 Sprinting (2m Hold)</span>
+                          </span>
+                        ) : b.roamingStatus === "ROAMING" ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-300 border border-purple-800 font-bold shrink-0 flex items-center gap-1">
+                            <Footprints className="w-3 h-3 text-purple-400" />
+                            Roaming Campus
                           </span>
                         ) : null}
                       </div>
@@ -557,6 +656,87 @@ export function ManifestTab({
           )}
         </div>
       </div>
+
+      {/* ── BROADCAST DEPARTURE ALARM CONFIRMATION MODAL ── */}
+      {isRecallModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 text-white rounded-3xl p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400">
+                  <Volume2 className="w-5 h-5 animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Broadcast Departure Alarm</h3>
+                  <p className="text-xs text-zinc-400">Trigger student recall siren & haptic ring</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRecallModalOpen(false)}
+                className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs space-y-2">
+              <div className="text-zinc-300 font-medium">
+                This will trigger a real-time audible siren & modal alert on the smartphones of <strong>{outsideCount !== undefined ? outsideCount : pendingCount} outside commuters</strong>:
+              </div>
+              <div className="text-[11px] text-zinc-400 space-y-1">
+                <div>• Synthesizes Web Audio transit siren on mobile phones</div>
+                <div>• Triggers haptic vibration alerting students away from the bus</div>
+                <div>• Offers 1-tap &ldquo;Yes, I&apos;m in bus&rdquo; or &ldquo;Running to bus (2m Hold)&rdquo;</div>
+                <div>• ACID durable logging in university audit trail</div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                Broadcast Announcement Message
+              </label>
+              <textarea
+                value={recallMessage}
+                onChange={(e) => setRecallMessage(e.target.value)}
+                rows={2}
+                className="w-full bg-black border border-zinc-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-red-500 font-sans"
+                placeholder="🚨 Bus is preparing for immediate departure! Please return and confirm onboard."
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsRecallModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSubmittingRecall(true);
+                  if (onTriggerDepartureAlert) {
+                    await onTriggerDepartureAlert(recallMessage);
+                  }
+                  setIsSubmittingRecall(false);
+                  setIsRecallModalOpen(false);
+                }}
+                disabled={isSubmittingRecall}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs shadow-lg shadow-red-900/40 flex items-center gap-2 cursor-pointer"
+              >
+                {isSubmittingRecall ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+                <span>Sound Alarm ({outsideCount !== undefined ? outsideCount : pendingCount} Students)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { store } from "@/lib/store";
 import { StationLineProgress } from "@/components/ui/StationLineProgress";
 import { WhereIsMyBusFlowchart } from "@/components/transit/WhereIsMyBusFlowchart";
+import { getCampusStopFromDatabase } from "@/components/maps/CampusFleetMap";
 import { calculateETA } from "@/lib/eta-calculator";
 import {
   Compass,
@@ -154,16 +155,32 @@ export default function LiveTrackerView({
   const activeShift = shifts.find((s) => s.id === activeTrip?.shiftId);
   const driver = staff.find(s => s.id === activeTrip?.driverId || s.role === "driver");
 
-  const currentRouteStops = useMemo(() => {
-    if (assignedRoute?.stops && assignedRoute.stops.length > 0) {
-      return assignedRoute.stops.map(s => s.stop);
-    }
-    return stops.slice(0, 8);
-  }, [assignedRoute, stops]);
-
   const studentCampus = useMemo(() => {
     return store.getStudentPrimaryCampus(activeStudent);
   }, [activeStudent]);
+
+  const currentRouteStops = useMemo(() => {
+    const list: Stop[] = [];
+    if (assignedRoute?.stops && assignedRoute.stops.length > 0) {
+      const sorted = [...assignedRoute.stops].sort((a, b) => (a.stopOrder || 0) - (b.stopOrder || 0));
+      for (const item of sorted) {
+        const stopObj = item.stop || stops.find((s) => s.id === item.stopId);
+        if (stopObj && !list.some((s) => s.id === stopObj.id)) {
+          list.push(stopObj);
+        }
+      }
+    } else {
+      list.push(...stops.slice(0, 8));
+    }
+
+    // Guarantee institutional campus terminal is represented as final destination
+    const campusTerminal = getCampusStopFromDatabase(stops, store.getCampuses(), studentCampus);
+    if (campusTerminal && !list.some((s) => s.id === campusTerminal.id || s.code === campusTerminal.code)) {
+      list.push(campusTerminal);
+    }
+
+    return list;
+  }, [assignedRoute, stops, studentCampus]);
 
   // Compute Dijkstra shortest path from pickup stop to campus
   const shortestPath = useMemo(() => {
@@ -453,11 +470,12 @@ export default function LiveTrackerView({
             <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
               <CampusFleetMap
                 busLocation={effectiveLiveLocation}
-                busName={assignedBus?.busNumber ? `Bus ${assignedBus.busNumber} (${assignedRoute?.name || "Campus Express"})` : (assignedRoute?.name || "Campus Shuttle")}
+                busName={assignedBus?.busNumber ? `Bus ${assignedBus.busNumber}` : "Campus Bus"}
                 tripStatus={activeTrip?.status || "SCHEDULED"}
                 stops={currentRouteStops}
                 campuses={store.getCampuses()}
                 primaryCampus={studentCampus}
+                activeStopIndex={activeTrip?.currentStopIndex || 0}
                 shortestPathStopIds={shortestPath?.path || []}
                 routeCoordinates={currentRouteStops.map(s => [s.latitude, s.longitude])}
                 selectedStopId={pickupStop?.id}

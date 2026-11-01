@@ -100,6 +100,38 @@ export default function SmartTransitCockpit({
     setTimeout(() => setToastMessage(null), 4500);
   };
 
+  const renderToastNotification = () => {
+    if (!toastMessage) return null;
+    return (
+      <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[110] w-[90%] max-w-md animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
+        <div className={`px-5 py-4 rounded-2xl shadow-2xl border flex items-start gap-3 ${
+          toastMessage.type === "success"
+            ? "bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
+            : toastMessage.type === "warning"
+            ? "bg-amber-50 dark:bg-amber-950/90 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200"
+            : "bg-red-50 dark:bg-red-950/90 border-red-200 dark:border-red-800/60 text-red-900 dark:text-red-200"
+        }`}>
+          <div className="shrink-0 mt-0.5">
+            {toastMessage.type === "success" ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            ) : toastMessage.type === "warning" ? (
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            )}
+          </div>
+          <p className="text-sm font-medium leading-relaxed flex-1">{toastMessage.text}</p>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="shrink-0 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-all cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Real-time Attendance Lock (Distance / RFID) State
   const [attendanceLockStatus, setAttendanceLockStatus] = useState<"LOCKED" | "UNLOCKED">(() =>
     initialReservation?.lock_status === "UNLOCKED" ? "UNLOCKED" : "LOCKED"
@@ -413,16 +445,16 @@ export default function SmartTransitCockpit({
     }
     setIsSavingSeat(true);
     try {
-      // 1. Acquire current device GPS coordinates for live verification against moving bus
+      // 1. Acquire current device GPS coordinates (skip slow wait if already verified via in-bus RFID)
       let lat: number | undefined;
       let lng: number | undefined;
-      if (typeof window !== "undefined" && navigator.geolocation) {
+      if (!isRfidVerified && typeof window !== "undefined" && navigator.geolocation) {
         try {
           const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 6000,
-              maximumAge: 0,
+              timeout: 3000,
+              maximumAge: 10000,
             });
           });
           lat = pos.coords.latitude;
@@ -441,7 +473,7 @@ export default function SmartTransitCockpit({
           seatNumber,
           latitude: lat,
           longitude: lng,
-          verifyGps: true,
+          verifyGps: !isRfidVerified,
         }),
       });
       const data = await res.json();
@@ -449,6 +481,7 @@ export default function SmartTransitCockpit({
         setReservation(data.reservation);
         setTentativeSeat(seatNumber);
         setIsChangingSeat(false);
+        showToast(data.message || `✓ Seat ${seatNumber} confirmed and attendance recorded!`, "success");
       } else {
         showToast(data.message || "Could not confirm seat & mark attendance.", "error");
       }
@@ -703,6 +736,7 @@ export default function SmartTransitCockpit({
             </Link>
           </div>
         </div>
+        {renderToastNotification()}
       </div>
     );
   }
@@ -824,6 +858,7 @@ export default function SmartTransitCockpit({
             </Link>
           </div>
         </div>
+        {renderToastNotification()}
       </div>
     );
   }
@@ -868,6 +903,7 @@ export default function SmartTransitCockpit({
             </Link>
           </div>
         </div>
+        {renderToastNotification()}
       </div>
     );
   }
@@ -1106,6 +1142,7 @@ export default function SmartTransitCockpit({
             </div>
           </div>
         </div>
+        {renderToastNotification()}
       </div>
     );
   }
@@ -1393,34 +1430,7 @@ export default function SmartTransitCockpit({
       )}
 
       {/* ─── TOAST NOTIFICATION (replaces browser alert()) ─── */}
-      {toastMessage && (
-        <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[110] w-[90%] max-w-md animate-in slide-in-from-bottom-4 duration-300">
-          <div className={`px-5 py-4 rounded-2xl shadow-2xl border flex items-start gap-3 ${
-            toastMessage.type === "success"
-              ? "bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
-              : toastMessage.type === "warning"
-              ? "bg-amber-50 dark:bg-amber-950/90 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200"
-              : "bg-red-50 dark:bg-red-950/90 border-red-200 dark:border-red-800/60 text-red-900 dark:text-red-200"
-          }`}>
-            <div className="shrink-0 mt-0.5">
-              {toastMessage.type === "success" ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              ) : toastMessage.type === "warning" ? (
-                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-              )}
-            </div>
-            <p className="text-sm font-medium leading-relaxed flex-1">{toastMessage.text}</p>
-            <button
-              onClick={() => setToastMessage(null)}
-              className="shrink-0 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-all cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      {renderToastNotification()}
     </div>
   );
 }

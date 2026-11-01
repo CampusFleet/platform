@@ -754,6 +754,57 @@ export async function POST(req: NextRequest) {
     }
 
     if (txnResult && !txnResult.success) {
+      // Resilient fallback: if error is due to attendance record constraint (e.g. prior RFID tap), update directly
+      if (txnResult.error && (txnResult.error.includes("duplicate key") || txnResult.error.includes("uq_attendance"))) {
+        console.warn("[api/students/attendance] Recovering from attendance constraint conflict, updating reservation directly:", txnResult.error);
+        const { data: updatedRes, error: resErr } = await supabaseAdmin
+          .from("bus_reservations")
+          .update({
+            chosen_seat: seatNumber,
+            seat_chosen_at: nowIso,
+            status: "BOARDED",
+            boarded_at: targetRes.boarded_at || nowIso,
+            lock_status: "UNLOCKED",
+            unlocked_by: isRfidVerified ? "RFID" : "LOCATION_DISTANCE",
+            unlock_timestamp: targetRes.unlock_timestamp || nowIso,
+          })
+          .eq("id", targetRes.id)
+          .select("*")
+          .maybeSingle();
+
+        if (!resErr && updatedRes) {
+          await supabaseAdmin
+            .from("attendance_records")
+            .update({
+              reservation_id: targetRes.id,
+              status: "BOARDED",
+              notes: `${gpsNote} | Seat ${seatNumber} confirmed`,
+            })
+            .eq("student_id", resolvedStudentId)
+            .eq("trip_id", targetRes.trip_id);
+
+          const lockPayload = {
+            lockStatus: "UNLOCKED",
+            unlockedBy: isRfidVerified ? "RFID" : "LOCATION_DISTANCE",
+            busId: targetRes.bus_id,
+            tripId: targetRes.trip_id,
+            timestamp: nowIso,
+            method: unlockMethod,
+          };
+          await cacheSet(`attendance:lock:${resolvedStudentId}:${today}`, lockPayload, 86400).catch(() => {});
+          if (rawStudentId !== resolvedStudentId) {
+            await cacheSet(`attendance:lock:${rawStudentId}:${today}`, lockPayload, 86400).catch(() => {});
+          }
+
+          return NextResponse.json({
+            success: true,
+            message: `✓ Attendance confirmed & Seat ${seatNumber} reserved on your bus.`,
+            reservation: { ...targetRes, ...updatedRes, chosen_seat: seatNumber, status: "BOARDED", boarded_at: nowIso },
+            isGpsVerified,
+          });
+        }
+      }
+
       return NextResponse.json({ success: false, message: txnResult.error }, { status: 409 });
     }
 

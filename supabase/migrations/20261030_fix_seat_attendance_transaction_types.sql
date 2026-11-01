@@ -32,6 +32,7 @@ DECLARE
   v_reservation RECORD;
   v_attendance_id TEXT;
   v_booking_id TEXT;
+  v_existing_attendance RECORD;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
   -- 1. Lock the reservation row (prevents concurrent modifications)
@@ -97,24 +98,51 @@ BEGIN
     AND student_id = p_student_id
   RETURNING id INTO v_booking_id;
 
-  -- 5. Insert attendance record with all FK references populated
-  v_attendance_id := 'att-txn-' || (EXTRACT(EPOCH FROM v_now) * 1000)::BIGINT || '-' || SUBSTR(MD5(RANDOM()::TEXT), 1, 6);
-  INSERT INTO attendance_records (
-    id, student_id, trip_id, bus_id, method, status,
-    verified_by, notes, signature_token, timestamp,
-    lock_status, unlocked_by, unlock_timestamp,
-    reservation_id, booking_id
-  ) VALUES (
-    v_attendance_id, p_student_id, v_reservation.trip_id,
-    v_reservation.bus_id, p_unlock_method, 'BOARDED',
-    p_verified_by, COALESCE(p_notes, 'Atomic seat attendance transaction'),
-    'TXN-' || UPPER(SUBSTR(MD5(RANDOM()::TEXT), 1, 8)),
-    v_now, 'UNLOCKED',
-    CASE WHEN p_unlock_method ILIKE '%RFID%' THEN 'RFID' ELSE 'LOCATION_DISTANCE' END,
-    v_now,
-    p_reservation_id,
-    v_booking_id
-  );
+  -- 5. Check if an attendance record already exists for this student and trip (e.g. from prior RFID tap or distance unlock)
+  SELECT * INTO v_existing_attendance
+  FROM attendance_records
+  WHERE student_id = p_student_id
+    AND (
+      trip_id = v_reservation.trip_id
+      OR reservation_id = p_reservation_id
+    )
+  ORDER BY timestamp DESC
+  LIMIT 1;
+
+  IF v_existing_attendance.id IS NOT NULL THEN
+    v_attendance_id := v_existing_attendance.id;
+    UPDATE attendance_records SET
+      status = 'BOARDED',
+      reservation_id = p_reservation_id,
+      booking_id = COALESCE(booking_id, v_booking_id),
+      notes = CASE
+        WHEN notes IS NOT NULL AND notes != '' THEN notes || ' | ' || COALESCE(p_notes, format('Seat %s confirmed', p_seat_number))
+        ELSE COALESCE(p_notes, format('Seat %s confirmed', p_seat_number))
+      END,
+      lock_status = 'UNLOCKED',
+      unlocked_by = COALESCE(unlocked_by, CASE WHEN p_unlock_method ILIKE '%RFID%' THEN 'RFID' ELSE 'LOCATION_DISTANCE' END),
+      unlock_timestamp = COALESCE(unlock_timestamp, v_now)
+    WHERE id = v_attendance_id;
+  ELSE
+    -- Insert new attendance record with all FK references populated
+    v_attendance_id := 'att-txn-' || (EXTRACT(EPOCH FROM v_now) * 1000)::BIGINT || '-' || SUBSTR(MD5(RANDOM()::TEXT), 1, 6);
+    INSERT INTO attendance_records (
+      id, student_id, trip_id, bus_id, method, status,
+      verified_by, notes, signature_token, timestamp,
+      lock_status, unlocked_by, unlock_timestamp,
+      reservation_id, booking_id
+    ) VALUES (
+      v_attendance_id, p_student_id, v_reservation.trip_id,
+      v_reservation.bus_id, p_unlock_method, 'BOARDED',
+      p_verified_by, COALESCE(p_notes, 'Atomic seat attendance transaction'),
+      'TXN-' || UPPER(SUBSTR(MD5(RANDOM()::TEXT), 1, 8)),
+      v_now, 'UNLOCKED',
+      CASE WHEN p_unlock_method ILIKE '%RFID%' THEN 'RFID' ELSE 'LOCATION_DISTANCE' END,
+      v_now,
+      p_reservation_id,
+      v_booking_id
+    );
+  END IF;
 
   -- 6. Return success
   RETURN json_build_object(

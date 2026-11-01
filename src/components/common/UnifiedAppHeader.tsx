@@ -4,39 +4,37 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { store } from "@/lib/store";
-import { authService } from "@/lib/auth-service";
 import { UserRole } from "@/lib/types";
 import { useTheme } from "./ThemeProvider";
 import { getSafePhotoUrl } from "@/lib/image-utils";
+import { usePWAInstall } from "@/lib/usePWAInstall";
+import { InstallAppModal } from "./InstallAppModal";
 import {
   BusFront,
+  LayoutGrid,
+  Sun,
+  Moon,
+  Settings as SettingsIcon,
+  Download,
+  RotateCw,
+  Copy,
+  Check,
+  LogOut,
+  QrCode,
+  MessageSquare,
+  CreditCard,
+  Clock,
+  AlertTriangle,
+  X,
+  Menu,
   GraduationCap,
   BookOpen,
   LayoutDashboard,
   Building2,
-  FileCheck2,
-  ChevronDown,
-  LogOut,
-  AlertOctagon,
-  Users,
-  Sun,
-  Moon,
-  Laptop,
-  Check,
-  Menu,
-  X,
-  Lock,
-  Sparkles,
-  Shield,
-  Radio,
-  ArrowRight,
-  Download,
-  Smartphone,
-  Globe,
-  ExternalLink,
   Navigation,
-  MessageSquare,
+  FileCheck2,
   Home,
+  CheckCircle2,
 } from "lucide-react";
 
 export interface NavLinkItem {
@@ -85,7 +83,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/portal",
     icon: GraduationCap,
     color: "text-blue-500",
-    gradient: "bg-blue-600 ",
+    gradient: "bg-blue-600",
     description: "Seat bookings, live bus GPS tracking & digital QR pass",
   },
   {
@@ -95,7 +93,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/teacher",
     icon: BookOpen,
     color: "text-green-500",
-    gradient: "bg-green-600 ",
+    gradient: "bg-green-600",
     description: "Real-time today's student arrivals and class roster verification",
   },
   {
@@ -105,7 +103,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/admin",
     icon: LayoutDashboard,
     color: "text-yellow-500",
-    gradient: "bg-yellow-600 ",
+    gradient: "bg-yellow-600",
     description: "Fleet command, routes, crew scheduling & finance reports",
   },
   {
@@ -115,7 +113,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/transport-admin",
     icon: Building2,
     color: "text-blue-500",
-    gradient: "bg-blue-600 ",
+    gradient: "bg-blue-600",
     description: "Fee approvals, student passes, staff accounts & workshop repairs",
   },
   {
@@ -125,7 +123,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/transport-manager",
     icon: Navigation,
     color: "text-amber-500",
-    gradient: "bg-amber-600 ",
+    gradient: "bg-amber-600",
     description: "Bus fleet, routes, stops, demand & combine buses (merges)",
   },
   {
@@ -135,7 +133,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/driver",
     icon: BusFront,
     color: "text-green-500",
-    gradient: "bg-green-600 ",
+    gradient: "bg-green-600",
     description: "Live GPS broadcast, stop progression checklist & incident alerts",
   },
   {
@@ -145,7 +143,7 @@ const ROLE_PORTALS: RolePortalOption[] = [
     path: "/conductor",
     icon: FileCheck2,
     color: "text-pink-500",
-    gradient: "bg-pink-600 ",
+    gradient: "bg-pink-600",
     description: "High-speed optical QR boarding scanner & passenger radar",
   },
 ];
@@ -166,42 +164,51 @@ export function UnifiedAppHeader({
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const { promptInstall, canInstallNative, isIOS, isAndroid } = usePWAInstall();
 
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
   const [students, setStudents] = useState(store.getStudents());
-  const [activeChildId, setActiveChildId] = useState(store.getActiveChildId());
 
+  // Dropdown & Drawer states
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+  const [isAppsOpen, setIsAppsOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [hasCopiedId, setHasCopiedId] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   const profileRef = useRef<HTMLDivElement>(null);
+  const appsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
     const unsub = store.subscribe(() => {
       setCurrentUser(store.getCurrentUser());
       setStudents(store.getStudents());
-      setActiveChildId(store.getActiveChildId());
     });
     return unsub;
   }, []);
 
-  // Close dropdown on outside click
+  // Close menus on outside click
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setIsProfileOpen(false);
+      }
+      if (appsRef.current && !appsRef.current.contains(e.target as Node)) {
+        setIsAppsOpen(false);
       }
     };
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
-  // Close mobile sheet on route change
+  // Close all popups on route change
   useEffect(() => {
-    setIsMobileSheetOpen(false);
     setIsProfileOpen(false);
+    setIsAppsOpen(false);
+    setIsDrawerOpen(false);
   }, [pathname]);
 
   const portalViewRole = role || currentUser?.role || "student";
@@ -211,206 +218,180 @@ export function UnifiedAppHeader({
     userAccountRole === "admin" ||
     currentUser?.email?.toLowerCase() === adminEmail;
 
-  // Real authenticated student identity matching
+  // Active student identity matching
   const activeStudent = currentUser
     ? students.find(
-        s =>
+        (s) =>
           (currentUser.studentId && s.id === currentUser.studentId) ||
           s.userId === currentUser.id ||
           s.email?.toLowerCase() === currentUser.email?.toLowerCase()
       ) || null
     : null;
 
-  // Strict role-based portal switching
-  const allowedPortals = ROLE_PORTALS.filter(opt => {
-    if (isActualAdmin) {
-      return opt.role === "admin" || opt.role === "transport_admin" || opt.role === "transport_manager";
-    }
-    const currentRole = (userAccountRole || "student") as string;
-    switch (currentRole) {
-      case "transport_admin":
-        return opt.role === "transport_admin" || opt.role === "transport_manager";
-      case "transport_manager":
-        return opt.role === "transport_manager";
-      case "conductor":
-        return opt.role === "conductor";
-      case "driver":
-        return opt.role === "driver" || opt.role === "conductor";
-      case "teacher":
-        return opt.role === "teacher";
-      case "student":
-        return opt.role === "student";
-      default:
-        return opt.role === "student";
-    }
-  });
+  // CampusFleet Student ID / Staff ID for profile card display & 1-click copy
+  const isStudent = portalViewRole === "student";
+  const displayStudentId = currentUser?.studentId || activeStudent?.id || "STU-CAMPUS";
+  const displayStaffId = currentUser?.id
+    ? currentUser.id.startsWith("usr_")
+      ? currentUser.id.replace("usr_", "").toUpperCase().slice(0, 8)
+      : currentUser.id.toUpperCase().slice(0, 8)
+    : "STAFF";
+  const displayId = isStudent ? displayStudentId : displayStaffId;
 
-  const currentPortalConfig =
-    ROLE_PORTALS.find(p => p.role === portalViewRole) || ROLE_PORTALS[0];
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(displayId);
+      setHasCopiedId(true);
+      setTimeout(() => setHasCopiedId(false), 2000);
+    }
+  };
+
+  const handleGetUpdate = async () => {
+    setIsUpdating(true);
+    try {
+      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.update();
+        }
+      }
+    } catch (err) {
+      // Ignore update error
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 400);
+  };
+
+  const handleInstallClick = async () => {
+    setIsProfileOpen(false);
+    if (onOpenInstall) {
+      onOpenInstall();
+      return;
+    }
+    const result = await promptInstall();
+    if (result === "modal_needed") {
+      setIsInstallModalOpen(true);
+    }
+  };
 
   const handleSignOut = async () => {
     await store.logout();
     setIsProfileOpen(false);
-    setIsMobileSheetOpen(false);
+    setIsAppsOpen(false);
+    setIsDrawerOpen(false);
     router.push("/");
   };
 
-  const handlePortalSwitch = (opt: RolePortalOption) => {
-    store.switchRole(opt.role);
-    setIsProfileOpen(false);
-    setIsMobileSheetOpen(false);
-    router.push(opt.path);
-  };
+  const currentPortalConfig =
+    ROLE_PORTALS.find((p) => p.role === portalViewRole) || ROLE_PORTALS[0];
 
-  const getRoleBadgeClasses = (r: string) => {
-    switch (r) {
-      case "admin":
-        return "bg-yellow-100 dark:bg-yellow-950/60 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800";
-      case "transport_admin":
-        return "bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800";
-      case "transport_manager":
-        return "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+  const getSettingsHref = () => {
+    switch (portalViewRole) {
       case "teacher":
-        return "bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800";
-      case "driver":
-        return "bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800";
+        return "/teacher/settings";
       case "conductor":
-        return "bg-pink-100 dark:bg-pink-950/60 text-pink-800 dark:text-pink-300 border-pink-200 dark:border-pink-800";
+        return "/conductor/settings";
+      case "driver":
+        return "/driver/settings";
+      case "transport_admin":
+        return "/transport-admin/settings/transit";
+      case "transport_manager":
+        return "/transport-manager/settings";
+      case "admin":
+        return "/admin/settings";
+      case "student":
       default:
-        return "bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800";
+        return "/portal/settings";
     }
   };
 
   const initials = currentUser?.fullName
     ? currentUser.fullName
         .split(" ")
-        .map(n => n[0])
+        .filter(Boolean)
+        .map((n) => n[0])
         .slice(0, 2)
         .join("")
         .toUpperCase()
-    : "CF";
+    : "AP";
 
-  const resolvedMobileAction =
-    mobilePrimaryAction ||
-    (() => {
-      if (portalViewRole === "teacher") {
-        return {
-          label: "Student & Mobility Portal",
-          href: "/portal",
-          subtitle: "Bus routes, stops, schedules & student passes",
-          icon: GraduationCap,
-        };
-      }
-      if (portalViewRole === "driver") {
-        return {
-          label: "Conductor Manifest Console",
-          href: "/conductor",
-          subtitle: "Passenger QR verification & manifest",
-          icon: FileCheck2,
-        };
-      }
-      if (portalViewRole === "conductor") {
-        return {
-          label: "Driver Telematics HUD",
-          href: "/driver",
-          subtitle: "Live vehicle telemetry & trip dashboard",
-          icon: BusFront,
-        };
-      }
-      if (portalViewRole === "transport_admin") {
-        return isActualAdmin
-          ? {
-              label: "Master Admin Console",
-              href: "/admin",
-              subtitle: "Fleet command, routes, crew & settings",
-              icon: LayoutDashboard,
-            }
-          : {
-              label: "Transport Manager Console",
-              href: "/transport-manager",
-              subtitle: "Buses, routes, trips & combine buses",
-              icon: Navigation,
-            };
-      }
-      if (portalViewRole === "transport_manager") {
-        return {
-          label: "Transport Admin Desk",
-          href: "/transport-admin",
-          subtitle: "Fee approvals, student passes & desk ops",
-          icon: Building2,
-        };
-      }
-      return null;
-    })();
+  const effectivePhotoUrl = userPhotoUrl || activeStudent?.photoUrl || currentUser?.avatarUrl;
 
-  const effectiveNavLinks = (navLinks && navLinks.length > 0)
-    ? navLinks
-    : (portalViewRole === "teacher"
+  const effectiveNavLinks =
+    navLinks && navLinks.length > 0
+      ? navLinks
+      : portalViewRole === "teacher"
       ? [
           { href: "/teacher", label: "Class Attendance" },
           { href: "/teacher?tab=my_commute", label: "My Commute" },
-          { href: "/teacher/settings", label: "Commute Settings" },
+          { href: "/teacher/settings", label: "Settings" },
         ]
-      : (portalViewRole === "student"
-        ? [
-            { href: "/portal", label: "My Commute" },
-            { href: "/portal/qr", label: "QR Connect" },
-            { href: "/portal/settings", label: "Settings" },
-          ]
-        : []));
+      : portalViewRole === "student"
+      ? [
+          { href: "/portal", label: "My Commute" },
+          { href: "/portal/qr", label: "QR Connect" },
+          { href: "/chat", label: "Chat" },
+          { href: "/portal/settings", label: "Settings" },
+        ]
+      : [];
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full max-w-full bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800/80 shadow-xs transition-colors overflow-x-clip">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-14 lg:h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
-          {/* Brand Identity / Left Section (Strictly Non-Shrinkable) */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 z-10 min-w-0">
+      {/* Sleek, Non-Bulky Unified Top Navbar */}
+      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800/80 shadow-xs transition-colors">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-14 lg:h-16 flex items-center justify-between gap-3">
+          {/* Left: Brand Identity & Optional Minimal Drawer Toggle */}
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Minimal Mobile Drawer Button (inspired by side-nav mode in reference) */}
+            <button
+              type="button"
+              onClick={() => setIsDrawerOpen(true)}
+              className="lg:hidden p-1.5 -ml-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
+              title="Open Navigation Menu"
+              aria-label="Navigation Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
             <Link
               href={currentPortalConfig.path}
-              className="flex items-center gap-2 sm:gap-2.5 group flex-shrink-0"
-              title={`${portalTitle} Home`}
+              className="flex items-center gap-2 group flex-shrink-0 cursor-pointer"
+              title="CampusFleet Home"
             >
-              <div
-                className={`w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-xl sm:rounded-2xl ${currentPortalConfig.gradient} flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex-shrink-0`}
-              >
-                <currentPortalConfig.icon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex-shrink-0">
+                <BusFront className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
               </div>
-              <div className="flex flex-col flex-shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm sm:text-base lg:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
-                    Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
-                  </span>
-                  <span
-                    className={`hidden md:inline-block text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${getRoleBadgeClasses(
-                      portalViewRole
-                    )}`}
-                  >
-                    {currentPortalConfig.shortLabel}
-                  </span>
-                </div>
-                {portalSubtitle && (
-                  <p className="hidden 2xl:block text-[10px] text-gray-500 dark:text-gray-400 font-medium truncate max-w-[180px]">
-                    {portalSubtitle}
-                  </p>
-                )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-base sm:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
+                  Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
+                </span>
+                <span className="hidden sm:inline-block text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                  {currentPortalConfig.shortLabel}
+                </span>
               </div>
             </Link>
           </div>
 
-          {/* Center Navigation Links (Minimalist Plain Text) */}
+          {/* Center Navigation Links (Desktop Minimalist) */}
           {effectiveNavLinks && effectiveNavLinks.length > 0 && (
-            <div className="hidden lg:flex items-center justify-center flex-1 min-w-0 px-8">
+            <div className="hidden lg:flex items-center justify-center flex-1 min-w-0 px-6">
               <nav className="flex items-center gap-6">
-                {effectiveNavLinks.map(link => {
-                  const isActive = pathname === link.href;
+                {effectiveNavLinks.map((link) => {
+                  const isActive =
+                    pathname === link.href ||
+                    (link.href !== "/portal" &&
+                      link.href !== "/" &&
+                      pathname.startsWith(link.href));
                   return (
                     <Link
                       key={link.href}
                       href={link.href}
-                      className={`text-sm transition-colors ${
+                      className={`text-sm transition-colors py-1 ${
                         isActive
-                          ? "text-gray-900 dark:text-white font-medium"
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-white font-normal"
+                          ? "text-blue-600 dark:text-blue-400 font-bold"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white font-medium"
                       }`}
                     >
                       {link.label}
@@ -421,243 +402,480 @@ export function UnifiedAppHeader({
             </div>
           )}
 
-          {/* Right Action Items (Minimalist User & Sign Out) */}
-          <div className="hidden lg:flex items-center gap-6 flex-shrink-0 z-10 min-w-[90px] justify-end">
-            {!mounted ? (
-              <div className="w-24 h-9" />
-            ) : currentUser ? (
-              <div className="flex items-center gap-3">
-                {pathname.startsWith("/chat") ? (
-                  <Link
-                    href={currentPortalConfig.path || "/"}
-                    title="Return to Home Dashboard"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 text-white shadow-xs hover:bg-blue-700 transition-all"
-                  >
-                    <Home className="w-3.5 h-3.5" />
-                    <span>Home</span>
-                  </Link>
-                ) : (
-                  <Link
-                    href="/chat"
-                    title="CampusFleet Live Messages"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Chat</span>
-                  </Link>
-                )}
-                <Link href={`/${pathname.split('/')[1] === 'portal' ? 'portal' : (currentUser.role || 'portal')}/settings`} title="Open Settings" className="block w-9 h-9 rounded-full overflow-hidden border border-gray-200 hover:border-gray-300 transition-colors">
-                  {(userPhotoUrl || activeStudent?.photoUrl) ? (
-                    <img
-                      src={getSafePhotoUrl(userPhotoUrl || activeStudent?.photoUrl)}
-                      alt="Avatar"
-                      crossOrigin="anonymous"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        const fallback = userPhotoUrl || activeStudent?.photoUrl;
-                        if (fallback && e.currentTarget.src !== fallback) {
-                          e.currentTarget.src = fallback;
-                        }
+          {/* Right Controls: 9-Dots Grid, Theme Toggle, Profile Avatar */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {/* 1. 9-Dots Grid Menu (Transit Portals & Apps Switcher) */}
+            <div className="relative" ref={appsRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAppsOpen(!isAppsOpen);
+                  setIsProfileOpen(false);
+                }}
+                className={`p-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ${
+                  isAppsOpen ? "bg-gray-100 dark:bg-gray-800 text-blue-600 dark:text-blue-400" : ""
+                }`}
+                title="Transit Services & Portals"
+                aria-label="Transit Services"
+              >
+                <LayoutGrid className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+              </button>
+
+              {/* Apps Dropdown Card */}
+              {isAppsOpen && (
+                <div className="absolute right-0 top-12 z-50 w-72 sm:w-80 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-800 p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-2 pt-1 pb-1 border-b border-gray-100 dark:border-gray-800">
+                    <p className="text-xs font-bold text-gray-900 dark:text-white">
+                      Transit Services & Hubs
+                    </p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      Quick-access navigation
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                    <button
+                      onClick={() => {
+                        setIsAppsOpen(false);
+                        router.push("/portal");
                       }}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-yellow-100 text-yellow-600 flex items-center justify-center font-bold text-sm">
-                      {initials}
+                      className="flex flex-col items-start gap-1 p-2.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-100 dark:hover:border-blue-900/50 transition-all text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <BusFront className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-900 dark:text-white">
+                        My Commute
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                        Live GPS tracking
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsAppsOpen(false);
+                        router.push("/portal/qr");
+                      }}
+                      className="flex flex-col items-start gap-1 p-2.5 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-transparent hover:border-emerald-100 dark:hover:border-emerald-900/50 transition-all text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <QrCode className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-900 dark:text-white">
+                        QR Pass
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                        Boarding pass
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsAppsOpen(false);
+                        router.push("/chat");
+                      }}
+                      className="flex flex-col items-start gap-1 p-2.5 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/50 transition-all text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-900 dark:text-white">
+                        Messages
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                        Live channels
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsAppsOpen(false);
+                        router.push("/portal/payments");
+                      }}
+                      className="flex flex-col items-start gap-1 p-2.5 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-transparent hover:border-amber-100 dark:hover:border-amber-900/50 transition-all text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-900 dark:text-white">
+                        Pass & Fees
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                        Subscription fee
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Staff Consoles Switcher (if user is staff or admin) */}
+                  {(isActualAdmin ||
+                    userAccountRole === "transport_admin" ||
+                    userAccountRole === "transport_manager" ||
+                    userAccountRole === "teacher" ||
+                    userAccountRole === "driver" ||
+                    userAccountRole === "conductor") && (
+                    <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <p className="px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                        Staff Consoles
+                      </p>
+                      <div className="space-y-1">
+                        {isActualAdmin && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/admin");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <LayoutDashboard className="w-3.5 h-3.5 text-yellow-500" />
+                            <span>Master Admin Console</span>
+                          </button>
+                        )}
+                        {(isActualAdmin || userAccountRole === "transport_admin") && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/transport-admin");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <Building2 className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Transport Admin Desk</span>
+                          </button>
+                        )}
+                        {(isActualAdmin || userAccountRole === "transport_manager") && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/transport-manager");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <Navigation className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Transport Manager Hub</span>
+                          </button>
+                        )}
+                        {userAccountRole === "teacher" && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/teacher");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <BookOpen className="w-3.5 h-3.5 text-green-500" />
+                            <span>Teacher Attendance Desk</span>
+                          </button>
+                        )}
+                        {(userAccountRole === "driver" || isActualAdmin) && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/driver");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <BusFront className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Driver Telematics HUD</span>
+                          </button>
+                        )}
+                        {(userAccountRole === "conductor" || isActualAdmin) && (
+                          <button
+                            onClick={() => {
+                              setIsAppsOpen(false);
+                              router.push("/conductor");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <FileCheck2 className="w-3.5 h-3.5 text-pink-500" />
+                            <span>Conductor Manifest Console</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
-                </Link>
-                <button
-                  onClick={handleSignOut}
-                  className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-              >
-                Sign In
-              </Link>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-1.5 sm:gap-2 lg:hidden z-10">
-            {pathname.startsWith("/chat") ? (
-              <Link
-                href={currentPortalConfig.path || "/"}
-                title="Return to Home Dashboard"
-                className="p-1.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              >
-                <Home className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
-              </Link>
-            ) : (
-              <Link
-                href="/chat"
-                title="CampusFleet Live Messages"
-                className="p-1.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              >
-                <MessageSquare className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
-              </Link>
-            )}
+                </div>
+              )}
+            </div>
 
-            {/* Mobile Vertical Slide Sheet Trigger */}
+            {/* 2. Theme Switcher (Moon / Sun) */}
             <button
-              onClick={() => setIsMobileSheetOpen(true)}
-              className="p-1.5 border border-gray-900 dark:border-white rounded-lg text-gray-900 dark:text-white transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-              aria-label="Open Navigation Sheet"
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              aria-label="Toggle Theme"
             >
-              <Menu className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+              {theme === "dark" ? (
+                <Sun className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-amber-400" />
+              ) : (
+                <Moon className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-gray-600" />
+              )}
             </button>
+
+            {/* 3. User Profile Avatar & Dropdown Card (Exact Reference Design from Screenshot 2) */}
+            <div className="relative" ref={profileRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProfileOpen(!isProfileOpen);
+                  setIsAppsOpen(false);
+                }}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 flex items-center justify-center transition-all hover:ring-2 hover:ring-blue-500/50 cursor-pointer"
+                title="User Profile & Settings"
+                aria-label="User Profile"
+              >
+                {effectivePhotoUrl ? (
+                  <img
+                    src={getSafePhotoUrl(effectivePhotoUrl)}
+                    alt={currentUser?.fullName || "User Avatar"}
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const fallback = effectivePhotoUrl;
+                      if (fallback && e.currentTarget.src !== fallback) {
+                        e.currentTarget.src = fallback;
+                      }
+                    }}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-rose-500 text-white flex items-center justify-center font-bold text-xs select-none">
+                    {initials}
+                  </div>
+                )}
+              </button>
+
+              {/* Floating Profile Modal Card (Matching Screenshot 2) */}
+              {isProfileOpen && (
+                <div className="absolute right-0 top-12 z-50 w-64 sm:w-72 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-800 p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                  {/* Top Header Row: Avatar, Full Name, ID/RollNo with 1-click Copy */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 flex items-center justify-center shrink-0 shadow-xs">
+                      {effectivePhotoUrl ? (
+                        <img
+                          src={getSafePhotoUrl(effectivePhotoUrl)}
+                          alt="Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-rose-500 text-white flex items-center justify-center font-bold text-base select-none">
+                          {initials}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate leading-tight">
+                        {currentUser?.fullName || "Aditya Pandey"}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60">
+                          {isStudent ? "Student ID" : "Staff ID"}
+                        </span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300 font-mono font-bold truncate">
+                          {displayId}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyId}
+                          className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded transition-colors cursor-pointer"
+                          title={isStudent ? "Copy Student ID" : "Copy Account ID"}
+                          aria-label="Copy ID"
+                        >
+                          {hasCopiedId ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-500 animate-in zoom-in-50" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      {activeStudent?.department && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                          {activeStudent.department}
+                          {activeStudent.semester ? ` • Sem ${activeStudent.semester}` : ""}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-px w-full bg-gray-100 dark:bg-gray-800" />
+
+                  {/* Menu Action Items */}
+                  <div className="space-y-1">
+                    {/* Settings */}
+                    <Link
+                      href={getSettingsHref()}
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <SettingsIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span>Settings</span>
+                    </Link>
+
+                    {/* Install App */}
+                    <button
+                      type="button"
+                      onClick={handleInstallClick}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-left cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span>Install App</span>
+                    </button>
+
+                    {/* Get latest update */}
+                    <button
+                      type="button"
+                      onClick={handleGetUpdate}
+                      disabled={isUpdating}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-left cursor-pointer disabled:opacity-60"
+                    >
+                      <RotateCw
+                        className={`w-4 h-4 text-gray-500 dark:text-gray-400 ${
+                          isUpdating ? "animate-spin text-blue-600" : ""
+                        }`}
+                      />
+                      <span>{isUpdating ? "Updating..." : "Get latest update"}</span>
+                    </button>
+
+                    {/* Chat / Messages Link */}
+                    <Link
+                      href="/chat"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <MessageSquare className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span>Messages</span>
+                    </Link>
+
+                    {/* Log out */}
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors text-left cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 text-red-500" />
+                      <span>Log out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Mobile Slide Sheet with Blurred Backdrop */}
-      {isMobileSheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex flex-col">
-          {/* Blurred Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={() => setIsMobileSheetOpen(false)}
+      {/* Sleek Side Drawer Menu (Inspiration from Screenshot 3) */}
+      {isDrawerOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop Blur */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setIsDrawerOpen(false)}
           />
-          
-          {/* Menu Panel */}
-          <div className="relative bg-white dark:bg-gray-950 shadow-2xl overflow-y-auto animate-in slide-in-from-top-4 duration-300 max-h-[85vh] rounded-b-2xl pb-4">
 
-          {/* Menu Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-            <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {portalTitle}
-            </div>
-            <button
-              onClick={() => setIsMobileSheetOpen(false)}
-              className="p-1.5 border border-gray-900 dark:border-white rounded-md text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="p-5 space-y-5">
-            {/* Primary Mobile Action Card (e.g. My Commute) */}
-            {resolvedMobileAction && (
-              <Link
-                href={resolvedMobileAction.href}
-                onClick={() => {
-                  setIsMobileSheetOpen(false);
-                  if (typeof window !== "undefined" && resolvedMobileAction.href.includes("tab=my_commute")) {
-                    window.location.href = resolvedMobileAction.href;
-                  }
-                }}
-                className="flex items-center gap-3 p-3.5 rounded-xl bg-blue-600 text-white font-semibold shadow-sm hover:bg-blue-700 transition-colors"
+          {/* Drawer Sheet */}
+          <div className="relative w-72 sm:w-80 max-w-[85vw] bg-white dark:bg-gray-950 shadow-2xl z-50 flex flex-col h-full border-r border-gray-200 dark:border-gray-800 animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+                  <BusFront className="w-4 h-4" />
+                </div>
+                <span className="text-base font-black tracking-tight text-gray-900 dark:text-white">
+                  Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen(false)}
+                className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Close drawer"
               >
-                {resolvedMobileAction.icon ? (
-                  <resolvedMobileAction.icon className="w-5 h-5 flex-shrink-0" />
-                ) : (
-                  <BusFront className="w-5 h-5 flex-shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold truncate">{resolvedMobileAction.label}</div>
-                  {resolvedMobileAction.subtitle && (
-                    <div className="text-xs text-blue-100 truncate">{resolvedMobileAction.subtitle}</div>
-                  )}
-                </div>
-                <ArrowRight className="w-4 h-4 flex-shrink-0 text-blue-200" />
-              </Link>
-            )}
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            {/* Navigation Links */}
-            {effectiveNavLinks && effectiveNavLinks.length > 0 && (
-              <div className="space-y-4">
-                {effectiveNavLinks.map((link) => (
+            {/* Drawer Content */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-4">
+              <div>
+                <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+                  General Transit
+                </p>
+                <div className="space-y-1">
                   <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => {
-                      setIsMobileSheetOpen(false);
-                      if (typeof window !== "undefined" && link.href.includes("tab=my_commute")) {
-                        window.location.href = link.href;
-                      }
-                    }}
-                    className="block text-base font-semibold text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    href="/portal"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
                   >
-                    {link.label}
+                    <Home className="w-4 h-4 text-blue-600" />
+                    <span>My Commute Hub</span>
                   </Link>
-                ))}
-              </div>
-            )}
 
-            {/* Separator */}
-            <div className="h-px w-full bg-gray-200 dark:bg-gray-800 my-2" />
+                  <Link
+                    href="/portal/qr"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
+                  >
+                    <QrCode className="w-4 h-4 text-emerald-600" />
+                    <span>QR Pass Connect</span>
+                  </Link>
 
-            {/* Profile Section */}
-            {mounted && currentUser && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                  {(userPhotoUrl || activeStudent?.photoUrl) ? (
-                    <img
-                      src={getSafePhotoUrl(userPhotoUrl || activeStudent?.photoUrl)}
-                      alt="Avatar"
-                      crossOrigin="anonymous"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        const fallback = userPhotoUrl || activeStudent?.photoUrl;
-                        if (fallback && e.currentTarget.src !== fallback) {
-                          e.currentTarget.src = fallback;
-                        }
-                      }}
-                      className="w-12 h-12 rounded-full object-cover border border-gray-200"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/40 border border-yellow-200 text-yellow-600 flex items-center justify-center font-bold text-sm">
-                      {initials}
-                    </div>
-                  )}
-                  <div className="flex flex-col">
-                    <span className="text-base font-semibold text-gray-900 dark:text-white">{currentUser.fullName}</span>
-                    <Link
-                      href={
-                        portalViewRole === "teacher"
-                          ? "/teacher/settings"
-                          : portalViewRole === "conductor"
-                          ? "/conductor/settings"
-                          : portalViewRole === "driver"
-                          ? "/driver/settings"
-                          : "/portal/settings"
-                      }
-                      onClick={() => setIsMobileSheetOpen(false)}
-                      className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                    >
-                      Settings
-                    </Link>
-                  </div>
+                  <Link
+                    href="/chat"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
+                  >
+                    <MessageSquare className="w-4 h-4 text-indigo-600" />
+                    <span>Messages & Channels</span>
+                  </Link>
+
+                  <Link
+                    href="/portal/payments"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
+                  >
+                    <CreditCard className="w-4 h-4 text-amber-600" />
+                    <span>Pass & Fees</span>
+                  </Link>
+
+                  <Link
+                    href="/portal/late"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
+                  >
+                    <Clock className="w-4 h-4 text-purple-600" />
+                    <span>Late SOS</span>
+                  </Link>
                 </div>
+              </div>
+            </div>
 
-                <button
-                  onClick={handleSignOut}
-                  className="text-base font-medium text-gray-700 dark:text-gray-300 text-left w-full"
-                >
-                  Sign Out
-                </button>
-              </div>
-            )}
-            
-            {!currentUser && (
-              <div className="space-y-6">
-                <Link
-                  href="/login"
-                  onClick={() => setIsMobileSheetOpen(false)}
-                  className="text-base font-medium text-gray-700 dark:text-gray-300 block w-full"
-                >
-                  Sign In
-                </Link>
-              </div>
-            )}
-          </div>
+            {/* Pinned Bottom Settings Button (matching Screenshot 3) */}
+            <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+              <Link
+                href={getSettingsHref()}
+                onClick={() => setIsDrawerOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-800/80 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                <SettingsIcon className="w-4.5 h-4.5 text-gray-600 dark:text-gray-300" />
+                <span>Settings</span>
+              </Link>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* PWA Install Instructions Modal */}
+      {isInstallModalOpen && (
+        <InstallAppModal
+          isOpen={isInstallModalOpen}
+          onClose={() => setIsInstallModalOpen(false)}
+          canInstallNative={canInstallNative}
+          onPromptInstall={promptInstall}
+          isIOS={isIOS}
+          isAndroid={isAndroid}
+        />
       )}
     </>
   );

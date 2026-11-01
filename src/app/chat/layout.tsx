@@ -9,8 +9,8 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="fixed inset-0 h-[100dvh] max-h-[100dvh] w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col overflow-hidden">
-      {/* Desktop Unified Header ONLY (Mobile uses compact header and unified bottom navigation) */}
-      <div className="hidden md:block flex-shrink-0">
+      {/* Universal Sleek Header across all viewports */}
+      <div className="flex-shrink-0">
         <UnifiedAppHeader
           portalTitle="Messages"
           portalSubtitle="CampusFleet Unified Chat & Commute Broadcast"

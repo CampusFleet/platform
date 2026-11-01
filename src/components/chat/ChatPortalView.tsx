@@ -113,9 +113,6 @@ export function ChatPortalView() {
   const [replyingTo, setReplyingTo] = useState<{ id: string; senderName: string; text: string } | null>(null);
   const [activeMessageMenuId, setActiveMessageMenuId] = useState<string | null>(null);
 
-  // Mobile layout & navbar states
-  const [isChatBoxActive, setIsChatBoxActive] = useState(false);
-  const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
   const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
   const [inChatSearchQuery, setInChatSearchQuery] = useState("");
 
@@ -721,154 +718,7 @@ export function ChatPortalView() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col w-full h-full bg-white dark:bg-gray-900 border-x border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden relative">
-      {/* ======================================================== */}
-      {/* Mobile Compact Header - Collapses when chat box is active */}
-      <div
-        className={`md:hidden flex-shrink-0 transition-all duration-200 overflow-hidden bg-white dark:bg-gray-900 border-b border-gray-200/80 dark:border-gray-800 z-30 ${
-          isChatBoxActive
-            ? "max-h-0 opacity-0 py-0 border-0 pointer-events-none -translate-y-full"
-            : "max-h-12 opacity-100 px-3 py-1.5 flex items-center justify-between"
-        }`}
-      >
-        {/* Left: CampusFleet Brand Logo with Role Routing */}
-        <button
-          type="button"
-          onClick={() => {
-            const role = currentUser?.role;
-            const targetPath =
-              role === "admin"
-                ? "/admin"
-                : role === "transport_admin"
-                ? "/transport-admin"
-                : role === "transport_manager"
-                ? "/transport-manager"
-                : role === "conductor"
-                ? "/conductor"
-                : role === "driver"
-                ? "/driver"
-                : role === "teacher"
-                ? "/teacher"
-                : "/portal";
-            router.push(targetPath);
-          }}
-          className="flex items-center gap-2 hover:opacity-85 transition-opacity cursor-pointer pl-1"
-          aria-label="CampusFleet Home"
-        >
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
-            <BusFront className="w-4 h-4" />
-          </div>
-          <span className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
-            Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
-          </span>
-        </button>
 
-        {/* Right: 9-dots Grid, Moon/Sun Theme Toggle, Profile Circle */}
-        <div className="flex items-center gap-1">
-          {/* 9-dots app grid */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsAppsMenuOpen(!isAppsMenuOpen)}
-              className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-              title="Transit Apps & Portals"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-
-            {isAppsMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsAppsMenuOpen(false)}
-                />
-                <div className="absolute right-0 top-9 z-50 w-52 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                  <button
-                    onClick={() => {
-                      setIsAppsMenuOpen(false);
-                      const role = currentUser?.role;
-                      const targetPath =
-                        role === "admin"
-                          ? "/admin"
-                          : role === "transport_admin"
-                          ? "/transport-admin"
-                          : role === "transport_manager"
-                          ? "/transport-manager"
-                          : role === "conductor"
-                          ? "/conductor"
-                          : role === "driver"
-                          ? "/driver"
-                          : role === "teacher"
-                          ? "/teacher"
-                          : "/portal";
-                      router.push(targetPath);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
-                  >
-                    Transit Operations Hub
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAppsMenuOpen(false);
-                      router.push("/portal");
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
-                  >
-                    My Commute
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAppsMenuOpen(false);
-                      router.push("/portal/qr");
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
-                  >
-                    QR Pass Connect
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAppsMenuOpen(false);
-                      setLeftView("settings");
-                      setActiveSettingSection("main");
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
-                  >
-                    Chat Settings
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Dark Mode Moon / Sun Toggle */}
-          <button
-            type="button"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-            title="Toggle Dark / Light Mode"
-          >
-            {theme === "dark" ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-gray-600" />
-            )}
-          </button>
-
-          {/* Profile User Icon with Circle (matching screenshot 1) */}
-          <button
-            type="button"
-            onClick={() => {
-              setLeftView("settings");
-              setActiveSettingSection("profile");
-            }}
-            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-            title="User Profile"
-          >
-            <div className="w-6 h-6 rounded-full border border-gray-400 dark:border-gray-500 flex items-center justify-center">
-              <User className="w-3.5 h-3.5" />
-            </div>
-          </button>
-        </div>
-      </div>
 
       {/* Main Two-Column Viewport */}
       <div className="flex-1 min-h-0 flex w-full h-full overflow-hidden">
@@ -1765,14 +1615,6 @@ export function ChatPortalView() {
                     placeholder="Type a message (type @ to alert roles)"
                     value={inputMessage}
                     onChange={handleInputChange}
-                    onFocus={() => {
-                      setIsChatBoxActive(true);
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setIsChatBoxActive(false);
-                      }, 150);
-                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

@@ -57,9 +57,9 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return parseFloat((R * c).toFixed(2));
 }
@@ -71,8 +71,8 @@ import { useRoutesContext } from "@/components/transport-admin/routes/RoutesCont
 import { StopBuilderModal } from "./StopBuilderModal";
 
 export default function StopsManager({ mode = "view" }: { mode?: "view" | "create" }) {
-  const { 
-    routes, stops, buses, trips, campuses, 
+  const {
+    routes, stops, buses, trips, campuses,
     selectedRouteId, setSelectedRouteId, showToast
   } = useRoutesContext();
 
@@ -316,203 +316,202 @@ export default function StopsManager({ mode = "view" }: { mode?: "view" | "creat
         />
       ) : (
         <>
-      {/* Main Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-600/20`}>
-            <MapPin className="w-4 h-4" />
-            <span className="hidden sm:inline">Stops & Terminals</span>
-          </button>
-        </div>
-      </div>
-      {/* ============================================================= */}
-      {/* TAB 3: STOPS                                                  */}
-      {/* ============================================================= */}
-      {true && (
-        <div className="space-y-5">
-          {/* Central Campus Terminal & Fleet Depot Hero Card */}
-          {currentCampusStop && (
-            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-5 sm:p-6 shadow-sm relative overflow-hidden transition-all space-y-4">
-              {/* Top Accent Gradient Line */}
-              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500" />
+          {/* Main Header */}
+          <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-600/20`}>
+                <MapPin className="w-4 h-4" />
+                <span className="hidden sm:inline">Stops & Terminals</span>
+              </button>
+            </div>
+          </div>
+          {/* ============================================================= */}
+          {/* TAB 3: STOPS                                                  */}
+          {/* ============================================================= */}
+          {true && (
+            <div className="space-y-5">
+              {/* Central Campus Terminal & Fleet Depot Hero Card */}
+              {currentCampusStop && (
+                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-5 sm:p-6 shadow-sm relative overflow-hidden transition-all space-y-4">
+                  {/* Top Accent Gradient Line */}
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500" />
 
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/80 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
-                    <Building2 className="w-5 h-5" />
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/80 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider border border-blue-200 dark:border-blue-800">
+                            Campus Terminal Anchor & Depot
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Active Geofence
+                          </span>
+                        </div>
+                        <h3 className="text-base sm:text-lg font-black text-gray-900 dark:text-white">
+                          {currentCampusStop.name}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">
+                          Central terminal anchor for all university corridors, arrival geofencing, and overnight fleet depot parking.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Switch Terminal Selector & Edit Controls */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 self-stretch lg:self-auto flex-shrink-0">
+                      <CustomDropdown
+                        value={currentCampusStop.id}
+                        onChange={val => setDesignatedCampusId(val)}
+                        size="sm"
+                        options={stops.map(st => ({
+                          value: st.id,
+                          label: `Switch: ${st.name} (${st.code})`,
+                        }))}
+                        containerClassName="w-full sm:w-60"
+                      />
+
+                      <button
+                        onClick={() => handleOpenEditCampus(currentCampusStop)}
+                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-blue-500/20 transition-all active:scale-95"
+                      >
+                        <Sliders className="w-3.5 h-3.5" />
+                        <span>Configure Terminal</span>
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider border border-blue-200 dark:border-blue-800">
-                        Campus Terminal Anchor & Depot
+
+                  {/* 4-Metric Clean Summary Grid */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-xs">
+                    <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
+                        Terminal Code
                       </span>
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Active Geofence
+                      <span className="font-mono font-black text-blue-600 dark:text-blue-400 text-sm mt-0.5 block">
+                        {currentCampusStop.code}
                       </span>
                     </div>
-                    <h3 className="text-base sm:text-lg font-black text-gray-900 dark:text-white">
-                      {currentCampusStop.name}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">
-                      Central terminal anchor for all university corridors, arrival geofencing, and overnight fleet depot parking.
-                    </p>
+
+                    <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
+                        GPS Coordinates
+                      </span>
+                      <span className="font-mono font-bold text-gray-800 dark:text-gray-200 text-xs mt-0.5 block">
+                        {currentCampusStop.latitude.toFixed(4)}° N, {currentCampusStop.longitude.toFixed(4)}° E
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
+                        Geofence Radius
+                      </span>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs mt-0.5 block">
+                        {currentCampusStop.geofenceRadiusMeters || 90} meters
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
+                        Depot Landmark
+                      </span>
+                      <span
+                        className="font-medium text-gray-700 dark:text-gray-300 text-xs truncate mt-0.5 block"
+                        title={currentCampusStop.landmark || "Main Terminal Area"}
+                      >
+                        {currentCampusStop.landmark || "Main Terminal Area"}
+                      </span>
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {/* Switch Terminal Selector & Edit Controls */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 self-stretch lg:self-auto flex-shrink-0">
-                  <CustomDropdown
-                    value={currentCampusStop.id}
-                    onChange={val => setDesignatedCampusId(val)}
-                    size="sm"
-                    options={stops.map(st => ({
-                      value: st.id,
-                      label: `Switch: ${st.name} (${st.code})`,
-                    }))}
-                    containerClassName="w-full sm:w-60"
-                  />
-
-                  <button
-                    onClick={() => handleOpenEditCampus(currentCampusStop)}
-                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-blue-500/20 transition-all active:scale-95"
-                  >
-                    <Sliders className="w-3.5 h-3.5" />
-                    <span>Configure Terminal</span>
-                  </button>
-                </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-xs font-bold text-gray-500">
+                  {stops.length} physical boarding stations configured
+                </span>
+                <button
+                  onClick={handleOpenCreateStop}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Add New Stop
+                </button>
               </div>
 
-              {/* 4-Metric Clean Summary Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-xs">
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
-                    Terminal Code
-                  </span>
-                  <span className="font-mono font-black text-blue-600 dark:text-blue-400 text-sm mt-0.5 block">
-                    {currentCampusStop.code}
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
-                    GPS Coordinates
-                  </span>
-                  <span className="font-mono font-bold text-gray-800 dark:text-gray-200 text-xs mt-0.5 block">
-                    {currentCampusStop.latitude.toFixed(4)}° N, {currentCampusStop.longitude.toFixed(4)}° E
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
-                    Geofence Radius
-                  </span>
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs mt-0.5 block">
-                    {currentCampusStop.geofenceRadiusMeters || 90} meters
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/80 dark:border-gray-700/60">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-bold uppercase tracking-wider">
-                    Depot Landmark
-                  </span>
-                  <span
-                    className="font-medium text-gray-700 dark:text-gray-300 text-xs truncate mt-0.5 block"
-                    title={currentCampusStop.landmark || "Main Terminal Area"}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {stops.map(st => (
+                  <div
+                    key={st.id}
+                    className="bg-white dark:bg-gray-900 p-5 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3 flex flex-col justify-between hover:border-blue-300 dark:hover:border-blue-700 transition-all"
                   >
-                    {currentCampusStop.landmark || "Main Terminal Area"}
-                  </span>
-                </div>
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-xl bg-green-50 dark:bg-green-950/60 text-green-600">
+                            <MapPin className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm text-gray-900 dark:text-white">{st.name}</h4>
+                            <span className="text-[10px] font-mono text-gray-400">Station Code: {st.code}</span>
+                          </div>
+                        </div>
+
+                        <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-[10px] font-mono font-bold text-gray-600 dark:text-gray-300">
+                          {st.geofenceRadiusMeters}m geofence
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-gray-50 dark:bg-gray-800/40 rounded-2xl text-xs space-y-1">
+                        <div className="text-[11px] text-gray-500">
+                          Landmark: <strong className="text-gray-700 dark:text-gray-300">{st.landmark || "Standard Campus Station"}</strong>
+                        </div>
+                        <div className="text-[10px] font-mono text-gray-400">
+                          GPS: {st.latitude.toFixed(4)}° N, {st.longitude.toFixed(4)}° E
+                        </div>
+                      </div>
+
+                      {st.isBusMergeStop && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300 text-[11px] font-bold border border-pink-200 dark:border-pink-800">
+                          <GitMerge className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
+                          <span>Authorized Bus Merge Stop</span>
+                          <Zap className="w-3 h-3 text-pink-500 fill-pink-500" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <button
+                        onClick={() => handleToggleStopMerge(st)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1 ${st.isBusMergeStop
+                          ? "bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 border-pink-300 dark:border-pink-800"
+                          : "bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:text-pink-600"
+                          }`}
+                        title={st.isBusMergeStop ? "Deactivate Bus Merge Stop" : "Activate as Bus Merge Stop"}
+                      >
+                        <GitMerge className="w-3.5 h-3.5" />
+                        <span>{st.isBusMergeStop ? "Merge Stop: ON" : "Merge: OFF"}</span>
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditStop(st)}
+                        className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl transition-all"
+                      >
+                        Edit Station
+                      </button>
+                      <button
+                        onClick={() => handleDeleteStop(st.id, st.name)}
+                        className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl"
+                        title="Delete Stop"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs font-bold text-gray-500">
-              {stops.length} physical boarding stations configured
-            </span>
-            <button
-              onClick={handleOpenCreateStop}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              + Add New Stop
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stops.map(st => (
-              <div
-                key={st.id}
-                className="bg-white dark:bg-gray-900 p-5 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3 flex flex-col justify-between hover:border-blue-300 dark:hover:border-blue-700 transition-all"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-green-50 dark:bg-green-950/60 text-green-600">
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-gray-900 dark:text-white">{st.name}</h4>
-                        <span className="text-[10px] font-mono text-gray-400">Station Code: {st.code}</span>
-                      </div>
-                    </div>
-
-                    <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-[10px] font-mono font-bold text-gray-600 dark:text-gray-300">
-                      {st.geofenceRadiusMeters}m geofence
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800/40 rounded-2xl text-xs space-y-1">
-                    <div className="text-[11px] text-gray-500">
-                      Landmark: <strong className="text-gray-700 dark:text-gray-300">{st.landmark || "Standard Campus Station"}</strong>
-                    </div>
-                    <div className="text-[10px] font-mono text-gray-400">
-                      GPS: {st.latitude.toFixed(4)}° N, {st.longitude.toFixed(4)}° E
-                    </div>
-                  </div>
-
-                  {st.isBusMergeStop && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300 text-[11px] font-bold border border-pink-200 dark:border-pink-800">
-                      <GitMerge className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
-                      <span>Authorized Bus Merge Stop</span>
-                      <Zap className="w-3 h-3 text-pink-500 fill-pink-500" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                  <button
-                    onClick={() => handleToggleStopMerge(st)}
-                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1 ${
-                      st.isBusMergeStop
-                        ? "bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 border-pink-300 dark:border-pink-800"
-                        : "bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:text-pink-600"
-                    }`}
-                    title={st.isBusMergeStop ? "Deactivate Bus Merge Stop" : "Activate as Bus Merge Stop"}
-                  >
-                    <GitMerge className="w-3.5 h-3.5" />
-                    <span>{st.isBusMergeStop ? "Merge Stop: ON" : "Merge: OFF"}</span>
-                  </button>
-                  <button
-                    onClick={() => handleOpenEditStop(st)}
-                    className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl transition-all"
-                  >
-                    Edit Station
-                  </button>
-                  <button
-                    onClick={() => handleDeleteStop(st.id, st.name)}
-                    className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl"
-                    title="Delete Stop"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
         </>
       )}

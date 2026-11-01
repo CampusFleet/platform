@@ -82,7 +82,7 @@ export default function FullScreenLiveRadarView({
   const [trips] = useState<Trip[]>(() => initialTrips.length > 0 ? initialTrips : store.getTrips());
   const [staff] = useState<Staff[]>(() => initialStaff.length > 0 ? initialStaff : store.getStaff());
   const [campuses] = useState<Campus[]>(() => initialCampuses.length > 0 ? initialCampuses : store.getCampuses());
-  
+
   // Real-time telematics live stream state
   const [liveLocation, setLiveLocation] = useState<LiveBusLocation | null>(null);
   const [isTelematicsLive, setIsTelematicsLive] = useState(false);
@@ -349,10 +349,10 @@ export default function FullScreenLiveRadarView({
   const toggleFullScreenMode = () => {
     if (typeof document !== "undefined") {
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
+        document.documentElement.requestFullscreen().catch(() => { });
         setIsFullscreen(true);
       } else {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
         setIsFullscreen(false);
       }
     }
@@ -363,7 +363,7 @@ export default function FullScreenLiveRadarView({
 
   return (
     <div className="relative w-full h-[100dvh] bg-zinc-100 dark:bg-black text-zinc-900 dark:text-white overflow-hidden flex flex-col font-sans select-none">
-      
+
       {/* ─── 1. TOP IN-TRANSIT HUD (Human Colors: White in Light, Black in Dark) ─── */}
       <header className="absolute top-3 inset-x-3 sm:inset-x-6 z-30 pointer-events-none flex flex-col gap-2.5">
         {/* Top Control Bar: Back Button, Mode Badge, Fullscreen & Controls */}
@@ -470,16 +470,16 @@ export default function FullScreenLiveRadarView({
             liveLocation
               ? liveLocation
               : {
-                  busId: assignedBus?.id ?? -1,
-                  latitude: currentBusLat,
-                  longitude: currentBusLng,
-                  speedKmh: busSpeedKmh,
-                  headingDeg: 0,
-                  lastPingAt: new Date().toISOString(),
-                  tripId: initialReservation?.trip_id || "",
-                  delayMinutes: 0,
-                  estimatedArrivalNextStopMins: 3,
-                }
+                busId: assignedBus?.id ?? -1,
+                latitude: currentBusLat,
+                longitude: currentBusLng,
+                speedKmh: busSpeedKmh,
+                headingDeg: 0,
+                lastPingAt: new Date().toISOString(),
+                tripId: initialReservation?.trip_id || "",
+                delayMinutes: 0,
+                estimatedArrivalNextStopMins: 3,
+              }
           }
           busName={displayBusNumber}
           tripStatus="IN_PROGRESS"
@@ -568,12 +568,11 @@ export default function FullScreenLiveRadarView({
       </div>
 
       {/* ─── 3. GOOGLE MAPS EXPANDABLE BOTTOM JOURNEY SHEET (Clean Solid Surfaces) ─── */}
-      <div className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 ease-in-out ${
-        isDrawerExpanded ? "max-h-[75vh]" : "max-h-[140px]"
-      } bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}>
-        
+      <div className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 ease-in-out ${isDrawerExpanded ? "max-h-[75vh]" : "max-h-[140px]"
+        } bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}>
+
         {/* Drag Handle & Collapsed Summary */}
-        <div 
+        <div
           onClick={() => setIsDrawerExpanded(!isDrawerExpanded)}
           className="p-3.5 pb-2 border-b border-zinc-100 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors flex flex-col items-center select-none"
         >
@@ -606,29 +605,27 @@ export default function FullScreenLiveRadarView({
               const isCommuterTarget = dest.isCommuterTarget;
 
               return (
-                <div 
+                <div
                   key={dest.id || idx}
                   onClick={() => setSelectedDestinationId(dest.id)}
-                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                    isCommuterTarget
-                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500/80 shadow-sm text-zinc-900 dark:text-white"
-                      : isNext
+                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer ${isCommuterTarget
+                    ? "bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500/80 shadow-sm text-zinc-900 dark:text-white"
+                    : isNext
                       ? "bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-500/80 shadow-sm text-zinc-900 dark:text-white"
                       : isPast
-                      ? "bg-zinc-100/60 dark:bg-zinc-900/30 border-zinc-200/60 dark:border-zinc-800/60 opacity-60 text-zinc-500 dark:text-zinc-400"
-                      : "bg-zinc-50 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white"
-                  }`}
+                        ? "bg-zinc-100/60 dark:bg-zinc-900/30 border-zinc-200/60 dark:border-zinc-800/60 opacity-60 text-zinc-500 dark:text-zinc-400"
+                        : "bg-zinc-50 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white"
+                    }`}
                 >
                   {/* Timeline Node Icon */}
-                  <div className={`absolute -left-[30px] top-4 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
-                    isPast
-                      ? "bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400"
-                      : isNext
+                  <div className={`absolute -left-[30px] top-4 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${isPast
+                    ? "bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400"
+                    : isNext
                       ? "bg-blue-600 border-2 border-white dark:border-black text-white shadow-md font-bold"
                       : isCommuterTarget
-                      ? "bg-amber-500 border-2 border-white dark:border-black text-zinc-950 shadow-md font-bold"
-                      : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
-                  }`}>
+                        ? "bg-amber-500 border-2 border-white dark:border-black text-zinc-950 shadow-md font-bold"
+                        : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+                    }`}>
                     {isPast ? "✓" : idx + 1}
                   </div>
 

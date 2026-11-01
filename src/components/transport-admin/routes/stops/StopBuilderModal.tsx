@@ -24,7 +24,7 @@ export function StopBuilderModal({
 }: any) {
   return (
     <>
-{isAddStopModalOpen && (
+      {isAddStopModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 space-y-4 text-gray-900 dark:text-white shadow-2xl max-h-[95vh] overflow-y-auto">
             <div className="flex items-center justify-between">
@@ -55,11 +55,10 @@ export function StopBuilderModal({
               <button
                 type="button"
                 onClick={() => setStopInputMode("MAP_PIN")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  stopInputMode === "MAP_PIN"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${stopInputMode === "MAP_PIN"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>Mark on Interactive Map</span>
@@ -68,11 +67,10 @@ export function StopBuilderModal({
               <button
                 type="button"
                 onClick={() => setStopInputMode("MANUAL")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  stopInputMode === "MANUAL"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${stopInputMode === "MANUAL"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
                 <span>⌨️ Enter GPS Coordinates</span>
@@ -278,11 +276,10 @@ export function StopBuilderModal({
               <button
                 type="button"
                 onClick={() => setCampusInputMode("MAP_PIN")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusInputMode === "MAP_PIN"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusInputMode === "MAP_PIN"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>Mark on Interactive Map</span>
@@ -291,11 +288,10 @@ export function StopBuilderModal({
               <button
                 type="button"
                 onClick={() => setCampusInputMode("MANUAL")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusInputMode === "MANUAL"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusInputMode === "MANUAL"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
                 <span>⌨️ Enter GPS Coordinates</span>
@@ -1003,9 +999,8 @@ export function StopBuilderModal({
                       key={c}
                       type="button"
                       onClick={() => setRouteBuilderData({ ...routeBuilderData, color: c })}
-                      className={`w-5 h-5 rounded-full transition-transform ${
-                        routeBuilderData.color === c ? "scale-125 ring-2 ring-white shadow" : "opacity-70 hover:opacity-100"
-                      }`}
+                      className={`w-5 h-5 rounded-full transition-transform ${routeBuilderData.color === c ? "scale-125 ring-2 ring-white shadow" : "opacity-70 hover:opacity-100"
+                        }`}
                       style={{ backgroundColor: c }}
                     />
                   ))}
@@ -1093,6 +1088,6 @@ export function StopBuilderModal({
       {/* ============================================================= */}
       {/* MODAL: CREATE / EDIT CAMPUS LOCATION                          */}
       {/* ============================================================= */}
-          </>
+    </>
   );
 }

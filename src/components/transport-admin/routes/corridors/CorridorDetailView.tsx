@@ -3,7 +3,7 @@
 
 import React, { useState } from "react";
 import dynamic from "next/dynamic";
-import { 
+import {
   GitBranch, MapPin, Maximize2, Minimize2, MoreVertical, Route as RouteIcon,
   Search, ShieldAlert, Zap, Truck, Navigation, Settings, LayoutGrid, CalendarDays, UserCircle, RefreshCcw, Map
 } from "lucide-react";
@@ -14,7 +14,7 @@ import WhereIsMyBusFlowchart from "@/components/transit/WhereIsMyBusFlowchart";
 
 export default function CorridorDetailView({ routeId }: { routeId: string }) {
   const { routes, stops, buses, trips, campuses, isAddStopModalOpen } = useRoutesContext();
-  
+
   const [routeViewMode, setRouteViewMode] = useState<"FLOWCHART" | "MAP">("FLOWCHART");
   const [selectedBusToAllocate, setSelectedBusToAllocate] = useState("");
   const [isAllocateBusModalOpen, setIsAllocateBusModalOpen] = useState(false);
@@ -53,10 +53,10 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                 {activeRoute.distanceKm} km • ~{activeRoute.estimatedDurationMins} mins • Direction: {activeRoute.direction}
               </span>
             </div>
-            
+
             {/* Context Actions for Route */}
             <div className="flex items-center gap-2">
-              <button 
+              <button
                 onClick={() => handleOpenEditRoute()}
                 className="px-3 py-1.5 text-[11px] font-bold text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-700 flex items-center gap-1.5"
               >
@@ -69,21 +69,19 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
           <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 p-1.5 rounded-2xl w-fit">
             <button
               onClick={() => setRouteViewMode("FLOWCHART")}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                routeViewMode === "FLOWCHART"
-                  ? "bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${routeViewMode === "FLOWCHART"
+                ? "bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" /> Station Progression Flowchart
             </button>
             <button
               onClick={() => setRouteViewMode("MAP")}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                routeViewMode === "MAP"
-                  ? "bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${routeViewMode === "MAP"
+                ? "bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
             >
               <Map className="w-3.5 h-3.5" /> Corridor GIS Map
             </button>
@@ -91,22 +89,22 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
 
           <div className="h-[500px] bg-gray-100 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden relative isolate">
             {routeViewMode === "MAP" ? (
-              <CampusFleetMap 
-                routes={[activeRoute]} 
-                stops={stops} 
+              <CampusFleetMap
+                routes={[activeRoute]}
+                stops={stops}
                 buses={buses}
-                isAddStopModalOpen={isAddStopModalOpen} 
+                isAddStopModalOpen={isAddStopModalOpen}
                 style="road"
               />
             ) : (
-              <WhereIsMyBusFlowchart 
-                route={activeRoute} 
-                stops={stops} 
+              <WhereIsMyBusFlowchart
+                route={activeRoute}
+                stops={stops}
                 buses={assignedBuses}
               />
             )}
             <div className="absolute top-2 right-2 flex flex-col gap-2 z-[9999]">
-              <button 
+              <button
                 onClick={() => setRouteViewMode(prev => prev === "MAP" ? "FLOWCHART" : "MAP")}
                 className="p-2 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 transition-colors"
                 title="Toggle View Mode"
@@ -126,14 +124,14 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
             <h3 className="font-bold text-sm flex items-center gap-2">
               <Truck className="w-4 h-4 text-blue-600" /> Allocated Fleet Buses
             </h3>
-            <button 
+            <button
               onClick={() => setIsAllocateBusModalOpen(true)}
               className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 px-3 py-1.5 rounded-xl transition-colors"
             >
               + Assign Bus
             </button>
           </div>
-          
+
           {assignedBuses.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {assignedBuses.map(b => (
@@ -147,7 +145,7 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                       <div className="text-[9px] text-gray-500 font-mono">{b.capacity} seats</div>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => handleDeallocateBus()}
                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                   >
@@ -173,7 +171,7 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
               <Zap className="w-4 h-4 text-amber-500" /> Active Dispatches
             </h3>
             <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2 py-1 rounded-lg font-mono font-bold flex items-center gap-1 animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> 
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
               {trips.filter(t => t.routeId === activeRoute.id && t.status === "IN_TRANSIT").length} Live
             </span>
           </div>
@@ -187,7 +185,7 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                     {trip.status === "IN_TRANSIT" && (
                       <div className="absolute top-0 left-0 w-1 h-full bg-green-500" />
                     )}
-                    
+
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className={`p-1.5 rounded-lg ${trip.status === "IN_TRANSIT" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"} font-bold text-[10px]`}>
@@ -195,11 +193,10 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                         </div>
                         <div className="text-xs font-bold text-gray-900 dark:text-white">Trip {trip.id.substring(0, 5)}</div>
                       </div>
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                        trip.status === "IN_TRANSIT" ? "bg-green-100 text-green-700 border border-green-200" : 
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${trip.status === "IN_TRANSIT" ? "bg-green-100 text-green-700 border border-green-200" :
                         trip.status === "COMPLETED" ? "bg-gray-100 text-gray-500" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>
+                          "bg-blue-100 text-blue-700"
+                        }`}>
                         {trip.status}
                       </span>
                     </div>
@@ -220,10 +217,10 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                 );
               })
             ) : (
-               <div className="p-8 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
-                 <CalendarDays className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                 <span className="text-[11px] text-gray-500 font-mono">No active schedules for this corridor today.</span>
-               </div>
+              <div className="p-8 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
+                <CalendarDays className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <span className="text-[11px] text-gray-500 font-mono">No active schedules for this corridor today.</span>
+              </div>
             )}
           </div>
         </div>

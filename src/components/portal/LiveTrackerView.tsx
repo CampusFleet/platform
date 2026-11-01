@@ -99,12 +99,12 @@ export default function LiveTrackerView({
 
   const activeStudent = currentUser
     ? students.find(
-        s =>
-          (activeChildId && (s.id === activeChildId || s.userId === activeChildId)) ||
-          (currentUser.studentId && s.id === currentUser.studentId) ||
-          s.userId === currentUser.id ||
-          s.email?.toLowerCase() === currentUser.email?.toLowerCase()
-      ) || null
+      s =>
+        (activeChildId && (s.id === activeChildId || s.userId === activeChildId)) ||
+        (currentUser.studentId && s.id === currentUser.studentId) ||
+        s.userId === currentUser.id ||
+        s.email?.toLowerCase() === currentUser.email?.toLowerCase()
+    ) || null
     : null;
 
   // Resolve assigned route dynamically
@@ -404,22 +404,20 @@ export default function LiveTrackerView({
         <div className="flex items-center gap-1.5 p-1 bg-gray-100 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 w-full sm:w-auto">
           <button
             onClick={() => setTrackingMode("FLOWCHART")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              trackingMode === "FLOWCHART"
-                ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
-                : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-            }`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${trackingMode === "FLOWCHART"
+              ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+              }`}
           >
             <Layers className="w-3.5 h-3.5" />
             <span>Corridor Timeline</span>
           </button>
           <button
             onClick={() => setTrackingMode("MAP")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              trackingMode === "MAP"
-                ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
-                : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-            }`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${trackingMode === "MAP"
+              ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+              }`}
           >
             <MapPin className="w-3.5 h-3.5" />
             <span>Satellite 2D Map</span>

@@ -56,9 +56,9 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return parseFloat((R * c).toFixed(2));
 }
@@ -591,8 +591,8 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
         prev.direction === "HOME_TO_CAMPUS"
           ? "CAMPUS_TO_HOME"
           : prev.direction === "CAMPUS_TO_HOME"
-          ? "HOME_TO_CAMPUS"
-          : prev.direction;
+            ? "HOME_TO_CAMPUS"
+            : prev.direction;
       return {
         ...prev,
         startStopId: prev.endStopId,
@@ -759,19 +759,18 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
             <GitBranch className="w-4 h-4" />
             <span className="hidden sm:inline">Corridors & Routes</span>
           </button>
-        {true && (
-          <button
-            onClick={handleToggleEmergencyOverride}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-              isOverrideActive
+          {true && (
+            <button
+              onClick={handleToggleEmergencyOverride}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${isOverrideActive
                 ? "bg-red-600 text-white animate-pulse"
                 : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            {isOverrideActive ? "Override Active" : "Emergency Override"}
-          </button>
-        )}
+                }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              {isOverrideActive ? "Override Active" : "Emergency Override"}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Link href="/transport-admin/routes/stops/create" className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
@@ -818,59 +817,59 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
           {routes.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {routes.map(r => (
-                <Link 
-                  href={`/transport-admin/routes/corridors/${r.id}`} 
+                <Link
+                  href={`/transport-admin/routes/corridors/${r.id}`}
                   key={r.id}
                   className="group"
                 >
                   <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 relative overflow-hidden flex flex-col h-full hover:border-blue-300 dark:hover:border-blue-700/50">
-                    
+
                     {/* Decorative Top Gradient Line based on Route Color */}
-                    <div 
-                      className="absolute top-0 left-0 right-0 h-1.5 w-full opacity-80 group-hover:opacity-100 transition-opacity" 
-                      style={{ backgroundColor: r.color }} 
+                    <div
+                      className="absolute top-0 left-0 right-0 h-1.5 w-full opacity-80 group-hover:opacity-100 transition-opacity"
+                      style={{ backgroundColor: r.color }}
                     />
-                    
+
                     {/* Header */}
                     <div className="flex justify-between items-start mb-4">
-                       <div>
-                         <span className="font-mono text-[10px] uppercase font-bold text-gray-400 block mb-1">
-                           {r.code} • {r.direction === "HOME_TO_CAMPUS" ? "Inbound" : "Outbound"}
-                         </span>
-                         <h3 className="font-black text-gray-900 dark:text-white text-lg leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                           {r.name}
-                         </h3>
-                       </div>
-                       <div 
-                         className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm shrink-0"
-                         style={{ color: r.color }}
-                       >
-                         <RouteIcon className="w-4 h-4" />
-                       </div>
+                      <div>
+                        <span className="font-mono text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                          {r.code} • {r.direction === "HOME_TO_CAMPUS" ? "Inbound" : "Outbound"}
+                        </span>
+                        <h3 className="font-black text-gray-900 dark:text-white text-lg leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          {r.name}
+                        </h3>
+                      </div>
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm shrink-0"
+                        style={{ color: r.color }}
+                      >
+                        <RouteIcon className="w-4 h-4" />
+                      </div>
                     </div>
-                    
+
                     {/* Stats */}
                     <div className="grid grid-cols-2 gap-3 mb-6 mt-auto">
                       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-3 border border-gray-100 dark:border-gray-800">
-                         <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Distance</span>
-                         <span className="font-black text-gray-900 dark:text-white text-sm">{r.totalDistanceKm} <span className="text-gray-400 font-normal">km</span></span>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Distance</span>
+                        <span className="font-black text-gray-900 dark:text-white text-sm">{r.totalDistanceKm} <span className="text-gray-400 font-normal">km</span></span>
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-3 border border-gray-100 dark:border-gray-800">
-                         <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Duration</span>
-                         <span className="font-black text-gray-900 dark:text-white text-sm">~{r.estimatedDurationMins || Math.round(r.totalDistanceKm * 2.8)} <span className="text-gray-400 font-normal">min</span></span>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Duration</span>
+                        <span className="font-black text-gray-900 dark:text-white text-sm">~{r.estimatedDurationMins || Math.round(r.totalDistanceKm * 2.8)} <span className="text-gray-400 font-normal">min</span></span>
                       </div>
                     </div>
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-800 mt-auto">
-                       <div className="flex items-center gap-1.5">
-                          <span className="flex h-5 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/30 px-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 font-mono border border-blue-100 dark:border-blue-800/50">
-                            {r.stops.length} Stops
-                          </span>
-                       </div>
-                       <div className="text-[11px] font-bold text-blue-600 flex items-center gap-1 group-hover:gap-2 transition-all">
-                          View Map & Flowchart <ArrowRight className="w-3.5 h-3.5" />
-                       </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex h-5 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/30 px-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 font-mono border border-blue-100 dark:border-blue-800/50">
+                          {r.stops.length} Stops
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-bold text-blue-600 flex items-center gap-1 group-hover:gap-2 transition-all">
+                        View Map & Flowchart <ArrowRight className="w-3.5 h-3.5" />
+                      </div>
                     </div>
                   </div>
                 </Link>
@@ -878,11 +877,11 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
             </div>
           ) : (
             <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800 space-y-3">
-               <RouteIcon className="w-10 h-10 text-gray-300 mx-auto" />
-               <h3 className="font-bold text-gray-900 dark:text-white">No Transit Corridors Defined</h3>
-               <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                 Click the "Create Route" button in the header to start building your first transit network corridor.
-               </p>
+              <RouteIcon className="w-10 h-10 text-gray-300 mx-auto" />
+              <h3 className="font-bold text-gray-900 dark:text-white">No Transit Corridors Defined</h3>
+              <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                Click the "Create Route" button in the header to start building your first transit network corridor.
+              </p>
             </div>
           )}
         </div>

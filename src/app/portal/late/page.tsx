@@ -24,10 +24,10 @@ export default function RunningLatePage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [buses, setBuses] = useState<Bus[]>([]);
-  
-  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [liveBuses, setLiveBuses] = useState<FleetBusMarkerData[]>([]);
-  
+
   const [haltStatus, setHaltStatus] = useState<string>("IDLE");
   const [isRequesting, setIsRequesting] = useState(false);
 
@@ -35,7 +35,7 @@ export default function RunningLatePage() {
     setCurrentUser(store.getCurrentUser());
     setTrips(store.getTrips());
     setBuses(store.getBuses());
-    
+
     const unsub = store.subscribe(() => {
       setCurrentUser(store.getCurrentUser());
       setTrips(store.getTrips());
@@ -72,7 +72,7 @@ export default function RunningLatePage() {
             return store.isTripVisibleToUser(tripObj, user);
           });
         }
-      } catch (e) {}
+      } catch (e) { }
 
       if (isMounted) setActiveTripsLive(currentActiveTrips);
 
@@ -105,7 +105,7 @@ export default function RunningLatePage() {
               statusText: data.liveLocation.statusText || trip.status || "NONE"
             } as FleetBusMarkerData);
           }
-        } catch(e) {}
+        } catch (e) { }
       }
       if (isMounted) setLiveBuses(newLiveBuses);
     };
@@ -122,7 +122,7 @@ export default function RunningLatePage() {
     if ("geolocation" in navigator) {
       const watchId = navigator.geolocation.watchPosition(
         (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => {}, 
+        () => { },
         { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
       );
       return () => navigator.geolocation.clearWatch(watchId);
@@ -133,7 +133,7 @@ export default function RunningLatePage() {
     if (!userLocation || liveBuses.length === 0) return undefined;
     let minDist = Infinity;
     let closest: FleetBusMarkerData | undefined = undefined;
-    
+
     liveBuses.forEach(b => {
       const dist = calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude, b.longitude);
       if (dist < minDist) {
@@ -157,9 +157,9 @@ export default function RunningLatePage() {
             setHaltStatus(data.request.status);
           }
         }
-      } catch(e) {}
+      } catch (e) { }
     };
-    
+
     checkHaltStatus();
     const interval = setInterval(checkHaltStatus, 3000);
     return () => {
@@ -186,7 +186,7 @@ export default function RunningLatePage() {
       if (res.ok) {
         setHaltStatus("PENDING");
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
     setIsRequesting(false);
@@ -196,7 +196,7 @@ export default function RunningLatePage() {
     return (
       <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 h-screen flex flex-col justify-center">
         <Link href="/portal" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 mb-6 font-bold self-start">
-          <ArrowLeft className="w-4 h-4"/> Back to Hub
+          <ArrowLeft className="w-4 h-4" /> Back to Hub
         </Link>
         <div className="bg-white dark:bg-gray-900/80 backdrop-blur-xl p-10 rounded-[2.5rem] text-center border border-gray-100 dark:border-gray-800 shadow-2xl animate-in fade-in zoom-in-95">
           <div className="w-20 h-20 bg-gray-50 dark:bg-gray-800/50 rounded-3xl mx-auto flex items-center justify-center mb-6">
@@ -228,13 +228,13 @@ export default function RunningLatePage() {
         {/* Map Container */}
         <div className="flex-1 w-full max-w-6xl mx-auto px-0 sm:px-6 pb-6 relative flex flex-col">
           <div className="flex-1 bg-white dark:bg-gray-900 sm:rounded-[2rem] shadow-2xl border-y sm:border border-gray-200 dark:border-gray-800 overflow-hidden relative flex flex-col">
-            
+
             {/* Overlay Gradient for top of map */}
             <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-black/20 to-transparent z-[500] pointer-events-none" />
 
             {/* Map Element */}
             <div className="flex-1 w-full min-h-[500px] relative z-0">
-              <CampusFleetMap 
+              <CampusFleetMap
                 stops={[]}
                 fleetBuses={liveBuses}
                 focusedBusId={nearestBus?.busId}
@@ -244,12 +244,12 @@ export default function RunningLatePage() {
                 draftPinLocation={userLocation ? [userLocation.lat, userLocation.lng] : undefined}
               />
             </div>
-            
+
             {/* Floating SOS Halt Request Card */}
             {nearestBus && userLocation && (
               <div className="absolute bottom-6 sm:bottom-8 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-full sm:max-w-md z-[1000] animate-in slide-in-from-bottom-8 duration-500">
                 <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-gray-200/50 dark:border-gray-700/50 p-5 sm:p-6 ring-1 ring-black/5 dark:ring-white/10">
-                  
+
                   {/* Status Indicator */}
                   <div className="flex items-start justify-between mb-5">
                     <div className="flex items-center gap-3">
@@ -265,11 +265,10 @@ export default function RunningLatePage() {
                       </div>
                     </div>
                     {haltStatus !== "IDLE" && (
-                      <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                        haltStatus === "APPROVED" ? "bg-green-100 text-green-700" :
+                      <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${haltStatus === "APPROVED" ? "bg-green-100 text-green-700" :
                         haltStatus === "REJECTED" ? "bg-red-100 text-red-700" :
-                        "bg-yellow-100 text-yellow-700"
-                      }`}>
+                          "bg-yellow-100 text-yellow-700"
+                        }`}>
                         {haltStatus}
                       </span>
                     )}
@@ -289,7 +288,7 @@ export default function RunningLatePage() {
                       <Loader2 className="w-5 h-5 animate-spin" /> Awaiting Conductor Approval...
                     </div>
                   ) : (
-                    <button 
+                    <button
                       onClick={handleRequestHalt}
                       disabled={isRequesting}
                       className="w-full group relative overflow-hidden py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-black flex items-center justify-center gap-2 shadow-xl shadow-blue-500/25 disabled:opacity-70 disabled:active:scale-100"
@@ -301,7 +300,7 @@ export default function RunningLatePage() {
                       </span>
                     </button>
                   )}
-                  
+
                   {haltStatus === "IDLE" && (
                     <p className="text-center text-[11px] text-gray-400 mt-3 font-medium">
                       Only use this if you are actively walking to the route corridor.

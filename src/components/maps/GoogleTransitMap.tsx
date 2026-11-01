@@ -267,12 +267,12 @@ export default function GoogleTransitMap({
           const defaultCenter = draftPinLocation
             ? { lat: draftPinLocation[0], lng: draftPinLocation[1] }
             : busLocation
-            ? { lat: busLocation.latitude, lng: busLocation.longitude }
-            : campusTerminalStop
-            ? { lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude }
-            : stops[0]
-            ? { lat: stops[0].latitude, lng: stops[0].longitude }
-            : { lat: 29.375015, lng: 79.529479 };
+              ? { lat: busLocation.latitude, lng: busLocation.longitude }
+              : campusTerminalStop
+                ? { lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude }
+                : stops[0]
+                  ? { lat: stops[0].latitude, lng: stops[0].longitude }
+                  : { lat: 29.375015, lng: 79.529479 };
 
           const mapTypeId = tileTheme === "GOOGLE_HYBRID" ? "hybrid" : "roadmap";
 
@@ -410,8 +410,8 @@ export default function GoogleTransitMap({
       routeCoordinates.length >= 2
         ? routeCoordinates
         : (!fleetBuses || fleetBuses.length === 0) && stops.length >= 2
-        ? stops.map((s) => [s.latitude, s.longitude])
-        : [];
+          ? stops.map((s) => [s.latitude, s.longitude])
+          : [];
 
     if (waypoints.length < 2) return;
 
@@ -485,7 +485,7 @@ export default function GoogleTransitMap({
         }
       }
     } catch {
-      try { sessionStorage.removeItem(cacheKey); } catch {}
+      try { sessionStorage.removeItem(cacheKey); } catch { }
     }
 
     // 3. Query Google Maps DirectionsService directly (official Google road curves)
@@ -519,7 +519,7 @@ export default function GoogleTransitMap({
               directionsResult: result,
             };
             sessionStorage.setItem(cacheKey, JSON.stringify(envelope));
-          } catch {}
+          } catch { }
         } else {
           console.warn("[GoogleTransitMap] DirectionsService query returned non-OK status:", status);
           if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
@@ -735,9 +735,8 @@ export default function GoogleTransitMap({
 
   return (
     <div
-      className={`relative w-full rounded-3xl overflow-hidden shadow-inner border border-zinc-200 dark:border-zinc-800 z-0 flex flex-col ${
-        height === "100%" ? "h-full min-h-[350px] flex-1" : ""
-      }`}
+      className={`relative w-full rounded-3xl overflow-hidden shadow-inner border border-zinc-200 dark:border-zinc-800 z-0 flex flex-col ${height === "100%" ? "h-full min-h-[350px] flex-1" : ""
+        }`}
       style={{
         height: height || "400px",
         minHeight: height === "100%" ? "350px" : height || "400px",
@@ -761,11 +760,10 @@ export default function GoogleTransitMap({
             type="button"
             title={userLocation ? "Your GPS Location is Active (Click to Re-center)" : "Locate My Position (GPS)"}
             aria-label="Locate me"
-            className={`p-2.5 rounded-2xl shadow-xl border backdrop-blur-md transition-all flex items-center justify-center group ${
-              userLocation
-                ? "bg-blue-600 text-white border-blue-400 ring-2 ring-blue-300 hover:bg-blue-700"
-                : "bg-white dark:bg-black text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-            }`}
+            className={`p-2.5 rounded-2xl shadow-xl border backdrop-blur-md transition-all flex items-center justify-center group ${userLocation
+              ? "bg-blue-600 text-white border-blue-400 ring-2 ring-blue-300 hover:bg-blue-700"
+              : "bg-white dark:bg-black text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              }`}
           >
             <Crosshair className={`w-4 h-4 ${isLocating ? "animate-spin text-amber-400" : ""}`} />
           </button>

@@ -58,9 +58,9 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return parseFloat((R * c).toFixed(2));
 }
@@ -626,8 +626,8 @@ export default function StaffRoutesView({
         prev.direction === "HOME_TO_CAMPUS"
           ? "CAMPUS_TO_HOME"
           : prev.direction === "CAMPUS_TO_HOME"
-          ? "HOME_TO_CAMPUS"
-          : prev.direction;
+            ? "HOME_TO_CAMPUS"
+            : prev.direction;
       return {
         ...prev,
         startStopId: prev.endStopId,
@@ -867,11 +867,10 @@ export default function StaffRoutesView({
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setActiveTab("ROUTES")}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "ROUTES"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-            }`}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === "ROUTES"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+              : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+              }`}
           >
             <RouteIcon className="w-4 h-4" />
             <span>Corridors & Routes ({routes.length})</span>
@@ -879,11 +878,10 @@ export default function StaffRoutesView({
 
           <button
             onClick={() => setActiveTab("CAMPUS_LOCATIONS")}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "CAMPUS_LOCATIONS"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-            }`}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === "CAMPUS_LOCATIONS"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+              : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+              }`}
           >
             <Building2 className="w-4 h-4" />
             <span>Campus Locations ({campuses.length})</span>
@@ -891,11 +889,10 @@ export default function StaffRoutesView({
 
           <button
             onClick={() => setActiveTab("STOPS")}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "STOPS"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-            }`}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === "STOPS"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+              : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+              }`}
           >
             <MapPin className="w-4 h-4" />
             <span>Campus Bus Stops Roster ({stops.length})</span>
@@ -905,11 +902,10 @@ export default function StaffRoutesView({
         {activeTab === "ROUTES" && (
           <button
             onClick={handleToggleEmergencyOverride}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-              isOverrideActive
-                ? "bg-red-600 text-white animate-pulse"
-                : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
-            }`}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${isOverrideActive
+              ? "bg-red-600 text-white animate-pulse"
+              : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
+              }`}
           >
             <ShieldAlert className="w-3.5 h-3.5" />
             {isOverrideActive ? "Override Active" : "Emergency Override"}
@@ -934,11 +930,10 @@ export default function StaffRoutesView({
                       setSelectedRouteId(r.id);
                       setSelectedStopId(undefined);
                     }}
-                    className={`px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all flex-shrink-0 ${
-                      isSelected
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                        : "bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all flex-shrink-0 ${isSelected
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                      : "bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50"
+                      }`}
                   >
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: r.color }} />
                     <span>{r.name}</span>
@@ -1005,22 +1000,20 @@ export default function StaffRoutesView({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setRouteViewMode("FLOWCHART")}
-                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                          routeViewMode === "FLOWCHART"
-                            ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                            : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-                        }`}
+                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${routeViewMode === "FLOWCHART"
+                          ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                          : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+                          }`}
                       >
                         <Layers className="w-3.5 h-3.5" />
                         <span>Station Progression Flowchart</span>
                       </button>
                       <button
                         onClick={() => setRouteViewMode("MAP")}
-                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                          routeViewMode === "MAP"
-                            ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                            : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-                        }`}
+                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${routeViewMode === "MAP"
+                          ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                          : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+                          }`}
                       >
                         <Navigation className="w-3.5 h-3.5" />
                         <span>Corridor GIS Map</span>
@@ -1123,23 +1116,21 @@ export default function StaffRoutesView({
 
                         <div
                           onClick={() => setSelectedStopId(rs.stopId)}
-                          className={`relative z-10 p-3 rounded-2xl border transition-all cursor-pointer ${
-                            isSelected
-                              ? "bg-green-50 dark:bg-green-950/40 border-green-500 ring-2 ring-green-500/20 shadow-md"
-                              : "bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700/60 hover:bg-gray-100"
-                          }`}
+                          className={`relative z-10 p-3 rounded-2xl border transition-all cursor-pointer ${isSelected
+                            ? "bg-green-50 dark:bg-green-950/40 border-green-500 ring-2 ring-green-500/20 shadow-md"
+                            : "bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700/60 hover:bg-gray-100"
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               {/* Station Sequence Badge */}
                               <div
-                                className={`w-7 h-7 rounded-full text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm ${
-                                  isFirst
-                                    ? "bg-green-600 ring-2 ring-green-400/40"
-                                    : isLast
+                                className={`w-7 h-7 rounded-full text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm ${isFirst
+                                  ? "bg-green-600 ring-2 ring-green-400/40"
+                                  : isLast
                                     ? "bg-blue-600 ring-2 ring-blue-400/40"
                                     : "bg-blue-600"
-                                }`}
+                                  }`}
                               >
                                 {isFirst ? (
                                   <MapPin className="w-3.5 h-3.5" />
@@ -1287,20 +1278,18 @@ export default function StaffRoutesView({
               {campuses.map(campus => (
                 <div
                   key={campus.id}
-                  className={`relative p-5 rounded-3xl border shadow-sm space-y-4 flex flex-col justify-between transition-all hover:shadow-md ${
-                    campus.isPrimary
-                      ? "bg-blue-900/30 border-blue-500/40 text-white"
-                      : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
-                  }`}
+                  className={`relative p-5 rounded-3xl border shadow-sm space-y-4 flex flex-col justify-between transition-all hover:shadow-md ${campus.isPrimary
+                    ? "bg-blue-900/30 border-blue-500/40 text-white"
+                    : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+                    }`}
                 >
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0 ${
-                        campus.isPrimary
-                          ? "bg-blue-600/20 border border-blue-500/40 text-blue-400"
-                          : "bg-green-50 dark:bg-green-950/60 border border-green-200 dark:border-green-800 text-green-600"
-                      }`}>
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0 ${campus.isPrimary
+                        ? "bg-blue-600/20 border border-blue-500/40 text-blue-400"
+                        : "bg-green-50 dark:bg-green-950/60 border border-green-200 dark:border-green-800 text-green-600"
+                        }`}>
                         <Building2 className="w-6 h-6" />
                       </div>
                       <div className="min-w-0">
@@ -1311,22 +1300,19 @@ export default function StaffRoutesView({
                               Primary Hub
                             </span>
                           )}
-                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${
-                            campus.isActive !== false
-                              ? "bg-green-500/20 text-green-400 dark:text-green-300"
-                              : "bg-red-500/20 text-red-400"
-                          }`}>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${campus.isActive !== false
+                            ? "bg-green-500/20 text-green-400 dark:text-green-300"
+                            : "bg-red-500/20 text-red-400"
+                            }`}>
                             {campus.isActive !== false ? "Active" : "Inactive"}
                           </span>
                         </div>
-                        <h4 className={`font-black text-sm mt-0.5 truncate ${
-                          campus.isPrimary ? "text-white" : "text-gray-900 dark:text-white"
-                        }`}>
+                        <h4 className={`font-black text-sm mt-0.5 truncate ${campus.isPrimary ? "text-white" : "text-gray-900 dark:text-white"
+                          }`}>
                           {campus.name}
                         </h4>
-                        <p className={`text-[11px] truncate ${
-                          campus.isPrimary ? "text-gray-400" : "text-gray-400"
-                        }`}>
+                        <p className={`text-[11px] truncate ${campus.isPrimary ? "text-gray-400" : "text-gray-400"
+                          }`}>
                           {campus.address || campus.landmark || "No address set"}
                         </p>
                       </div>
@@ -1334,71 +1320,56 @@ export default function StaffRoutesView({
                   </div>
 
                   {/* Stats Grid */}
-                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${
-                    campus.isPrimary ? "" : ""
-                  }`}>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${campus.isPrimary ? "" : ""
                     }`}>
-                      <span className="text-[10px] text-gray-400 block font-bold uppercase">Code</span>
-                      <span className={`font-mono font-black ${
-                        campus.isPrimary ? "text-blue-300" : "text-blue-600 dark:text-blue-400"
-                      }`}>{campus.code}</span>
-                    </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
-                      <span className="text-[10px] text-gray-400 block font-bold uppercase">GPS</span>
-                      <span className={`font-mono font-bold text-[11px] ${
-                        campus.isPrimary ? "text-gray-200" : "text-gray-600 dark:text-gray-300"
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
                       }`}>
+                      <span className="text-[10px] text-gray-400 block font-bold uppercase">Code</span>
+                      <span className={`font-mono font-black ${campus.isPrimary ? "text-blue-300" : "text-blue-600 dark:text-blue-400"
+                        }`}>{campus.code}</span>
+                    </div>
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
+                      <span className="text-[10px] text-gray-400 block font-bold uppercase">GPS</span>
+                      <span className={`font-mono font-bold text-[11px] ${campus.isPrimary ? "text-gray-200" : "text-gray-600 dark:text-gray-300"
+                        }`}>
                         {campus.latitude.toFixed(4)}°N
                       </span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Fleet</span>
-                      <span className={`font-bold ${
-                        campus.isPrimary ? "text-green-400" : "text-green-600 dark:text-green-400"
-                      }`}>{campus.fleetCapacity || 50} buses</span>
+                      <span className={`font-bold ${campus.isPrimary ? "text-green-400" : "text-green-600 dark:text-green-400"
+                        }`}>{campus.fleetCapacity || 50} buses</span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Bays</span>
-                      <span className={`font-bold ${
-                        campus.isPrimary ? "text-yellow-400" : "text-yellow-600 dark:text-yellow-400"
-                      }`}>{campus.parkingBays || 20} bays</span>
+                      <span className={`font-bold ${campus.isPrimary ? "text-yellow-400" : "text-yellow-600 dark:text-yellow-400"
+                        }`}>{campus.parkingBays || 20} bays</span>
                     </div>
                   </div>
 
                   {/* Geofence & Contact */}
-                  <div className={`grid grid-cols-2 gap-2 text-xs ${
-                    campus.isPrimary ? "" : ""
-                  }`}>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                  <div className={`grid grid-cols-2 gap-2 text-xs ${campus.isPrimary ? "" : ""
                     }`}>
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Geofence</span>
-                      <span className={`font-mono font-bold ${
-                        campus.isPrimary ? "text-pink-300" : "text-pink-600 dark:text-pink-400"
-                      }`}>{campus.geofenceRadiusMeters}m radius</span>
+                      <span className={`font-mono font-bold ${campus.isPrimary ? "text-pink-300" : "text-pink-600 dark:text-pink-400"
+                        }`}>{campus.geofenceRadiusMeters}m radius</span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${campus.isPrimary ? "bg-gray-800/40 border border-gray-700/50" : "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Landmark</span>
-                      <span className={`font-medium truncate block ${
-                        campus.isPrimary ? "text-gray-300" : "text-gray-600 dark:text-gray-300"
-                      }`}>{campus.landmark || "—"}</span>
+                      <span className={`font-medium truncate block ${campus.isPrimary ? "text-gray-300" : "text-gray-600 dark:text-gray-300"
+                        }`}>{campus.landmark || "—"}</span>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className={`flex items-center gap-2 pt-3 border-t ${
-                    campus.isPrimary ? "border-gray-700/50" : "border-gray-100 dark:border-gray-800"
-                  }`}>
+                  <div className={`flex items-center gap-2 pt-3 border-t ${campus.isPrimary ? "border-gray-700/50" : "border-gray-100 dark:border-gray-800"
+                    }`}>
                     {!campus.isPrimary && (
                       <button
                         onClick={() => handleSetPrimaryCampus(campus)}
@@ -1410,11 +1381,10 @@ export default function StaffRoutesView({
                     )}
                     <button
                       onClick={() => handleOpenEditCampusLocation(campus)}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                        campus.isPrimary
-                          ? "bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/30"
-                          : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700"
-                      }`}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${campus.isPrimary
+                        ? "bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/30"
+                        : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700"
+                        }`}
                     >
                       Edit Campus
                     </button>
@@ -1594,11 +1564,10 @@ export default function StaffRoutesView({
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                   <button
                     onClick={() => handleToggleStopMerge(st)}
-                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1 ${
-                      st.isBusMergeStop
-                        ? "bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 border-pink-300 dark:border-pink-800"
-                        : "bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:text-pink-600"
-                    }`}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1 ${st.isBusMergeStop
+                      ? "bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 border-pink-300 dark:border-pink-800"
+                      : "bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:text-pink-600"
+                      }`}
                     title={st.isBusMergeStop ? "Deactivate Bus Merge Stop" : "Activate as Bus Merge Stop"}
                   >
                     <GitMerge className="w-3.5 h-3.5" />
@@ -1658,11 +1627,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setStopInputMode("MAP_PIN")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  stopInputMode === "MAP_PIN"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${stopInputMode === "MAP_PIN"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>Mark on Interactive Map</span>
@@ -1671,11 +1639,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setStopInputMode("MANUAL")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  stopInputMode === "MANUAL"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${stopInputMode === "MANUAL"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
                 <span>⌨️ Enter GPS Coordinates</span>
@@ -1881,11 +1848,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setCampusInputMode("MAP_PIN")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusInputMode === "MAP_PIN"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusInputMode === "MAP_PIN"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>Mark on Interactive Map</span>
@@ -1894,11 +1860,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setCampusInputMode("MANUAL")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusInputMode === "MANUAL"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusInputMode === "MANUAL"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
                 <span>Enter GPS Coordinates</span>
@@ -2606,9 +2571,8 @@ export default function StaffRoutesView({
                       key={c}
                       type="button"
                       onClick={() => setRouteBuilderData({ ...routeBuilderData, color: c })}
-                      className={`w-5 h-5 rounded-full transition-transform ${
-                        routeBuilderData.color === c ? "scale-125 ring-2 ring-white shadow" : "opacity-70 hover:opacity-100"
-                      }`}
+                      className={`w-5 h-5 rounded-full transition-transform ${routeBuilderData.color === c ? "scale-125 ring-2 ring-white shadow" : "opacity-70 hover:opacity-100"
+                        }`}
                       style={{ backgroundColor: c }}
                     />
                   ))}
@@ -2726,11 +2690,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setCampusLocationInputMode("MAP_PIN")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusLocationInputMode === "MAP_PIN"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusLocationInputMode === "MAP_PIN"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>Mark on Interactive Map</span>
@@ -2738,11 +2701,10 @@ export default function StaffRoutesView({
               <button
                 type="button"
                 onClick={() => setCampusLocationInputMode("MANUAL")}
-                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  campusLocationInputMode === "MANUAL"
-                    ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${campusLocationInputMode === "MANUAL"
+                  ? "bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
                 <span>⌨️ Enter GPS Coordinates</span>

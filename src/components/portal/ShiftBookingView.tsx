@@ -65,7 +65,7 @@ export interface ShiftBookingProps {
   initialBookings?: Booking[];
   preselectedShiftId?: string;
   preselectedStopId?: string;
-  preselectedBusId?: number ;
+  preselectedBusId?: number;
   isEmbedded?: boolean;
   onBackToBusSelection?: () => void;
 }
@@ -184,31 +184,31 @@ export default function ShiftBookingView({
 
   const activeStudent = currentUser
     ? students.find(
-        s =>
-          (activeChildId && (s.id === activeChildId || s.userId === activeChildId)) ||
-          (currentUser.studentId && s.id === currentUser.studentId) ||
-          s.userId === currentUser.id ||
-          s.userId === currentUser.userId ||
-          s.id === currentUser.id ||
-          s.id === currentUser.studentId ||
-          s.email?.toLowerCase() === currentUser.email?.toLowerCase()
-      ) || initialStudent || {
-        id: `stud-${currentUser.id || currentUser.userId || "guest"}`,
-        userId: currentUser.id || currentUser.userId,
-        fullName: currentUser.fullName || "Student Commuter",
-        email: currentUser.email,
-        phone: null,
-        department: "B.Tech CSE",
-        semester: "1st",
-        campusId: store.getPrimaryCampus()?.id || "",
-        campus: store.getPrimaryCampus()?.name || "Campus Terminal",
-        primaryStopId: stops[0]?.id || "",
-        primaryRouteId: "",
-        emergencyContact: { name: null, relationship: null, phone: null },
-        transportAccessSuspended: false,
-        hasActiveSubscription: Boolean(currentUser.hasActiveSubscription),
-        zoneCode: "ZONE_B",
-      } as unknown as Student
+      s =>
+        (activeChildId && (s.id === activeChildId || s.userId === activeChildId)) ||
+        (currentUser.studentId && s.id === currentUser.studentId) ||
+        s.userId === currentUser.id ||
+        s.userId === currentUser.userId ||
+        s.id === currentUser.id ||
+        s.id === currentUser.studentId ||
+        s.email?.toLowerCase() === currentUser.email?.toLowerCase()
+    ) || initialStudent || {
+      id: `stud-${currentUser.id || currentUser.userId || "guest"}`,
+      userId: currentUser.id || currentUser.userId,
+      fullName: currentUser.fullName || "Student Commuter",
+      email: currentUser.email,
+      phone: null,
+      department: "B.Tech CSE",
+      semester: "1st",
+      campusId: store.getPrimaryCampus()?.id || "",
+      campus: store.getPrimaryCampus()?.name || "Campus Terminal",
+      primaryStopId: stops[0]?.id || "",
+      primaryRouteId: "",
+      emergencyContact: { name: null, relationship: null, phone: null },
+      transportAccessSuspended: false,
+      hasActiveSubscription: Boolean(currentUser.hasActiveSubscription),
+      zoneCode: "ZONE_B",
+    } as unknown as Student
     : initialStudent || null;
 
   const fetchEligibility = async (shiftIdToQuery?: string) => {
@@ -485,106 +485,106 @@ export default function ShiftBookingView({
             <h2 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white">4. Finalize Seat Layout</h2>
             <p className="text-sm text-gray-500">Select your preferred seat on {selectedBusId > 0 ? `Bus ${buses.find(b => b.id === selectedBusId)?.busNumber}` : "the bus"}.</p>
           </div>
-          
-          <div className={`bg-white dark:bg-gray-900 rounded-[2rem] border border-gray-200 dark:border-gray-800 ${isEmbedded ? "p-4 shadow-sm" : "p-4 sm:p-8 shadow-2xl"}`}>
-             <InteractiveBusSeatGrid 
-               bus={buses.find(b => b.id === selectedBusId) || buses[0]}
-               activeBookings={bookings.filter(b => b.busId === selectedBusId)}
-               selectedSeat={selectedSeatNumber}
-               onSelectSeat={(seatNumber: string) => {
-                 if (!isTeacher && isStartingSeat(seatNumber)) {
-                   alert("Front starting seats (Row 1) are strictly reserved for Faculty and Teachers. Please choose another seat.");
-                   return;
-                 }
-                 setSelectedSeatNumber(seatNumber);
-               }}
-               isTeacher={isTeacher}
-               userRole={currentUser?.role}
-             />
-             
-             {selectedSeatNumber && (
-               <div className="mt-8 flex flex-col sm:flex-row items-center justify-between p-6 bg-blue-50 dark:bg-blue-950/30 rounded-2xl border border-blue-100 dark:border-blue-900 border-dashed">
-                  <div className="text-center sm:text-left mb-4 sm:mb-0">
-                    <div className="text-[11px] font-black text-blue-500 uppercase tracking-wider">Selected Seat</div>
-                    <div className="text-2xl font-black text-blue-700 dark:text-blue-400">{selectedSeatNumber}</div>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      if (selectedSeatNumber && !isTeacher && isStartingSeat(selectedSeatNumber)) {
-                        alert("Front starting seats (Row 1) are strictly reserved for Faculty and Teachers. Please choose another seat.");
-                        return;
-                      }
-                      setIsBookingLoading(true);
-                      if ("geolocation" in navigator) {
-                        navigator.geolocation.getCurrentPosition(
-                          (position) => {
-                            const userLat = position.coords.latitude;
-                            const userLon = position.coords.longitude;
-                            const liveLoc = store.getLiveLocation();
-                            if (!liveLoc || !liveLoc.latitude || !liveLoc.longitude) {
-                              setIsBookingLoading(false);
-                              alert("Live bus location is currently unavailable. Please ask the driver to begin broadcasting.");
-                              return;
-                            }
 
-                            const distanceKm = calculateHaversineDistanceKm(userLat, userLon, liveLoc.latitude, liveLoc.longitude);
+          <div className={`bg-white dark:bg-gray-900 rounded-[2rem] border border-gray-200 dark:border-gray-800 ${isEmbedded ? "p-4 shadow-sm" : "p-4 sm:p-8 shadow-2xl"}`}>
+            <InteractiveBusSeatGrid
+              bus={buses.find(b => b.id === selectedBusId) || buses[0]}
+              activeBookings={bookings.filter(b => b.busId === selectedBusId)}
+              selectedSeat={selectedSeatNumber}
+              onSelectSeat={(seatNumber: string) => {
+                if (!isTeacher && isStartingSeat(seatNumber)) {
+                  alert("Front starting seats (Row 1) are strictly reserved for Faculty and Teachers. Please choose another seat.");
+                  return;
+                }
+                setSelectedSeatNumber(seatNumber);
+              }}
+              isTeacher={isTeacher}
+              userRole={currentUser?.role}
+            />
+
+            {selectedSeatNumber && (
+              <div className="mt-8 flex flex-col sm:flex-row items-center justify-between p-6 bg-blue-50 dark:bg-blue-950/30 rounded-2xl border border-blue-100 dark:border-blue-900 border-dashed">
+                <div className="text-center sm:text-left mb-4 sm:mb-0">
+                  <div className="text-[11px] font-black text-blue-500 uppercase tracking-wider">Selected Seat</div>
+                  <div className="text-2xl font-black text-blue-700 dark:text-blue-400">{selectedSeatNumber}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (selectedSeatNumber && !isTeacher && isStartingSeat(selectedSeatNumber)) {
+                      alert("Front starting seats (Row 1) are strictly reserved for Faculty and Teachers. Please choose another seat.");
+                      return;
+                    }
+                    setIsBookingLoading(true);
+                    if ("geolocation" in navigator) {
+                      navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                          const userLat = position.coords.latitude;
+                          const userLon = position.coords.longitude;
+                          const liveLoc = store.getLiveLocation();
+                          if (!liveLoc || !liveLoc.latitude || !liveLoc.longitude) {
                             setIsBookingLoading(false);
-                            
-                            if (distanceKm > 0.2) {
-                              alert("You are too far from the bus! Please go near the bus and try again.");
-                              return;
-                            }
-                            setIsScanningBus(true);
-                          },
-                          (error) => {
-                            setIsBookingLoading(false);
-                            alert("Unable to fetch your location. Please enable location services to claim a seat.");
+                            alert("Live bus location is currently unavailable. Please ask the driver to begin broadcasting.");
+                            return;
                           }
-                        );
-                      } else {
-                        setIsBookingLoading(false);
-                        alert("Geolocation is not supported by your browser.");
-                      }
-                    }} 
-                    disabled={isBookingLoading}
-                    className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white text-sm font-black rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
-                  >
-                    <QrCode className="w-4 h-4" />
-                    Claim Seat & Scan Bus QR
-                  </button>
-               </div>
-             )}
+
+                          const distanceKm = calculateHaversineDistanceKm(userLat, userLon, liveLoc.latitude, liveLoc.longitude);
+                          setIsBookingLoading(false);
+
+                          if (distanceKm > 0.2) {
+                            alert("You are too far from the bus! Please go near the bus and try again.");
+                            return;
+                          }
+                          setIsScanningBus(true);
+                        },
+                        (error) => {
+                          setIsBookingLoading(false);
+                          alert("Unable to fetch your location. Please enable location services to claim a seat.");
+                        }
+                      );
+                    } else {
+                      setIsBookingLoading(false);
+                      alert("Geolocation is not supported by your browser.");
+                    }
+                  }}
+                  disabled={isBookingLoading}
+                  className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white text-sm font-black rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+                >
+                  <QrCode className="w-4 h-4" />
+                  Claim Seat & Scan Bus QR
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {activeStep === "SUCCESS" && (
         <div className="max-w-2xl mx-auto mt-10 p-10 sm:p-14 rounded-[3rem] bg-white dark:bg-gray-900 border border-green-200 dark:border-green-800/30 shadow-2xl text-center space-y-8 animate-in zoom-in-95">
-           <div className="w-24 h-24 bg-green-100 dark:bg-green-900/50 rounded-[2rem] flex items-center justify-center mx-auto ring-8 ring-green-50 dark:ring-green-900/10">
-             <CheckCircle2 className="w-12 h-12 text-green-600 dark:text-green-400" />
-           </div>
-           
-           <div className="space-y-3">
-             <h2 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white tracking-tight">Seat Booked Successfully!</h2>
-             <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
-               Your seat <strong className="text-gray-900 dark:text-gray-200">({selectedSeatNumber})</strong> has been verified and permanently reserved on <strong className="text-gray-900 dark:text-gray-200">Bus {buses.find(b => b.id === selectedBusId)?.busNumber}</strong>. 
-               Have a great commute!
-             </p>
-           </div>
-           
-           <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-             <Link href="/portal/pass" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-blue-600/30">
-               <QrCode className="w-5 h-5" /> View Boarding Pass & QR Code →
-             </Link>
-             <Link href="/portal" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-black rounded-2xl transition-all">
-               <Compass className="w-4 h-4" /> Go to Dashboard
-             </Link>
-           </div>
+          <div className="w-24 h-24 bg-green-100 dark:bg-green-900/50 rounded-[2rem] flex items-center justify-center mx-auto ring-8 ring-green-50 dark:ring-green-900/10">
+            <CheckCircle2 className="w-12 h-12 text-green-600 dark:text-green-400" />
+          </div>
 
-           <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center justify-center gap-1.5 font-medium mt-4">
-             <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
-             Redirecting to your Active Trip Ticket...
-           </p>
+          <div className="space-y-3">
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white tracking-tight">Seat Booked Successfully!</h2>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
+              Your seat <strong className="text-gray-900 dark:text-gray-200">({selectedSeatNumber})</strong> has been verified and permanently reserved on <strong className="text-gray-900 dark:text-gray-200">Bus {buses.find(b => b.id === selectedBusId)?.busNumber}</strong>.
+              Have a great commute!
+            </p>
+          </div>
+
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link href="/portal/pass" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-blue-600/30">
+              <QrCode className="w-5 h-5" /> View Boarding Pass & QR Code →
+            </Link>
+            <Link href="/portal" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-black rounded-2xl transition-all">
+              <Compass className="w-4 h-4" /> Go to Dashboard
+            </Link>
+          </div>
+
+          <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center justify-center gap-1.5 font-medium mt-4">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
+            Redirecting to your Active Trip Ticket...
+          </p>
         </div>
       )}
 
@@ -592,12 +592,12 @@ export default function ShiftBookingView({
       {isScanningBus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-gray-900 rounded-[2rem] overflow-hidden relative shadow-2xl border border-gray-800">
-            
+
             <div className="p-4 flex items-center justify-between bg-gray-900/90 absolute top-0 w-full z-10 border-b border-gray-800">
               <h3 className="text-white font-bold text-sm flex items-center gap-2">
                 <QrCode className="w-4 h-4 text-blue-400" /> Scan Bus QR
               </h3>
-              <button 
+              <button
                 onClick={() => setIsScanningBus(false)}
                 className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white"
               >
@@ -609,12 +609,12 @@ export default function ShiftBookingView({
               {/* Mock Camera View */}
               <div className="absolute inset-4 border-2 border-blue-500/50 rounded-3xl" />
               <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-blue-400 shadow-[0_0_10px_2px_rgba(59,130,246,0.5)] animate-scan" />
-              
+
               {!isBookingLoading ? (
                 <div className="text-center z-10 p-6 bg-black/40 rounded-2xl backdrop-blur-md">
                   <Scan className="w-12 h-12 text-white/50 mx-auto mb-4" />
                   <p className="text-white/80 text-sm font-medium mb-6">Point camera at the QR code posted inside the bus to claim your seat.</p>
-                  
+
                   <button
                     onClick={async () => {
                       setIsBookingLoading(true);
@@ -637,7 +637,7 @@ export default function ShiftBookingView({
                 </div>
               )}
             </div>
-            
+
             <div className="p-4 bg-gray-900 text-center border-t border-gray-800">
               <p className="text-xs text-gray-500">Alternatively, you can present your ID to the conductor to scan.</p>
             </div>

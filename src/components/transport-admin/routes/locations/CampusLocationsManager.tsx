@@ -54,9 +54,9 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return parseFloat((R * c).toFixed(2));
 }
@@ -288,20 +288,18 @@ export default function CampusLocationsManager() {
               {campuses.map(campus => (
                 <div
                   key={campus.id}
-                  className={`relative p-5 rounded-3xl border shadow-sm space-y-4 flex flex-col justify-between transition-all hover:shadow-md ${
-                    campus.isPrimary
-                      ? "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
-                      : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
-                  }`}
+                  className={`relative p-5 rounded-3xl border shadow-sm space-y-4 flex flex-col justify-between transition-all hover:shadow-md ${campus.isPrimary
+                    ? "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+                    : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+                    }`}
                 >
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner flex-shrink-0 ${
-                        campus.isPrimary
-                          ? "bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400"
-                          : "bg-green-50 dark:bg-green-950/60 border border-green-200 dark:border-green-800 text-green-600"
-                      }`}>
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner flex-shrink-0 ${campus.isPrimary
+                        ? "bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400"
+                        : "bg-green-50 dark:bg-green-950/60 border border-green-200 dark:border-green-800 text-green-600"
+                        }`}>
                         <Building2 className="w-6 h-6" />
                       </div>
                       <div className="min-w-0">
@@ -311,22 +309,19 @@ export default function CampusLocationsManager() {
                               ⭐ Primary Hub
                             </span>
                           )}
-                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${
-                            campus.isActive !== false
-                              ? "bg-green-500/20 text-green-400 dark:text-green-300"
-                              : "bg-red-500/20 text-red-400"
-                          }`}>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${campus.isActive !== false
+                            ? "bg-green-500/20 text-green-400 dark:text-green-300"
+                            : "bg-red-500/20 text-red-400"
+                            }`}>
                             {campus.isActive !== false ? "Active" : "Inactive"}
                           </span>
                         </div>
-                        <h4 className={`font-black text-sm mt-0.5 truncate ${
-                          "text-gray-900 dark:text-white"
-                        }`}>
+                        <h4 className={`font-black text-sm mt-0.5 truncate ${"text-gray-900 dark:text-white"
+                          }`}>
                           {campus.name}
                         </h4>
-                        <p className={`text-[11px] truncate ${
-                          "text-gray-400"
-                        }`}>
+                        <p className={`text-[11px] truncate ${"text-gray-400"
+                          }`}>
                           {campus.address || campus.landmark || "No address set"}
                         </p>
                       </div>
@@ -334,71 +329,56 @@ export default function CampusLocationsManager() {
                   </div>
 
                   {/* Stats Grid */}
-                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${
-                    campus.isPrimary ? "" : ""
-                  }`}>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                  <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${campus.isPrimary ? "" : ""
                     }`}>
-                      <span className="text-[10px] text-gray-400 block font-bold uppercase">Code</span>
-                      <span className={`font-mono font-black ${
-                        "text-blue-600 dark:text-blue-400"
-                      }`}>{campus.code}</span>
-                    </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
-                      <span className="text-[10px] text-gray-400 block font-bold uppercase">GPS</span>
-                      <span className={`font-mono font-bold text-[11px] ${
-                        "text-gray-600 dark:text-gray-300"
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
                       }`}>
+                      <span className="text-[10px] text-gray-400 block font-bold uppercase">Code</span>
+                      <span className={`font-mono font-black ${"text-blue-600 dark:text-blue-400"
+                        }`}>{campus.code}</span>
+                    </div>
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
+                      <span className="text-[10px] text-gray-400 block font-bold uppercase">GPS</span>
+                      <span className={`font-mono font-bold text-[11px] ${"text-gray-600 dark:text-gray-300"
+                        }`}>
                         {campus.latitude.toFixed(4)}°N
                       </span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Fleet</span>
-                      <span className={`font-bold ${
-                        "text-green-600 dark:text-green-400"
-                      }`}>{campus.fleetCapacity || 50} buses</span>
+                      <span className={`font-bold ${"text-green-600 dark:text-green-400"
+                        }`}>{campus.fleetCapacity || 50} buses</span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Bays</span>
-                      <span className={`font-bold ${
-                        "text-yellow-600 dark:text-yellow-400"
-                      }`}>{campus.parkingBays || 20} bays</span>
+                      <span className={`font-bold ${"text-yellow-600 dark:text-yellow-400"
+                        }`}>{campus.parkingBays || 20} bays</span>
                     </div>
                   </div>
 
                   {/* Geofence & Contact */}
-                  <div className={`grid grid-cols-2 gap-2 text-xs ${
-                    campus.isPrimary ? "" : ""
-                  }`}>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                  <div className={`grid grid-cols-2 gap-2 text-xs ${campus.isPrimary ? "" : ""
                     }`}>
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Geofence</span>
-                      <span className={`font-mono font-bold ${
-                        "text-pink-600 dark:text-pink-400"
-                      }`}>{campus.geofenceRadiusMeters}m radius</span>
+                      <span className={`font-mono font-bold ${"text-pink-600 dark:text-pink-400"
+                        }`}>{campus.geofenceRadiusMeters}m radius</span>
                     </div>
-                    <div className={`p-2.5 rounded-xl ${
-                      "bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
-                    }`}>
+                    <div className={`p-2.5 rounded-xl ${"bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50"
+                      }`}>
                       <span className="text-[10px] text-gray-400 block font-bold uppercase">Landmark</span>
-                      <span className={`font-medium truncate block ${
-                        "text-gray-600 dark:text-gray-300"
-                      }`}>{campus.landmark || "—"}</span>
+                      <span className={`font-medium truncate block ${"text-gray-600 dark:text-gray-300"
+                        }`}>{campus.landmark || "—"}</span>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className={`flex items-center gap-2 pt-3 border-t ${
-                    "border-gray-100 dark:border-gray-800"
-                  }`}>
+                  <div className={`flex items-center gap-2 pt-3 border-t ${"border-gray-100 dark:border-gray-800"
+                    }`}>
                     {!campus.isPrimary && (
                       <button
                         onClick={() => handleSetPrimaryCampus(campus)}
@@ -410,9 +390,8 @@ export default function CampusLocationsManager() {
                     )}
                     <button
                       onClick={() => handleOpenEditCampusLocation(campus)}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                        "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                      }`}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${"bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                        }`}
                     >
                       Edit Campus
                     </button>

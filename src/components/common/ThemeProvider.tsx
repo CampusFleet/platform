@@ -43,32 +43,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         root.classList.remove("dark");
       }
 
-      // Dynamically update mobile browser chrome bar (Android address bar & iOS status bar)
+      // Safely update mobile browser chrome bar without detaching DOM nodes
       try {
-        const metaThemes = document.querySelectorAll('meta[name="theme-color"]');
-        if (metaThemes.length > 0) {
-          metaThemes.forEach((meta, idx) => {
-            if (idx === 0) {
-              meta.setAttribute("content", isDark ? "#000000" : "#ffffff");
-              meta.removeAttribute("media");
-            } else {
-              meta.remove();
-            }
-          });
-        } else {
-          const metaTheme = document.createElement("meta");
-          metaTheme.setAttribute("name", "theme-color");
-          metaTheme.setAttribute("content", isDark ? "#000000" : "#ffffff");
-          document.head.appendChild(metaTheme);
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute("content", isDark ? "#000000" : "#ffffff");
         }
-
-        let appleMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        if (!appleMeta) {
-          appleMeta = document.createElement("meta");
-          appleMeta.setAttribute("name", "apple-mobile-web-app-status-bar-style");
-          document.head.appendChild(appleMeta);
-        }
-        appleMeta.setAttribute("content", isDark ? "black-translucent" : "default");
       } catch (e) {
         // Ignore in non-browser env
       }

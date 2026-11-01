@@ -18,10 +18,11 @@ import { calculateHaversineDistanceKm } from "./eta-calculator";
 
 export type RoutingProvider = "haversine" | "osrm" | "google";
 
-/** Resolve provider from environment */
+/** Resolve provider from environment with auto-detection */
 function getProvider(): RoutingProvider {
-  const env = process.env.ROUTING_PROVIDER?.toLowerCase() || "haversine";
-  if (env === "google" || env === "osrm") return env;
+  const env = process.env.ROUTING_PROVIDER?.toLowerCase();
+  if (env === "google" || env === "osrm" || env === "haversine") return env;
+  if (getGoogleApiKey()) return "google";
   return "haversine";
 }
 
@@ -397,35 +398,59 @@ async function googleMatrix(origins: Coordinate[], destinations: Coordinate[]): 
   }
 }
 
-// ─── Public API (Provider-Agnostic) ─────────────────────────────────────────
+// ─── High-Performance Memory Cache (24-hour TTL) ─────────────────────────
+const distanceCache = new Map<string, { result: RoadDistanceResult; expiresAt: number }>();
+const routeCache = new Map<string, { result: RouteResult; expiresAt: number }>();
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Get road distance between two points.
- * Provider auto-selected from ROUTING_PROVIDER env var.
+ * Cached to prevent redundant Google Maps / OSRM API calls.
  */
 export async function getRoadDistance(from: Coordinate, to: Coordinate): Promise<RoadDistanceResult> {
-  const provider = getProvider();
-  switch (provider) {
-    case "osrm": return osrmDistance(from, to);
-    case "google": return googleDistance(from, to);
-    default: return haversineDistance(from, to);
+  const cacheKey = `${from.latitude.toFixed(5)},${from.longitude.toFixed(5)}->${to.latitude.toFixed(5)},${to.longitude.toFixed(5)}`;
+  const cached = distanceCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
   }
+
+  const provider = getProvider();
+  let result: RoadDistanceResult;
+  switch (provider) {
+    case "osrm": result = await osrmDistance(from, to); break;
+    case "google": result = await googleDistance(from, to); break;
+    default: result = haversineDistance(from, to); break;
+  }
+
+  distanceCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  return result;
 }
 
 /**
  * Get full route through multiple waypoints (with leg-by-leg breakdown).
- * Provider auto-selected from ROUTING_PROVIDER env var.
+ * Cached to prevent redundant Google Maps / OSRM API calls.
  */
 export async function getRoute(waypoints: Coordinate[]): Promise<RouteResult> {
   if (waypoints.length < 2) {
     return { totalDistanceKm: 0, totalDurationMins: 0, legDistancesKm: [], legDurationsMins: [], provider: "haversine", isRoadData: false };
   }
-  const provider = getProvider();
-  switch (provider) {
-    case "osrm": return osrmRoute(waypoints);
-    case "google": return googleRoute(waypoints);
-    default: return haversineRoute(waypoints);
+
+  const cacheKey = waypoints.map(w => `${w.latitude.toFixed(5)},${w.longitude.toFixed(5)}`).join(";");
+  const cached = routeCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
   }
+
+  const provider = getProvider();
+  let result: RouteResult;
+  switch (provider) {
+    case "osrm": result = await osrmRoute(waypoints); break;
+    case "google": result = await googleRoute(waypoints); break;
+    default: result = haversineRoute(waypoints); break;
+  }
+
+  routeCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  return result;
 }
 
 /**

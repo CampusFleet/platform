@@ -95,11 +95,23 @@ interface CampusFleetMapProps {
   showUserLocation?: boolean;
   showCampusLandmark?: boolean;
   tileTheme?: "GOOGLE_STREETS" | "CARTO_VOYAGER" | "CARTO_DARK" | "GOOGLE_HYBRID" | "AUTO";
+  onRouteMetricsCalculated?: (metrics: any) => void;
 }
 
-// Fetches actual road-snapped geometry via Open-Source Routing Machine (OSRM) with multi-mirror fallback
+// Fetches actual road-snapped geometry with client sessionStorage caching
 async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[number, number][]> {
   if (coordinates.length < 2) return coordinates;
+
+  const coordKey = `cf_leaf_${coordinates.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
+  if (typeof window !== "undefined") {
+    try {
+      const cached = sessionStorage.getItem(coordKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length >= 2) return parsed;
+      }
+    } catch {}
+  }
 
   const coordString = coordinates.map(([lat, lng]) => `${lng},${lat}`).join(";");
   const endpoints = [
@@ -118,7 +130,11 @@ async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[
       if (res.ok) {
         const data = await res.json();
         if (data.routes && data.routes[0]?.geometry?.coordinates) {
-          return data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+          const snapped = data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+          if (typeof window !== "undefined") {
+            try { sessionStorage.setItem(coordKey, JSON.stringify(snapped)); } catch {}
+          }
+          return snapped;
         }
       }
     } catch {
@@ -140,7 +156,12 @@ async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[
         }
       }
     }
-    if (fullSnapped.length > 0) return fullSnapped;
+    if (fullSnapped.length > 0) {
+      if (typeof window !== "undefined") {
+        try { sessionStorage.setItem(coordKey, JSON.stringify(fullSnapped)); } catch {}
+      }
+      return fullSnapped;
+    }
   } catch {
     // Fallback to straight lines
   }
@@ -164,7 +185,11 @@ export default function CampusFleetMap(props: CampusFleetMapProps) {
       <GoogleTransitMap
         {...props}
         apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-        onError={() => setGoogleMapsError(true)}
+        onRouteMetricsCalculated={props.onRouteMetricsCalculated}
+        onError={(err) => {
+          console.warn("[CampusFleetMap] GoogleTransitMap failed, falling back to Leaflet:", err);
+          setGoogleMapsError(true);
+        }}
       />
     );
   }

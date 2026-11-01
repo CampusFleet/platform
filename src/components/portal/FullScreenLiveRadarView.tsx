@@ -96,6 +96,11 @@ export default function FullScreenLiveRadarView({
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null);
   const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [tileTheme, setTileTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">("GOOGLE_STREETS");
+  const [routeMetrics, setRouteMetrics] = useState<{
+    totalDistanceKm: number;
+    totalDurationMins: number;
+    legs: { distanceKm: number; durationMins: number; distanceText: string; durationText: string }[];
+  } | null>(null);
 
   const cycleTileTheme = () => {
     setTileTheme((prev) => {
@@ -256,18 +261,25 @@ export default function FullScreenLiveRadarView({
   const currentBusLng = liveLocation?.longitude ?? sourceStop?.longitude ?? 79.5295;
   const busSpeedKmh = liveLocation?.speedKmh ?? 0;
 
-  // Calculate distance & ETA to every destination along the corridor
+  // Calculate distance & ETA to every destination along the corridor using real Google Maps road data
   const destinationsWithMetrics = useMemo(() => {
     return orderedDestinations.map((dest, idx) => {
-      const distMeters = Math.round(
-        calculateHaversineDistanceKm(currentBusLat, currentBusLng, dest.latitude, dest.longitude) * 1000
-      );
-      const distKm = (distMeters / 1000).toFixed(1);
+      // If we have actual Google Directions leg-by-leg road metrics, use them!
+      const leg = routeMetrics?.legs?.[idx];
+      let distKm = "";
+      let etaMins = 1;
 
-      // Cruise speed calculation for ETA
-      const effectiveSpeed = busSpeedKmh > 8 ? busSpeedKmh : 28;
-      const etaMins = Math.max(1, Math.round((distMeters / 1000 / effectiveSpeed) * 60));
+      if (leg) {
+        distKm = leg.distanceKm.toFixed(1);
+        etaMins = Math.max(1, Math.round(leg.durationMins));
+      } else {
+        const straightKm = calculateHaversineDistanceKm(currentBusLat, currentBusLng, dest.latitude, dest.longitude);
+        distKm = (straightKm * 1.3).toFixed(1);
+        const effectiveSpeed = busSpeedKmh > 8 ? busSpeedKmh : 28;
+        etaMins = Math.max(1, Math.round((parseFloat(distKm) / effectiveSpeed) * 60));
+      }
 
+      const distMeters = Math.round(parseFloat(distKm) * 1000);
       const isCommuterTarget = commuterStop?.id === dest.id;
       const isSource = idx === 0;
       const isTerminal = idx === orderedDestinations.length - 1;
@@ -283,7 +295,7 @@ export default function FullScreenLiveRadarView({
         isTerminal,
       };
     });
-  }, [orderedDestinations, currentBusLat, currentBusLng, busSpeedKmh, commuterStop]);
+  }, [orderedDestinations, currentBusLat, currentBusLng, busSpeedKmh, commuterStop, routeMetrics]);
 
   // Identify the immediate next destination (closest stop ahead)
   const nextDestination = useMemo(() => {
@@ -444,6 +456,7 @@ export default function FullScreenLiveRadarView({
           zoom={15}
           showUserLocation={false}
           showCampusLandmark={false}
+          onRouteMetricsCalculated={setRouteMetrics}
           onStopClick={(clickedStop) => {
             setSelectedDestinationId(clickedStop.id);
             setIsDrawerExpanded(true);

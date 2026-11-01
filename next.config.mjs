@@ -61,11 +61,11 @@ const nextConfig = {
           },
           {
             key: "Cross-Origin-Opener-Policy",
-            value: "same-origin",
+            value: "same-origin-allow-popups",
           },
           {
             key: "Cross-Origin-Resource-Policy",
-            value: "same-origin",
+            value: "cross-origin",
           },
 
           // ── Content Security Policy ─────────────────────────────────
@@ -76,9 +76,9 @@ const nextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://accounts.google.com https://apis.google.com https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://translate.google.com https://translate.googleapis.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://www.gstatic.com https://maps.googleapis.com",
-              "img-src 'self' data: blob: https: http: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.cartocdn.com https://translate.googleapis.com https://www.gstatic.com",
+              "img-src 'self' data: blob: https: http: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.cartocdn.com https://*.tile.openstreetmap.org https://*.openstreetmap.org https://translate.googleapis.com https://www.gstatic.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://maps.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://*.cartocdn.com https://router.project-osrm.org https://translate.googleapis.com https://*.vercel.app https://*.upstash.io https://www.google.com/recaptcha/",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://maps.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://*.cartocdn.com https://router.project-osrm.org https://routing.openstreetmap.de https://translate.googleapis.com https://*.vercel.app https://*.upstash.io https://www.google.com/recaptcha/",
               "worker-src 'self' blob:",
               "frame-src 'self' https://accounts.google.com https://www.google.com/recaptcha/",
               "object-src 'none'",

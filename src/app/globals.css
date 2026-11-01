@@ -114,6 +114,11 @@ body {
   filter: none;
 }
 
+/* Google Maps Tiles Dark Mode Transform (Zero-watermark, zero-API-key Google Maps Dark Theme) */
+.leaflet-tile-pane .leaflet-tile.google-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(110%) saturate(60%) !important;
+}
+
 
 /* Metro-inspired Route Linear Progress Styling */
 .station-line-connector {

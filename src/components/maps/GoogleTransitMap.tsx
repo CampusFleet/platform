@@ -351,7 +351,7 @@ export default function GoogleTransitMap({
 
           directionsServiceRef.current = new DirectionsService();
 
-          const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+          const isDark = tileTheme === "CARTO_DARK" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
           const defaultCenter = draftPinLocation
             ? { lat: draftPinLocation[0], lng: draftPinLocation[1] }
             : busLocation
@@ -446,7 +446,7 @@ export default function GoogleTransitMap({
       const path = fullOverviewPathRef.current;
       if (!map || path.length === 0 || !window.google?.maps?.geometry) return;
 
-      const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+      const isDark = tileTheme === "CARTO_DARK" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
 
       if (!upcomingGlowPolylineRef.current) {
         upcomingGlowPolylineRef.current = new google.maps.Polyline({
@@ -505,7 +505,7 @@ export default function GoogleTransitMap({
       upcomingPolylineRef.current.setPath(upcomingPoints);
       upcomingGlowPolylineRef.current.setPath(upcomingPoints);
     },
-    [isExpressDirect]
+    [isExpressDirect, tileTheme]
   );
 
   // ── 4. Google Maps Directions API with Intelligent Multi-Tier Caching (SessionStorage + In-Memory) ──

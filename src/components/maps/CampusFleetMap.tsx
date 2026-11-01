@@ -179,7 +179,7 @@ export default function CampusFleetMap(props: CampusFleetMapProps) {
   if (
     hasGoogleKey &&
     !googleMapsError &&
-    (theme === "GOOGLE_STREETS" || theme === "GOOGLE_HYBRID" || theme === "AUTO")
+    (theme === "GOOGLE_STREETS" || theme === "GOOGLE_HYBRID" || theme === "AUTO" || theme === "CARTO_DARK")
   ) {
     return (
       <GoogleTransitMap
@@ -394,37 +394,44 @@ function LeafletTransitMap({
           map.removeLayer(currentTileLayerRef.current);
         }
 
-        // Bulletproof open-CORS tile engine (CARTO Voyager / Dark Matter with auto-fallback)
-        let tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-        let subdomains: any = "abcd";
+        // Bulletproof high-speed Google Maps tile engine (CORS open, zero-watermark, zero-API-key requirement)
+        let tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+        let subdomains: any = ["mt0", "mt1", "mt2", "mt3"];
         let maxZoom = 20;
-        let attribution = '&copy; CARTO & OpenStreetMap';
+        let attribution = '&copy; Google Maps';
+        let className = "";
 
         if (activeTheme === "CARTO_DARK") {
-          tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-          subdomains = "abcd";
-          attribution = '&copy; CARTO & OpenStreetMap';
+          tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+          subdomains = ["mt0", "mt1", "mt2", "mt3"];
+          attribution = '&copy; Google Maps';
+          className = "google-dark-tiles";
         } else if (activeTheme === "GOOGLE_HYBRID") {
           tileUrl = "https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}";
           subdomains = ["mt0", "mt1", "mt2", "mt3"];
           attribution = '&copy; Google Maps';
-        } else if (activeTheme === "CARTO_VOYAGER" || activeTheme === "GOOGLE_STREETS") {
-          tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-          subdomains = "abcd";
-          attribution = '&copy; CARTO & OpenStreetMap';
+          className = "";
+        } else {
+          // Standard Google Streets (Roadmap)
+          tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+          subdomains = ["mt0", "mt1", "mt2", "mt3"];
+          attribution = '&copy; Google Maps';
+          className = "";
         }
 
         const tileLayer = L.tileLayer(tileUrl, {
           maxZoom,
           subdomains,
           attribution,
+          className,
         });
 
-        // Resilient fallback: swap tile URL to CARTO Voyager if any tile errors out
+        // Resilient fallback: retry from mt0 if any tile errors out
         tileLayer.on("tileerror", (errorEvent: any) => {
           if (errorEvent.tile && !errorEvent.tile.dataset.retried) {
             errorEvent.tile.dataset.retried = "true";
-            errorEvent.tile.src = `https://a.basemaps.cartocdn.com/rastertiles/voyager/${errorEvent.coords.z}/${errorEvent.coords.x}/${errorEvent.coords.y}.png`;
+            const lyrs = activeTheme === "GOOGLE_HYBRID" ? "s,h" : "m";
+            errorEvent.tile.src = `https://mt0.google.com/vt/lyrs=${lyrs}&x=${errorEvent.coords.x}&y=${errorEvent.coords.y}&z=${errorEvent.coords.z}`;
           }
         });
 

@@ -225,9 +225,27 @@ export default function FullScreenLiveRadarView({
 
     const handleIncomingTelematics = (incoming: LiveBusLocation) => {
       if (!isMounted || !incoming) return;
-      if (String(incoming.busId) === String(assignedBus.id) || incoming.busId === assignedBus.id) {
+      const targetId = String(assignedBus.id).trim();
+      const targetClean = targetId.replace(/[^0-9]/g, "");
+      const targetNum = String(assignedBus.busNumber || "").trim();
+
+      const incomingId = String(incoming.busId || "").trim();
+      const incomingClean = incomingId.replace(/[^0-9]/g, "");
+      const incomingNum = String(incoming.busNumber || "").trim();
+
+      const isMatchingBus =
+        incoming.busId === assignedBus.id ||
+        incomingId === targetId ||
+        (targetNum && incomingNum && incomingNum === targetNum) ||
+        (targetClean && incomingClean && incomingClean === targetClean);
+
+      if (isMatchingBus) {
         setLiveLocation({
           busId: assignedBus.id,
+          busNumber: incoming.busNumber || assignedBus.busNumber,
+          driverId: incoming.driverId,
+          driverName: incoming.driverName,
+          accuracy: incoming.accuracy,
           latitude: Number(incoming.latitude),
           longitude: Number(incoming.longitude),
           speedKmh: Number(incoming.speedKmh || 0),
@@ -236,6 +254,9 @@ export default function FullScreenLiveRadarView({
           tripId: incoming.tripId || initialReservation?.trip_id || "",
           delayMinutes: Number(incoming.delayMinutes || 0),
           estimatedArrivalNextStopMins: incoming.estimatedArrivalNextStopMins || 3,
+          isStale: incoming.isStale,
+          ageSeconds: incoming.ageSeconds,
+          source: incoming.source,
         });
         setIsTelematicsLive(true);
         setLastPingTime(new Date());
@@ -259,6 +280,10 @@ export default function FullScreenLiveRadarView({
         if (isMounted && data.success && loc?.latitude && loc?.longitude) {
           handleIncomingTelematics({
             busId: assignedBus.id,
+            busNumber: loc.busNumber || assignedBus.busNumber,
+            driverId: loc.driverId,
+            driverName: loc.driverName,
+            accuracy: loc.accuracy,
             latitude: Number(loc.latitude),
             longitude: Number(loc.longitude),
             speedKmh: Number(loc.speedKmh || 0),
@@ -267,6 +292,9 @@ export default function FullScreenLiveRadarView({
             tripId: initialReservation?.trip_id || "",
             delayMinutes: Number(loc.delayMinutes || 0),
             estimatedArrivalNextStopMins: 3,
+            isStale: data.isStale ?? loc.isStale,
+            ageSeconds: data.ageSeconds ?? loc.ageSeconds,
+            source: loc.source,
           });
         }
       } catch {
@@ -405,8 +433,29 @@ export default function FullScreenLiveRadarView({
           <div className="flex items-center gap-2 pointer-events-auto">
             {/* Live GPS Status Pill */}
             <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-white dark:bg-black text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 shadow-lg">
-              <span className={`w-2 h-2 rounded-full ${isTelematicsLive ? "bg-emerald-500" : "bg-amber-500"}`} />
-              <span>{isTelematicsLive ? "LIVE GPS" : "CONNECTING..."}</span>
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  isTelematicsLive && !liveLocation?.isStale
+                    ? "bg-emerald-500 animate-pulse ring-2 ring-emerald-500/30"
+                    : isTelematicsLive
+                    ? "bg-amber-500"
+                    : "bg-zinc-400"
+                }`}
+              />
+              <span>
+                {isTelematicsLive
+                  ? liveLocation?.isStale
+                    ? "GPS IDLE"
+                    : liveLocation?.source === "driver_gps"
+                    ? "DRIVER GPS"
+                    : "LIVE TELEMETRY"
+                  : "CONNECTING..."}
+              </span>
+              {liveLocation?.speedKmh !== undefined && liveLocation.speedKmh > 0 && (
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">
+                  • {liveLocation.speedKmh} km/h
+                </span>
+              )}
             </div>
 
             {/* Map Style Quick Toggle */}

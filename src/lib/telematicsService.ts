@@ -72,16 +72,17 @@ class TelematicsService {
         body: JSON.stringify({
           busId: location.busId,
           tripId: location.tripId,
-          driverId: (location as any).driverId,
-          driverName: (location as any).driverName,
-          busNumber: (location as any).busNumber,
-          accuracy: (location as any).accuracy,
+          driverId: location.driverId,
+          driverName: location.driverName,
+          busNumber: location.busNumber,
+          accuracy: location.accuracy,
           latitude: location.latitude,
           longitude: location.longitude,
           speedKmh: location.speedKmh,
           headingDeg: location.headingDeg,
           currentStopId: location.currentStopId,
           delayMinutes: location.delayMinutes,
+          source: location.source || "driver_console",
         }),
       });
       return res.ok;
@@ -123,16 +124,17 @@ class TelematicsService {
           body: JSON.stringify({
             busId: location.busId,
             tripId: location.tripId,
-            driverId: (location as any).driverId,
-            driverName: (location as any).driverName,
-            busNumber: (location as any).busNumber,
-            accuracy: (location as any).accuracy,
+            driverId: location.driverId,
+            driverName: location.driverName,
+            busNumber: location.busNumber,
+            accuracy: location.accuracy,
             latitude: location.latitude,
             longitude: location.longitude,
             speedKmh: location.speedKmh,
             headingDeg: location.headingDeg,
             currentStopId: location.currentStopId,
             delayMinutes: location.delayMinutes,
+            source: location.source || "driver_console",
           }),
         }).catch(() => {});
       } catch {
@@ -155,8 +157,28 @@ class TelematicsService {
         const res = await fetch(`/api/telematics/live?busId=${encodeURIComponent(String(busId))}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.success && data.liveLocation) {
-            this.notifyListeners(data.liveLocation);
+          const liveLoc = data.liveLocation || data.location;
+          if (data.success && liveLoc && typeof liveLoc.latitude === "number" && typeof liveLoc.longitude === "number") {
+            this.notifyListeners({
+              busId: Number(liveLoc.busId) || Number(busId) || 0,
+              tripId: liveLoc.tripId || "",
+              latitude: Number(liveLoc.latitude),
+              longitude: Number(liveLoc.longitude),
+              speedKmh: Number(liveLoc.speedKmh || 0),
+              headingDeg: Number(liveLoc.headingDeg || 0),
+              lastPingAt: liveLoc.timestamp || liveLoc.lastPingAt || new Date().toISOString(),
+              currentStopId: liveLoc.currentStopId,
+              nextStopId: liveLoc.nextStopId,
+              estimatedArrivalNextStopMins: liveLoc.estimatedArrivalNextStopMins || 2,
+              delayMinutes: Number(liveLoc.delayMinutes || 0),
+              busNumber: liveLoc.busNumber,
+              driverId: liveLoc.driverId,
+              driverName: liveLoc.driverName,
+              accuracy: liveLoc.accuracy,
+              isStale: liveLoc.isStale,
+              ageSeconds: liveLoc.ageSeconds,
+              source: liveLoc.source,
+            });
           }
         }
       } catch {

@@ -227,8 +227,23 @@ export default function LiveTrackerView({
   useEffect(() => {
     const busId = assignedBus?.id;
     if (busId) {
+      const targetId = String(busId).trim();
+      const targetClean = targetId.replace(/[^0-9]/g, "");
+      const targetNum = String(assignedBus?.busNumber || "").trim();
+
       const unsub = telematicsService.subscribe((incoming) => {
-        if (incoming && (String(incoming.busId) === String(busId) || incoming.busId === busId)) {
+        if (!incoming) return;
+        const incomingId = String(incoming.busId || "").trim();
+        const incomingClean = incomingId.replace(/[^0-9]/g, "");
+        const incomingNum = String(incoming.busNumber || "").trim();
+
+        const isMatch =
+          incoming.busId === busId ||
+          incomingId === targetId ||
+          (targetNum && incomingNum && incomingNum === targetNum) ||
+          (targetClean && incomingClean && incomingClean === targetClean);
+
+        if (isMatch) {
           setLiveLocation((prev: any) => ({ ...prev, ...incoming }));
         }
       });
@@ -238,7 +253,7 @@ export default function LiveTrackerView({
         telematicsService.stopPolling();
       };
     }
-  }, [assignedBus?.id]);
+  }, [assignedBus?.id, assignedBus?.busNumber]);
 
   // Effective location: Prioritize live GPS broadcast from driver / telematics engine!
   // Fall back to current or starting stop ONLY when live telemetry has not yet pinged.

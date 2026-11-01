@@ -325,6 +325,13 @@ export interface LiveBusLocation {
   nextStopId?: string;
   estimatedArrivalNextStopMins: number;
   delayMinutes: number;
+  busNumber?: string | number;
+  driverId?: string;
+  driverName?: string;
+  accuracy?: number;
+  isStale?: boolean;
+  ageSeconds?: number;
+  source?: string;
 }
 
 export interface FleetBusMarkerData {

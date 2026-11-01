@@ -165,11 +165,13 @@ export default function DriverConsoleView({
     longitude: number;
     speedKmh: number;
     headingDeg: number;
+    accuracy?: number;
   }>({
     latitude: 29.0222,
     longitude: 79.4897,
     speedKmh: 0,
     headingDeg: 0,
+    accuracy: 10,
   });
 
   const lastCoordsRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
@@ -356,28 +358,39 @@ export default function DriverConsoleView({
     speedKmh?: number;
     headingDeg?: number;
     accuracy?: number;
-  }) => {
+  }, immediate = false) => {
     if (!bus?.id) return;
     const currentStopId = route?.stops?.[activeTrip?.currentStopIndex || 0]?.stopId;
+    const nextStopId = route?.stops?.[(activeTrip?.currentStopIndex || 0) + 1]?.stopId;
 
     const effectiveHeading = gyroHeadingDeg ?? coords.headingDeg ?? 0;
 
     const payload: LiveBusLocation = {
       busId: bus.id,
+      busNumber: bus.busNumber,
+      driverId: effectiveDriverId,
+      driverName: initialUser?.name || "Driver",
+      accuracy: coords.accuracy,
       tripId: activeTrip?.id || "",
       latitude: coords.latitude,
       longitude: coords.longitude,
       speedKmh: coords.speedKmh ?? 0,
       headingDeg: effectiveHeading,
       currentStopId,
+      nextStopId,
       estimatedArrivalNextStopMins: 2,
       delayMinutes: 0,
       lastPingAt: new Date().toISOString(),
+      source: hasRealGpsLock ? "driver_gps" : "driver_console",
     };
 
     store.updateLiveLocation(payload);
-    telematicsService.pushLiveLocationNow(payload).catch(() => {});
-  }, [bus, activeTrip, route, gyroHeadingDeg]);
+    if (immediate) {
+      telematicsService.pushLiveLocationNow(payload).catch(() => {});
+    } else {
+      telematicsService.broadcastLiveLocation(payload).catch(() => {});
+    }
+  }, [bus, activeTrip, route, gyroHeadingDeg, effectiveDriverId, initialUser?.name, hasRealGpsLock]);
 
   // ── 6. CONTINUOUS HIGH-PRECISION GPS & SPEEDOMETER WATCH ─────────────────
   useEffect(() => {
@@ -529,9 +542,23 @@ export default function DriverConsoleView({
     });
 
     setIsBroadcasting(true);
-    if (realDeviceGpsRef.current) {
-      pushDriverCoordinates(realDeviceGpsRef.current);
-    }
+
+    const startingStop = route?.stops?.[0]?.stop;
+    const initialCoords = (hasRealGpsLock && realDeviceGpsRef.current)
+      ? realDeviceGpsRef.current
+      : startingStop
+      ? {
+          latitude: startingStop.latitude,
+          longitude: startingStop.longitude,
+          speedKmh: 0,
+          headingDeg: 0,
+          accuracy: 5,
+        }
+      : currentCoords;
+
+    setCurrentCoords(initialCoords);
+    pushDriverCoordinates(initialCoords, true);
+
     playChime(523.25, 0.35);
     triggerHaptic([100, 50, 100]);
     setToastMessage(`Trip Started! Broadcasting Bus ${bus?.busNumber} location.`);
@@ -552,6 +579,20 @@ export default function DriverConsoleView({
         prev.map((t) => (t.id === activeTrip.id ? { ...t, currentStopIndex: nextIdx } : t))
       );
       await store.updateTrip(activeTrip.id, { currentStopIndex: nextIdx });
+
+      // Immediate location update to target stop coordinates
+      const advanceCoords = targetStop
+        ? {
+            latitude: targetStop.latitude,
+            longitude: targetStop.longitude,
+            speedKmh: 24,
+            headingDeg: gyroHeadingDeg ?? 45,
+            accuracy: 8,
+          }
+        : currentCoords;
+
+      setCurrentCoords(advanceCoords);
+      pushDriverCoordinates(advanceCoords, true);
 
       playChime(587.33, 0.25);
       triggerHaptic(120);
@@ -625,20 +666,25 @@ export default function DriverConsoleView({
 
     const currentTripToBroadcast = tripForNewBus || activeTrip;
 
-    if (realDeviceGpsRef.current) {
-      const coords = realDeviceGpsRef.current;
+    const coordsToBroadcast = realDeviceGpsRef.current || currentCoords;
+    if (coordsToBroadcast) {
       const currentStopId = route?.stops?.[currentTripToBroadcast?.currentStopIndex || 0]?.stopId;
       const payload: LiveBusLocation = {
         busId: newBusId,
+        busNumber: targetBus.busNumber,
+        driverId: driverIdToSet,
+        driverName: initialUser?.name || "Driver",
         tripId: currentTripToBroadcast?.id || "",
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        speedKmh: coords.speedKmh ?? 0,
-        headingDeg: gyroHeadingDeg ?? coords.headingDeg ?? 0,
+        latitude: coordsToBroadcast.latitude,
+        longitude: coordsToBroadcast.longitude,
+        speedKmh: coordsToBroadcast.speedKmh ?? 0,
+        headingDeg: gyroHeadingDeg ?? coordsToBroadcast.headingDeg ?? 0,
+        accuracy: coordsToBroadcast.accuracy,
         currentStopId,
         estimatedArrivalNextStopMins: 2,
         delayMinutes: 0,
         lastPingAt: new Date().toISOString(),
+        source: "driver_console",
       };
       store.updateLiveLocation(payload);
       telematicsService.pushLiveLocationNow(payload).catch(() => {});

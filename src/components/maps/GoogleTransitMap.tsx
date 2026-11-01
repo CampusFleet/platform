@@ -665,10 +665,17 @@ export default function GoogleTransitMap({
     stopMarkersRef.current.forEach((m) => m.setMap(null));
     stopMarkersRef.current = [];
 
+    const effectiveStopIndex =
+      activeStopIndex !== undefined && activeStopIndex !== null
+        ? activeStopIndex
+        : busLocation?.currentStopId
+        ? Math.max(0, stops.findIndex((s) => s.id === busLocation.currentStopId))
+        : 0;
+
     stops.forEach((stop, idx) => {
       const isSelected = Boolean(selectedStopId && stop.id === selectedStopId);
-      const isNext = idx === activeStopIndex;
-      const isPassed = idx < activeStopIndex;
+      const isNext = idx === effectiveStopIndex;
+      const isPassed = idx < effectiveStopIndex;
       const isTerminal = idx === stops.length - 1;
 
       const state: "passed" | "next" | "upcoming" | "selected" = isSelected
@@ -726,7 +733,7 @@ export default function GoogleTransitMap({
         campusCircleRef.current.setRadius(campusTerminalStop.geofenceRadiusMeters || 150);
       }
     }
-  }, [mapLoaded, stops, activeStopIndex, selectedStopId, showCampusLandmark, campusTerminalStop, onStopClick]);
+  }, [mapLoaded, stops, activeStopIndex, selectedStopId, showCampusLandmark, campusTerminalStop, onStopClick, busLocation?.currentStopId]);
 
   // ── 6. Live Bus Vehicle Marker & Dynamic Dual-Polyline Traveled/Upcoming Update ──
   useEffect(() => {

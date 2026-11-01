@@ -52,12 +52,20 @@ export async function GET(req: NextRequest) {
 
     // 3. Fetch specific bus location: Redis first, MongoDB fallback
     const strBusId = String(busId).trim();
+    const cleanNum = strBusId.replace(/[^0-9]/g, "");
     const candidateKeys = [
       `telematics:bus:${strBusId}`,
       `telematics:bus:${strBusId.toLowerCase()}`,
       `telematics:bus:bus-${strBusId}`,
       `telematics:bus:Bus ${strBusId}`,
     ];
+    if (cleanNum) {
+      candidateKeys.push(
+        `telematics:bus:${cleanNum}`,
+        `telematics:bus:bus-${cleanNum}`,
+        `telematics:bus:Bus ${cleanNum}`
+      );
+    }
 
     let liveLocation: any = null;
     for (const key of candidateKeys) {
@@ -66,25 +74,50 @@ export async function GET(req: NextRequest) {
     }
 
     if (!liveLocation) {
-      // Fallback to MongoDB
-      const mongoDoc = await getLiveLocationFromMongo(strBusId);
+      // Fallback to MongoDB (search by strBusId or cleanNum)
+      let mongoDoc = await getLiveLocationFromMongo(strBusId);
+      if (!mongoDoc && cleanNum && cleanNum !== strBusId) {
+        mongoDoc = await getLiveLocationFromMongo(cleanNum);
+      }
       if (mongoDoc) {
         liveLocation = {
           ...mongoDoc,
           timestamp: mongoDoc.updatedAt ? new Date(mongoDoc.updatedAt).toISOString() : new Date().toISOString(),
         };
         // Warm Redis cache for 60 seconds across primary keys
-        await Promise.all([
+        const warmPromises = [
           cacheSet(`telematics:bus:${strBusId}`, liveLocation, 60),
           cacheSet(`telematics:bus:${strBusId.toLowerCase()}`, liveLocation, 60),
-        ]).catch(() => {});
+        ];
+        if (cleanNum) {
+          warmPromises.push(cacheSet(`telematics:bus:${cleanNum}`, liveLocation, 60));
+        }
+        await Promise.all(warmPromises).catch(() => {});
       }
+    }
+
+    let isStale = false;
+    let ageSeconds = 0;
+    if (liveLocation) {
+      const pingTime = liveLocation.timestamp || liveLocation.lastPingAt;
+      const lastEpoch = pingTime ? new Date(pingTime).getTime() : Date.now();
+      ageSeconds = Math.max(0, Math.round((Date.now() - lastEpoch) / 1000));
+      isStale = ageSeconds > 180; // Over 3 minutes since last GPS broadcast
+      liveLocation.ageSeconds = ageSeconds;
+      liveLocation.isStale = isStale;
     }
 
     const latestRfid = await cacheGet(`telematics:rfid:latest:${strBusId}`).catch(() => null);
 
     return NextResponse.json(
-      { success: true, liveLocation: liveLocation || null, location: liveLocation || null, latestRfid: latestRfid || null },
+      {
+        success: true,
+        liveLocation: liveLocation || null,
+        location: liveLocation || null,
+        isStale,
+        ageSeconds,
+        latestRfid: latestRfid || null,
+      },
       {
         status: 200,
         headers: {
@@ -122,6 +155,7 @@ export async function POST(req: NextRequest) {
       currentStopId,
       delayMinutes,
       timestamp,
+      source,
     } = body;
 
     if (!busId || latitude === undefined || longitude === undefined) {
@@ -145,23 +179,38 @@ export async function POST(req: NextRequest) {
       currentStopId,
       delayMinutes: delayMinutes != null ? Number(delayMinutes) : 0,
       timestamp: timestamp || new Date().toISOString(),
+      source: source || "driver_console",
     };
 
     // 1. Store in Redis with a 120-second TTL for live bus GPS verification
     const strBusId = String(busId).trim();
+    const cleanNum = strBusId.replace(/[^0-9]/g, "");
+
     const redisPromises = [
       cacheSet(`telematics:bus:${strBusId}`, locationData, 120),
       cacheSet(`telematics:bus:${strBusId.toLowerCase()}`, locationData, 120),
       cacheSet(`telematics:bus:bus-${strBusId}`, locationData, 120),
       cacheSet(`telematics:bus:Bus ${strBusId}`, locationData, 120),
     ];
+
+    if (cleanNum) {
+      redisPromises.push(
+        cacheSet(`telematics:bus:${cleanNum}`, locationData, 120),
+        cacheSet(`telematics:bus:bus-${cleanNum}`, locationData, 120),
+        cacheSet(`telematics:bus:Bus ${cleanNum}`, locationData, 120)
+      );
+    }
+
     if (busNumber) {
       const strBusNum = String(busNumber).trim();
-      redisPromises.push(cacheSet(`telematics:bus:${strBusNum}`, locationData, 120));
-      redisPromises.push(cacheSet(`telematics:bus:${strBusNum.toLowerCase()}`, locationData, 120));
-      const numericOnly = strBusNum.replace(/[^0-9]/g, "");
-      if (numericOnly) {
-        redisPromises.push(cacheSet(`telematics:bus:${numericOnly}`, locationData, 120));
+      const numOnly = strBusNum.replace(/[^0-9]/g, "");
+      redisPromises.push(
+        cacheSet(`telematics:bus:${strBusNum}`, locationData, 120),
+        cacheSet(`telematics:bus:${strBusNum.toLowerCase()}`, locationData, 120),
+        cacheSet(`telematics:bus:Bus ${strBusNum}`, locationData, 120)
+      );
+      if (numOnly) {
+        redisPromises.push(cacheSet(`telematics:bus:${numOnly}`, locationData, 120));
       }
     }
     await Promise.all(redisPromises).catch(() => {});

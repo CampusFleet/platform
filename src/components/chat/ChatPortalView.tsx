@@ -974,7 +974,7 @@ export function ChatPortalView() {
               </div>
 
             {/* Conversations List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50 pb-20 md:pb-0">
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50 pb-16 md:pb-0">
               {loadingConversations ? (
                 <div className="p-3 space-y-2">
                   {[1, 2, 3, 4].map((i) => (

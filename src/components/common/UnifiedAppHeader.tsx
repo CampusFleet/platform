@@ -370,7 +370,7 @@ export function UnifiedAppHeader({
   return (
     <>
       <header className="sticky top-0 z-40 w-full max-w-full bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800/80 shadow-xs transition-colors overflow-x-clip">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-14 lg:h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
           {/* Brand Identity / Left Section (Strictly Non-Shrinkable) */}
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 z-10 min-w-0">
             <Link
@@ -379,13 +379,13 @@ export function UnifiedAppHeader({
               title={`${portalTitle} Home`}
             >
               <div
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl  ${currentPortalConfig.gradient} flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex-shrink-0`}
+                className={`w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-xl sm:rounded-2xl ${currentPortalConfig.gradient} flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex-shrink-0`}
               >
-                <currentPortalConfig.icon className="w-5 h-5" />
+                <currentPortalConfig.icon className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div className="flex flex-col flex-shrink-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-base sm:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
+                  <span className="text-sm sm:text-base lg:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
                     Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
                   </span>
                   <span
@@ -492,32 +492,32 @@ export function UnifiedAppHeader({
             )}
           </div>
           
-          <div className="flex items-center gap-2 lg:hidden z-10">
+          <div className="flex items-center gap-1.5 sm:gap-2 lg:hidden z-10">
             {pathname.startsWith("/chat") ? (
               <Link
                 href={currentPortalConfig.path || "/"}
                 title="Return to Home Dashboard"
-                className="p-1.5 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-1.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <Home className="w-5 h-5" />
+                <Home className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
               </Link>
             ) : (
               <Link
                 href="/chat"
                 title="CampusFleet Live Messages"
-                className="p-1.5 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-1.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <MessageSquare className="w-5 h-5" />
+                <MessageSquare className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
               </Link>
             )}
 
             {/* Mobile Vertical Slide Sheet Trigger */}
             <button
               onClick={() => setIsMobileSheetOpen(true)}
-              className="p-1.5 border border-gray-900 dark:border-white rounded-md text-gray-900 dark:text-white transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="p-1.5 border border-gray-900 dark:border-white rounded-lg text-gray-900 dark:text-white transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
               aria-label="Open Navigation Sheet"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>

@@ -186,7 +186,7 @@ export default function ClientPortalLayout({
   }));
 
   const layoutContent = (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-20 md:pb-6 overflow-x-hidden">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-16 md:pb-6 overflow-x-hidden">
       {/* Zero-Overflow Unified Header with Vertical Slide-Down Command Panel */}
       <UnifiedAppHeader
         role="student"

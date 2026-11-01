@@ -50,7 +50,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
       : "Go to Student Portal";
 
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex flex-col pb-20 md:pb-6 font-sans">
+      <div className="min-h-screen bg-gray-900 text-white flex flex-col pb-16 md:pb-6 font-sans">
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-gray-800 rounded-3xl p-8 border border-gray-700 shadow-2xl text-center space-y-4 animate-in fade-in">
             <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto">
@@ -155,7 +155,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
       />
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-28 sm:pb-32 min-w-0">
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-24 min-w-0">
         {children}
       </main>
 

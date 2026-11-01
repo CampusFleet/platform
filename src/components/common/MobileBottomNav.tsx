@@ -502,10 +502,10 @@ export function MobileBottomNav({
     <>
       <nav
         aria-label="CampusFleet Mobile Navigation"
-        className="md:hidden fixed bottom-3 inset-x-3 z-30 pointer-events-none select-none"
+        className="md:hidden fixed bottom-2 sm:bottom-3 inset-x-2.5 sm:inset-x-3 z-30 pointer-events-none select-none"
       >
         <div className="max-w-md mx-auto pointer-events-auto">
-          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-2xl border border-white/60 dark:border-gray-800/80 rounded-3xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-2xl border border-white/60 dark:border-gray-800/80 rounded-2xl sm:rounded-3xl p-1 shadow-[0_10px_35px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_35px_rgba(0,0,0,0.6)]">
             <div className="flex items-center justify-between gap-0.5">
               {itemsToRender.map((item, idx) => {
                 const Icon = item.icon;
@@ -516,7 +516,7 @@ export function MobileBottomNav({
                     <Link
                       key={item.href || idx}
                       href={item.href}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-transform"
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl sm:rounded-2xl bg-blue-600 text-white font-black text-xs shadow-md shadow-blue-500/25 active:scale-[0.98] transition-transform"
                     >
                       <Icon className="w-4 h-4" />
                       <span>Activate Transit Pass & Pay Fees →</span>
@@ -528,17 +528,17 @@ export function MobileBottomNav({
                   <>
                     <div className="relative">
                       <Icon
-                        className={`w-5 h-5 transition-transform duration-200 stroke-[1.8] ${
+                        className={`w-4.5 h-4.5 transition-transform duration-200 stroke-[1.8] ${
                           isActive
                             ? item.highlight
-                              ? "text-white scale-110"
-                              : "text-blue-600 dark:text-blue-400 scale-110"
+                              ? "text-white scale-105"
+                              : "text-blue-600 dark:text-blue-400 scale-105"
                             : "group-hover:scale-105"
                         }`}
                       />
                       {/* Live ping indicator for highlighted primary action */}
                       {item.highlight && !isActive && (
-                        <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                         </span>
@@ -552,7 +552,7 @@ export function MobileBottomNav({
                       )}
                     </div>
                     <span
-                      className={`text-[10px] tracking-tight mt-1 truncate max-w-full font-medium ${
+                      className={`text-[9px] sm:text-[10px] tracking-tight mt-0.5 truncate max-w-full font-medium ${
                         isActive
                           ? item.highlight
                             ? "text-white font-bold"
@@ -565,7 +565,7 @@ export function MobileBottomNav({
                   </>
                 );
 
-                const classNameStr = `flex-1 min-w-0 relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all duration-200 group active:scale-95 ${
+                const classNameStr = `flex-1 min-w-0 min-h-[42px] sm:min-h-[44px] relative flex flex-col items-center justify-center py-1 sm:py-1.5 px-0.5 rounded-xl sm:rounded-2xl transition-all duration-200 group active:scale-95 ${
                   isActive
                     ? item.highlight
                       ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 -translate-y-0.5"
@@ -597,15 +597,15 @@ export function MobileBottomNav({
                 <button
                   type="button"
                   onClick={() => setIsMoreOpen(true)}
-                  className={`flex-1 min-w-0 relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all duration-200 group active:scale-95 ${
+                  className={`flex-1 min-w-0 min-h-[42px] sm:min-h-[44px] relative flex flex-col items-center justify-center py-1 sm:py-1.5 px-0.5 rounded-xl sm:rounded-2xl transition-all duration-200 group active:scale-95 ${
                     isMoreOpen
                       ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold"
                       : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                   }`}
                   aria-label="More options"
                 >
-                  <MoreHorizontal className="w-5 h-5 transition-transform duration-200 group-hover:scale-105 stroke-[1.8]" />
-                  <span className="text-[10px] tracking-tight mt-1 truncate max-w-full font-medium">
+                  <MoreHorizontal className="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-105 stroke-[1.8]" />
+                  <span className="text-[9px] sm:text-[10px] tracking-tight mt-0.5 truncate max-w-full font-medium">
                     More
                   </span>
                 </button>
@@ -645,7 +645,7 @@ export function MobileBottomNav({
               </button>
             </div>
 
-            <div className="pt-2 divide-y divide-gray-50 dark:divide-gray-850">
+            <div className="pt-1.5 divide-y divide-gray-50 dark:divide-gray-850">
               {overflowItems.map((item, idx) => {
                 const Icon = item.icon;
 
@@ -658,10 +658,10 @@ export function MobileBottomNav({
                         setIsMoreOpen(false);
                         item.onClick!();
                       }}
-                      className="w-full flex items-center gap-4 px-3 py-3.5 rounded-2xl hover:bg-gray-100/80 dark:hover:bg-gray-800/60 transition-colors text-left group cursor-pointer"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100/80 dark:hover:bg-gray-800/60 transition-colors text-left group cursor-pointer"
                     >
-                      <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 transition-colors shrink-0">
-                        <Icon className="w-5 h-5 text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 stroke-[1.8]" />
+                      <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 transition-colors shrink-0">
+                        <Icon className="w-4.5 h-4.5 text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 stroke-[1.8]" />
                       </div>
                       <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white">
                         {item.label}
@@ -675,10 +675,10 @@ export function MobileBottomNav({
                     key={item.id || item.href || idx}
                     href={item.href || "#"}
                     onClick={() => setIsMoreOpen(false)}
-                    className="flex items-center gap-4 px-3 py-3.5 rounded-2xl hover:bg-gray-100/80 dark:hover:bg-gray-800/60 transition-colors text-left group cursor-pointer"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100/80 dark:hover:bg-gray-800/60 transition-colors text-left group cursor-pointer"
                   >
-                    <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 transition-colors shrink-0">
-                      <Icon className="w-5 h-5 text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 stroke-[1.8]" />
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 transition-colors shrink-0">
+                      <Icon className="w-4.5 h-4.5 text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 stroke-[1.8]" />
                     </div>
                     <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white">
                       {item.label}

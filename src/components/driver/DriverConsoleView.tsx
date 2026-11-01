@@ -45,6 +45,7 @@ import { telematicsService } from "@/lib/telematicsService";
 import { store } from "@/lib/store";
 import { calculateDistanceKm } from "@/lib/utils";
 import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation } from "@/lib/types";
+import DriverLiveRadarView from "@/components/driver/DriverLiveRadarView";
 
 interface DriverConsoleViewProps {
   initialUser?: any;
@@ -73,6 +74,7 @@ export default function DriverConsoleView({
   const [routes] = useState<Route[]>(initialRoutes);
   const [stops] = useState<Stop[]>(initialStops);
   const [bookings] = useState<Booking[]>(initialBookings);
+  const [activeViewMode, setActiveViewMode] = useState<"RADAR" | "COCKPIT">("RADAR");
 
   const effectiveDriverId = initialUser?.userId || initialDriverStaffId || initialUser?.id || "";
 
@@ -799,8 +801,63 @@ export default function DriverConsoleView({
         </div>
       )}
 
-      {/* ── MAIN DRIVER COCKPIT ───────────────────────────────────────── */}
-      <main className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4">
+      {/* ── VIEW MODE SWITCHER: RADAR vs COCKPIT ─── */}
+      <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 pb-1">
+        <div className="p-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveViewMode("RADAR")}
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              activeViewMode === "RADAR"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/25"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <Navigation className="w-4 h-4" />
+            <span>🧭 Live Radar Navigation</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveViewMode("COCKPIT")}
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              activeViewMode === "COCKPIT"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/25"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <Gauge className="w-4 h-4" />
+            <span>📊 Cockpit Telemetry</span>
+          </button>
+        </div>
+      </div>
+
+      {activeViewMode === "RADAR" ? (
+        <div className="w-full">
+          <DriverLiveRadarView
+            initialUser={initialUser}
+            initialDriverStaffId={initialDriverStaffId}
+            activeTrip={activeTrip}
+            route={route}
+            bus={bus}
+            allTrips={trips}
+            allBuses={buses}
+            allRoutes={routes}
+            allStops={stops}
+            bookings={bookings}
+            externalCoords={currentCoords}
+            hasRealGpsLock={hasRealGpsLock}
+            onTripUpdate={async (tripId, updates) => {
+              setTrips((prev) =>
+                prev.map((t) => (t.id === tripId ? { ...t, ...updates } : t))
+              );
+              await store.updateTrip(tripId, updates);
+            }}
+            onSwitchBus={handleSwitchBus}
+          />
+        </div>
+      ) : (
+        /* ── MAIN DRIVER COCKPIT ───────────────────────────────────────── */
+        <main className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4">
         {/* 1. DUTY STATUS & QUICK VEHICLE SELECTOR STRIP */}
         <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -853,24 +910,7 @@ export default function DriverConsoleView({
           </div>
         </section>
 
-        {/* 2. SENSOR PERMISSION PROMPT (IF IOS / SAFARI MOTION SENSORS NEED GESTURE) */}
-        {gyroPermissionNeeded && (
-          <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/80 flex items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
-            <div className="flex items-center gap-2">
-              <Compass className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>Calibrate phone gyroscope for compass heading & road tilt:</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleRequestGyroPermission}
-              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 cursor-pointer"
-            >
-              Enable Gyroscope
-            </button>
-          </div>
-        )}
-
-        {/* 3. SPEEDOMETER & MOTION SENSORS COCKPIT */}
+        {/* 2. SPEEDOMETER & MOTION SENSORS COCKPIT */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* SPEEDOMETER CLUSTER */}
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
@@ -1149,6 +1189,7 @@ export default function DriverConsoleView({
           </Link>
         </section>
       </main>
+      )}
 
       {/* ── EMERGENCY SOS MODAL ────────────────────────────────────────── */}
       {showSosModal && (

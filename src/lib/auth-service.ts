@@ -156,6 +156,7 @@ class AuthService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanEmail }),
+        signal: AbortSignal.timeout(12000),
       });
 
       const data = await res.json();
@@ -170,7 +171,7 @@ class AuthService {
         devCode: data.devCode,
       };
     } catch (e: any) {
-      return { success: false, message: e.message || "Failed to send verification email." };
+      return { success: false, message: e.name === "TimeoutError" ? "Verification request timed out. Please try again." : (e.message || "Failed to send verification email.") };
     }
   }
 
@@ -186,6 +187,7 @@ class AuthService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanEmail, otp: token }),
         credentials: "include",
+        signal: AbortSignal.timeout(12000),
       });
 
       const data = await res.json();

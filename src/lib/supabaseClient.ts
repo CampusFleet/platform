@@ -14,7 +14,8 @@ export const supabase = createClient(
     },
     global: {
       fetch: (url, options) => {
-        return fetch(url, { ...options, cache: 'no-store' });
+        const signal = options?.signal || AbortSignal.timeout(6000);
+        return fetch(url, { ...options, signal, cache: 'no-store' });
       },
     },
   }
@@ -29,7 +30,8 @@ export const supabaseAdmin = serviceRoleKey
       },
       global: {
         fetch: (url, options) => {
-          return fetch(url, { ...options, cache: 'no-store' });
+          const signal = options?.signal || AbortSignal.timeout(6000);
+          return fetch(url, { ...options, signal, cache: 'no-store' });
         },
       },
     })

@@ -17,6 +17,10 @@ function getTransporter() {
       user: GMAIL_USER,
       pass: GMAIL_APP_PASSWORD.replace(/\s+/g, ""), // strip any spaces from Google App Password
     },
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 6000,
+    dnsTimeout: 3000,
   });
 }
 
@@ -70,14 +74,24 @@ export async function sendOtpEmail(to: string, code: string): Promise<{ sent: bo
   `;
 
   try {
-    await transporter.sendMail({
+    const sendPromise = transporter.sendMail({
       from: `"CampusFleet Institutional Transit" <${GMAIL_USER}>`,
       to,
       subject: `Your CampusFleet Login Verification Code: ${code}`,
       text: `Your CampusFleet login verification code is: ${code}. Valid for 10 minutes.`,
       html,
     });
-    return { sent: true };
+
+    const timeoutPromise = new Promise<{ sent: boolean; reason: string }>((resolve) =>
+      setTimeout(() => resolve({ sent: false, reason: "SMTP connection timed out after 6 seconds" }), 6000)
+    );
+
+    const result = await Promise.race([
+      sendPromise.then(() => ({ sent: true })),
+      timeoutPromise,
+    ]);
+
+    return result;
   } catch (err: any) {
     console.error("Nodemailer send error:", err);
     return { sent: false, reason: err.message };

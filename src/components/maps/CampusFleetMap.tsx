@@ -148,7 +148,31 @@ async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[
   return coordinates;
 }
 
-export default function CampusFleetMap({
+export default function CampusFleetMap(props: CampusFleetMapProps) {
+  const [googleMapsError, setGoogleMapsError] = useState(false);
+  const hasGoogleKey = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
+  const theme = props.tileTheme || "AUTO";
+
+  // If user requested Google mode and Google Maps API key is available and hasn't failed:
+  // Render official GoogleTransitMap!
+  if (
+    hasGoogleKey &&
+    !googleMapsError &&
+    (theme === "GOOGLE_STREETS" || theme === "GOOGLE_HYBRID" || theme === "AUTO")
+  ) {
+    return (
+      <GoogleTransitMap
+        {...props}
+        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        onError={() => setGoogleMapsError(true)}
+      />
+    );
+  }
+
+  return <LeafletTransitMap {...props} />;
+}
+
+function LeafletTransitMap({
   busLocation,
   busName,
   tripStatus,
@@ -175,49 +199,6 @@ export default function CampusFleetMap({
   showCampusLandmark = true,
   tileTheme = "AUTO",
 }: CampusFleetMapProps) {
-  const [googleMapsError, setGoogleMapsError] = useState(false);
-  const hasGoogleKey = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
-
-  // If user requested Google mode and Google Maps API key is available and hasn't failed:
-  // Render official GoogleTransitMap!
-  if (
-    hasGoogleKey &&
-    !googleMapsError &&
-    (tileTheme === "GOOGLE_STREETS" || tileTheme === "GOOGLE_HYBRID" || tileTheme === "AUTO")
-  ) {
-    return (
-      <GoogleTransitMap
-        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-        busLocation={busLocation}
-        busName={busName}
-        tripStatus={tripStatus}
-        fleetBuses={fleetBuses}
-        focusedBusId={focusedBusId}
-        onBusClick={onBusClick}
-        stops={stops}
-        campuses={campuses}
-        primaryCampus={primaryCampus}
-        routeCoordinates={routeCoordinates}
-        activeStopIndex={activeStopIndex}
-        shortestPathStopIds={shortestPathStopIds}
-        selectedStopId={selectedStopId}
-        isExpressDirect={isExpressDirect}
-        expressReason={expressReason}
-        height={height}
-        zoom={zoom}
-        onMapClick={onMapClick}
-        onStopClick={onStopClick}
-        draftPinLocation={draftPinLocation}
-        draftGeofenceRadius={draftGeofenceRadius}
-        interactiveMode={interactiveMode}
-        showUserLocation={showUserLocation}
-        showCampusLandmark={showCampusLandmark}
-        tileTheme={tileTheme}
-        onError={() => setGoogleMapsError(true)}
-      />
-    );
-  }
-
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const busMarkerRef = useRef<any>(null);

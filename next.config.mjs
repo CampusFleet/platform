@@ -144,6 +144,16 @@ const nextConfig = {
         permanent: true,
       },
       {
+        source: "/track",
+        destination: "/portal/tracker",
+        permanent: true,
+      },
+      {
+        source: "/radar",
+        destination: "/portal/tracker",
+        permanent: true,
+      },
+      {
         source: "/transport",
         destination: "/transport-manager",
         permanent: true,

@@ -1322,8 +1322,8 @@ export function ChatPortalView() {
                     )}
 
                     {/* Hover quick reaction, menu trigger & CRUD buttons */}
-                    <div className="relative flex items-center gap-1 mt-0.5 opacity-90">
-                      <div className="hidden group-hover:flex items-center gap-1">
+                    <div className={`relative flex items-center gap-1 mt-0.5 ${activeMessageMenuId === msg.id ? "opacity-100 z-30" : "opacity-90"}`}>
+                      <div className={`${activeMessageMenuId === msg.id ? "flex" : "hidden group-hover:flex"} items-center gap-1`}>
                         {QUICK_REACTIONS.map((qr) => {
                           const Icon = qr.icon;
                           return (
@@ -1339,43 +1339,49 @@ export function ChatPortalView() {
                         })}
                       </div>
 
-                      {/* Menu trigger button for message actions */}
-                      <button
-                        type="button"
-                        onClick={() => setActiveMessageMenuId(activeMessageMenuId === msg.id ? null : msg.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-all cursor-pointer"
-                        title="More options"
-                      >
-                        <MoreVertical className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Menu trigger button & anchored popup */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setActiveMessageMenuId(activeMessageMenuId === msg.id ? null : msg.id)}
+                          className={`${
+                            activeMessageMenuId === msg.id
+                              ? "opacity-100 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                              : "opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                          } p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-all cursor-pointer`}
+                          title="More options"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
 
-                      {/* Floating MessageActionsMenu */}
-                      <MessageActionsMenu
-                        isOpen={activeMessageMenuId === msg.id}
-                        onClose={() => setActiveMessageMenuId(null)}
-                        onReact={(emoji) => {
-                          handleReaction(msg.id, emoji);
-                          setActiveMessageMenuId(null);
-                        }}
-                        onReply={() => {
-                          setReplyingTo({
-                            id: msg.id,
-                            senderName: msg.senderName,
-                            text: msg.text,
-                          });
-                          setActiveMessageMenuId(null);
-                          inputRef.current?.focus();
-                        }}
-                        onCopy={() => {
-                          navigator.clipboard.writeText(msg.text);
-                          setActiveMessageMenuId(null);
-                        }}
-                        onDelete={() => {
-                          handleDeleteMessage(msg.id);
-                          setActiveMessageMenuId(null);
-                        }}
-                        isMe={isMe}
-                      />
+                        {/* Floating MessageActionsMenu anchored directly to trigger button */}
+                        <MessageActionsMenu
+                          isOpen={activeMessageMenuId === msg.id}
+                          onClose={() => setActiveMessageMenuId(null)}
+                          onReact={(emoji) => {
+                            handleReaction(msg.id, emoji);
+                            setActiveMessageMenuId(null);
+                          }}
+                          onReply={() => {
+                            setReplyingTo({
+                              id: msg.id,
+                              senderName: msg.senderName,
+                              text: msg.text,
+                            });
+                            setActiveMessageMenuId(null);
+                            inputRef.current?.focus();
+                          }}
+                          onCopy={() => {
+                            navigator.clipboard.writeText(msg.text);
+                            setActiveMessageMenuId(null);
+                          }}
+                          onDelete={() => {
+                            handleDeleteMessage(msg.id);
+                            setActiveMessageMenuId(null);
+                          }}
+                          isMe={Boolean(isMe)}
+                        />
+                      </div>
 
                       {isMe && (
                         <div className="hidden group-hover:flex items-center gap-1">

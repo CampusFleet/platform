@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   CornerUpLeft,
   Share2,
@@ -38,9 +38,15 @@ export function MessageActionsMenu({
   onStar,
   onCopy,
   onDelete,
-  isMe,
+  isMe = false,
 }: MessageActionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
+  const [alignRight, setAlignRight] = useState(isMe);
+
+  useEffect(() => {
+    setAlignRight(Boolean(isMe));
+  }, [isMe]);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -51,6 +57,29 @@ export function MessageActionsMenu({
 
     if (isOpen) {
       document.addEventListener("mousedown", handleOutsideClick);
+
+      // Measure layout on next frame to prevent overflow
+      requestAnimationFrame(() => {
+        if (menuRef.current) {
+          const rect = menuRef.current.getBoundingClientRect();
+          const vh = window.innerHeight;
+          const vw = window.innerWidth;
+
+          // Flip upward if near bottom of screen
+          if (rect.bottom > vh - 90 && rect.top > 250) {
+            setOpenUpward(true);
+          } else {
+            setOpenUpward(false);
+          }
+
+          // Force left or right alignment to prevent screen edge overflow
+          if (rect.left < 8) {
+            setAlignRight(false);
+          } else if (rect.right > vw - 8) {
+            setAlignRight(true);
+          }
+        }
+      });
     }
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [isOpen, onClose]);
@@ -60,7 +89,11 @@ export function MessageActionsMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute right-0 top-full mt-1 z-40 w-48 bg-white dark:bg-gray-850 rounded-2xl shadow-xl border border-gray-150 dark:border-gray-800 p-1.5 animate-in fade-in zoom-in-95 duration-100 text-left select-none"
+      className={`absolute ${
+        alignRight ? "right-0" : "left-0"
+      } ${
+        openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"
+      } z-50 w-52 bg-white dark:bg-gray-950 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 p-1.5 animate-in fade-in zoom-in-95 duration-100 text-left select-none`}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Top Emoji Quick Reaction Bar (Matching Screenshot 5) */}

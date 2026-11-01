@@ -24,6 +24,7 @@ import {
 import { GroupDetailsModal } from "./GroupDetailsModal";
 import { MessageActionsMenu } from "./MessageActionsMenu";
 import { useTheme } from "@/components/common/ThemeProvider";
+import { FloatingMobileNavDock } from "@/components/common/FloatingMobileNavDock";
 import {
   Search,
   Edit3,
@@ -931,7 +932,7 @@ export function ChatPortalView() {
               </div>
 
             {/* Conversations List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50">
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/50 pb-20 md:pb-0">
               {loadingConversations ? (
                 <div className="p-3 space-y-2">
                   {[1, 2, 3, 4].map((i) => (
@@ -1030,6 +1031,15 @@ export function ChatPortalView() {
                 })
               )}
             </div>
+
+            {/* Floating Mobile Bottom Navigation Dock (Matching Haveloc Screenshot) */}
+            <FloatingMobileNavDock
+              unreadCount={conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0)}
+              onOpenSettings={() => {
+                setLeftView("settings");
+                setActiveSettingSection("main");
+              }}
+            />
           </>
         )}
 

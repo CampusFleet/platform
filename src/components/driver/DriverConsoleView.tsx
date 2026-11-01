@@ -74,7 +74,7 @@ export default function DriverConsoleView({
   const [routes] = useState<Route[]>(initialRoutes);
   const [stops] = useState<Stop[]>(initialStops);
   const [bookings] = useState<Booking[]>(initialBookings);
-  const [activeViewMode, setActiveViewMode] = useState<"RADAR" | "COCKPIT">("RADAR");
+  const [isRadarOpen, setIsRadarOpen] = useState(false);
 
   const effectiveDriverId = initialUser?.userId || initialDriverStaffId || initialUser?.id || "";
 
@@ -801,63 +801,8 @@ export default function DriverConsoleView({
         </div>
       )}
 
-      {/* ── VIEW MODE SWITCHER: RADAR vs COCKPIT ─── */}
-      <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 pb-1">
-        <div className="p-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setActiveViewMode("RADAR")}
-            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              activeViewMode === "RADAR"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/25"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            }`}
-          >
-            <Navigation className="w-4 h-4" />
-            <span>🧭 Live Radar Navigation</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveViewMode("COCKPIT")}
-            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              activeViewMode === "COCKPIT"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/25"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            }`}
-          >
-            <Gauge className="w-4 h-4" />
-            <span>📊 Cockpit Telemetry</span>
-          </button>
-        </div>
-      </div>
-
-      {activeViewMode === "RADAR" ? (
-        <div className="w-full">
-          <DriverLiveRadarView
-            initialUser={initialUser}
-            initialDriverStaffId={initialDriverStaffId}
-            activeTrip={activeTrip}
-            route={route}
-            bus={bus}
-            allTrips={trips}
-            allBuses={buses}
-            allRoutes={routes}
-            allStops={stops}
-            bookings={bookings}
-            externalCoords={currentCoords}
-            hasRealGpsLock={hasRealGpsLock}
-            onTripUpdate={async (tripId, updates) => {
-              setTrips((prev) =>
-                prev.map((t) => (t.id === tripId ? { ...t, ...updates } : t))
-              );
-              await store.updateTrip(tripId, updates);
-            }}
-            onSwitchBus={handleSwitchBus}
-          />
-        </div>
-      ) : (
-        /* ── MAIN DRIVER COCKPIT ───────────────────────────────────────── */
-        <main className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4">
+      {/* ── MAIN DRIVER COCKPIT ───────────────────────────────────────── */}
+      <main className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4">
         {/* 1. DUTY STATUS & QUICK VEHICLE SELECTOR STRIP */}
         <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -1189,6 +1134,53 @@ export default function DriverConsoleView({
           </Link>
         </section>
       </main>
+
+      {/* ── FLOATING LIVE MAP RADAR BUTTON (BOTTOM-RIGHT FAB) ─────────── */}
+      <div className="fixed bottom-6 right-4 sm:right-6 z-40">
+        <button
+          type="button"
+          onClick={() => setIsRadarOpen(true)}
+          className="px-4 sm:px-5 py-3 sm:py-3.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2.5 shadow-2xl shadow-blue-600/40 border-2 border-white dark:border-slate-900 transition-all cursor-pointer group"
+          title="Open Live Radar Navigation Map"
+          aria-label="Open Live Radar Navigation Map"
+        >
+          <div className="relative flex items-center justify-center">
+            <Navigation className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white/20 transition-transform group-hover:rotate-45 duration-300" />
+            <span className="absolute -top-1 -right-1 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+          </div>
+          <span className="tracking-tight">Live Map Radar</span>
+        </button>
+      </div>
+
+      {/* ── FULLSCREEN LIVE RADAR NAVIGATION MODAL OVERLAY ───────────── */}
+      {isRadarOpen && (
+        <div className="fixed inset-0 z-50 bg-black animate-in fade-in duration-200 flex flex-col">
+          <DriverLiveRadarView
+            initialUser={initialUser}
+            initialDriverStaffId={initialDriverStaffId}
+            activeTrip={activeTrip}
+            route={route}
+            bus={bus}
+            allTrips={trips}
+            allBuses={buses}
+            allRoutes={routes}
+            allStops={stops}
+            bookings={bookings}
+            externalCoords={currentCoords}
+            hasRealGpsLock={hasRealGpsLock}
+            onClose={() => setIsRadarOpen(false)}
+            onTripUpdate={async (tripId, updates) => {
+              setTrips((prev) =>
+                prev.map((t) => (t.id === tripId ? { ...t, ...updates } : t))
+              );
+              await store.updateTrip(tripId, updates);
+            }}
+            onSwitchBus={handleSwitchBus}
+          />
+        </div>
       )}
 
       {/* ── EMERGENCY SOS MODAL ────────────────────────────────────────── */}

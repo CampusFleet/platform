@@ -27,6 +27,7 @@ import {
   FastForward,
   RotateCcw,
   ShieldAlert,
+  ArrowLeft,
   ArrowUp,
   CornerUpRight,
   CornerUpLeft,
@@ -76,6 +77,7 @@ interface DriverLiveRadarViewProps {
     accuracy?: number;
   };
   hasRealGpsLock?: boolean;
+  onClose?: () => void;
 }
 
 export default function DriverLiveRadarView({
@@ -94,6 +96,7 @@ export default function DriverLiveRadarView({
   onSwitchTrip,
   externalCoords,
   hasRealGpsLock: propHasRealGpsLock = false,
+  onClose,
 }: DriverLiveRadarViewProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -630,7 +633,20 @@ export default function DriverLiveRadarView({
       )}
 
       {/* ── 3. TOP GLANCEABLE TURN & MANEUVER HUD (UBER/RAPIDO STYLE) ─────── */}
-      <div className="absolute top-3 left-3 right-3 sm:left-6 sm:right-6 z-30 pointer-events-none">
+      <div className="absolute top-3 left-3 right-3 sm:left-6 sm:right-6 z-30 pointer-events-none flex flex-col gap-2">
+        {onClose && (
+          <div className="pointer-events-auto flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-2 rounded-2xl bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-black transition-all hover:border-zinc-400 dark:hover:border-zinc-600 active:scale-95 cursor-pointer"
+              title="Close Map and Return to Cockpit Dashboard"
+            >
+              <ArrowLeft className="w-4 h-4 text-blue-500" />
+              <span>Cockpit Dashboard</span>
+            </button>
+          </div>
+        )}
         {isHudMinimized ? (
           /* MINIMIZED CAPSULE HUD PILL */
           <div className="pointer-events-auto flex items-center justify-start">

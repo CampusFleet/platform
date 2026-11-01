@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { store } from "@/lib/store";
+import { telematicsService } from "@/lib/telematicsService";
 import { calculateETA, calculateHaversineDistanceKm } from "@/lib/eta-calculator";
 import { getCampusStopFromDatabase } from "@/components/maps/CampusFleetMap";
 import {
@@ -217,45 +218,70 @@ export default function FullScreenLiveRadarView({
   const sourceStop = orderedDestinations[0] || null;
   const terminalStop = orderedDestinations[orderedDestinations.length - 1] || null;
 
-  // 6. Polling live GPS stream for assigned bus
+  // 6. Real-time telematics synchronization (HTML5 BroadcastChannel + Redis/Mongo polling)
   useEffect(() => {
     if (!assignedBus?.id) return;
     let isMounted = true;
 
-    const pollLiveLocation = async () => {
+    const handleIncomingTelematics = (incoming: LiveBusLocation) => {
+      if (!isMounted || !incoming) return;
+      if (String(incoming.busId) === String(assignedBus.id) || incoming.busId === assignedBus.id) {
+        setLiveLocation({
+          busId: assignedBus.id,
+          latitude: Number(incoming.latitude),
+          longitude: Number(incoming.longitude),
+          speedKmh: Number(incoming.speedKmh || 0),
+          headingDeg: Number(incoming.headingDeg || 0),
+          lastPingAt: incoming.lastPingAt || new Date().toISOString(),
+          tripId: incoming.tripId || initialReservation?.trip_id || "",
+          delayMinutes: Number(incoming.delayMinutes || 0),
+          estimatedArrivalNextStopMins: incoming.estimatedArrivalNextStopMins || 3,
+        });
+        setIsTelematicsLive(true);
+        setLastPingTime(new Date());
+      }
+    };
+
+    // A. Subscribe to 0ms instant HTML5 BroadcastChannel from Driver Console & local store
+    const unsub = telematicsService.subscribe(handleIncomingTelematics);
+
+    // B. Start background Redis (<5ms) polling via telematicsService
+    telematicsService.startPolling(assignedBus.id, 2500);
+
+    // C. Immediate direct fetch for instantaneous cold-start hydration
+    const fetchCurrentLiveLocation = async () => {
       try {
         setIsPolling(true);
         const res = await fetch(`/api/telematics/live?busId=${encodeURIComponent(String(assignedBus.id))}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (isMounted && data.success && data.location?.latitude && data.location?.longitude) {
-          const loc = data.location;
-          setLiveLocation({
+        const loc = data?.liveLocation || data?.location;
+        if (isMounted && data.success && loc?.latitude && loc?.longitude) {
+          handleIncomingTelematics({
             busId: assignedBus.id,
             latitude: Number(loc.latitude),
             longitude: Number(loc.longitude),
             speedKmh: Number(loc.speedKmh || 0),
             headingDeg: Number(loc.headingDeg || 0),
-            lastPingAt: loc.timestamp || new Date().toISOString(),
+            lastPingAt: loc.timestamp || loc.lastPingAt || new Date().toISOString(),
             tripId: initialReservation?.trip_id || "",
             delayMinutes: Number(loc.delayMinutes || 0),
             estimatedArrivalNextStopMins: 3,
           });
-          setIsTelematicsLive(Boolean(loc.isLive));
-          setLastPingTime(new Date());
         }
-      } catch (err) {
+      } catch {
         // graceful offline fallback
       } finally {
         if (isMounted) setIsPolling(false);
       }
     };
 
-    pollLiveLocation();
-    const interval = setInterval(pollLiveLocation, 3500);
+    fetchCurrentLiveLocation();
+
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      unsub();
+      telematicsService.stopPolling();
     };
   }, [assignedBus?.id, initialReservation?.trip_id]);
 
@@ -485,6 +511,7 @@ export default function FullScreenLiveRadarView({
           tripStatus="IN_PROGRESS"
           stops={orderedDestinations}
           campuses={campuses}
+          activeStopIndex={nextDestination?.index ?? 0}
           selectedStopId={commuterStop?.id || selectedDestinationId || nextDestination?.id}
           tileTheme={tileTheme}
           height="100%"

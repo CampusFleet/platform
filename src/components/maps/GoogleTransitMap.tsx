@@ -136,6 +136,89 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   },
 ];
 
+// High-DPI Inline SVG Data URIs for Hardware-Accelerated Native Google Maps Markers
+function createStopMarkerSvgUri(params: {
+  index: number;
+  state: "passed" | "next" | "upcoming" | "selected";
+  isTerminal: boolean;
+  label?: string;
+}): string {
+  const { index, state, isTerminal } = params;
+
+  if (isTerminal) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+      <defs>
+        <filter id="ts" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2.5" stdDeviation="3" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <circle cx="22" cy="22" r="19" fill="#4338CA" stroke="#C7D2FE" stroke-width="2.5" filter="url(#ts)"/>
+      <path d="M14 27h16M16 27v-8M22 27v-8M28 27v-8M13 19l9-6 9 6H13z" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>`;
+    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+  }
+
+  if (state === "passed") {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="12" fill="#64748B" stroke="#CBD5E1" stroke-width="2"/>
+      <path d="M11 16l3.5 3.5L21 12" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>`;
+    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+  }
+
+  if (state === "next" || state === "selected") {
+    const color = state === "selected" ? "#059669" : "#2563EB";
+    const ringColor = state === "selected" ? "#34D399" : "#93C5FD";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+      <defs>
+        <filter id="ns" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2.5" stdDeviation="2.5" flood-opacity="0.35"/>
+        </filter>
+      </defs>
+      <circle cx="20" cy="20" r="18" fill="none" stroke="${ringColor}" stroke-width="2.5" opacity="0.85"/>
+      <circle cx="20" cy="20" r="14" fill="${color}" stroke="#FFFFFF" stroke-width="2.5" filter="url(#ns)"/>
+      <text x="20" y="24.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="13" fill="#FFFFFF">${index}</text>
+    </svg>`;
+    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+  }
+
+  // Upcoming
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+    <defs>
+      <filter id="us" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.2"/>
+      </filter>
+    </defs>
+    <circle cx="16" cy="16" r="12" fill="#FFFFFF" stroke="#1D4ED8" stroke-width="2.5" filter="url(#us)"/>
+    <text x="16" y="20.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="12" fill="#1E40AF">${index}</text>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+}
+
+function createBusMarkerSvgUri(busLabel: string, headingDeg: number = 0): string {
+  const shortLabel = busLabel.replace(/bus\s*/i, "").trim() || "BUS";
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+    <defs>
+      <filter id="bs" x="-25%" y="-25%" width="150%" height="150%">
+        <feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.4"/>
+      </filter>
+    </defs>
+    <circle cx="24" cy="24" r="21" fill="#1A73E8" fill-opacity="0.18"/>
+    <circle cx="24" cy="24" r="16" fill="#1A73E8" stroke="#FFFFFF" stroke-width="2.5" filter="url(#bs)"/>
+    ${headingDeg ? `
+      <g transform="rotate(${headingDeg} 24 24)">
+        <polygon points="24,9 28,14 20,14" fill="#FFFFFF"/>
+      </g>
+    ` : ""}
+    <g transform="translate(16.5, 16.5) scale(0.62)">
+      <path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z" fill="#FFFFFF"/>
+    </g>
+    <circle cx="36" cy="12" r="4.5" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5"/>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+}
+
 export default function GoogleTransitMap({
   apiKey,
   busLocation,
@@ -168,12 +251,17 @@ export default function GoogleTransitMap({
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
-  // Persistent Overlays & Markers
-  const stopOverlaysRef = useRef<any[]>([]);
-  const busOverlayRef = useRef<any>(null);
+  // Persistent Google Native Polylines: Traveled (Muted Slate) vs To Travel (Google Blue)
+  const fullOverviewPathRef = useRef<google.maps.LatLng[]>([]);
+  const traveledPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const upcomingPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const upcomingGlowPolylineRef = useRef<google.maps.Polyline | null>(null);
+
+  // Native Hardware-Accelerated Markers
+  const stopMarkersRef = useRef<google.maps.Marker[]>([]);
+  const busMarkerRef = useRef<google.maps.Marker | null>(null);
   const campusCircleRef = useRef<google.maps.Circle | null>(null);
-  const campusOverlayRef = useRef<any>(null);
-  const draftMarkerRef = useRef<any>(null);
+  const draftMarkerRef = useRef<google.maps.Marker | null>(null);
   const draftCircleRef = useRef<google.maps.Circle | null>(null);
   const userMarkerRef = useRef<any>(null);
   const userCircleRef = useRef<google.maps.Circle | null>(null);
@@ -289,16 +377,12 @@ export default function GoogleTransitMap({
             styles: isDark && tileTheme !== "GOOGLE_HYBRID" ? DARK_MAP_STYLES : [],
           });
 
-          // Google's official native DirectionsRenderer (ZERO MATH, zero custom polylines, 100% flicker-free)
+          // Google's official native DirectionsRenderer (road curves from DirectionsService)
           const renderer = new DirectionsRenderer({
             map,
-            suppressMarkers: true, // We draw our custom high-DPI station number badges & bus icon, Google draws the road!
+            suppressMarkers: true, // We draw our custom high-DPI station number badges & bus puck
+            suppressPolylines: true, // We draw the dual traveled vs upcoming polyline with Google's overview_path
             preserveViewport: true, // Do not snap/jerk camera on live vehicle updates
-            polylineOptions: {
-              strokeColor: isExpressDirect ? "#059669" : "#1A73E8", // Official Google Navigation Blue / Emerald
-              strokeWeight: 6,
-              strokeOpacity: 0.95,
-            },
           });
           directionsRendererRef.current = renderer;
 
@@ -332,6 +416,12 @@ export default function GoogleTransitMap({
       if (directionsRendererRef.current) {
         directionsRendererRef.current.setMap(null);
       }
+      traveledPolylineRef.current?.setMap(null);
+      upcomingPolylineRef.current?.setMap(null);
+      upcomingGlowPolylineRef.current?.setMap(null);
+      busMarkerRef.current?.setMap(null);
+      stopMarkersRef.current.forEach((m) => m.setMap(null));
+      stopMarkersRef.current = [];
     };
   }, [resolvedApiKey, tileTheme]);
 
@@ -349,51 +439,73 @@ export default function GoogleTransitMap({
     return () => ro.disconnect();
   }, [mapLoaded]);
 
-  // Custom HTML Overlay class for Stop Stations and Vehicle Markers
-  const createHtmlOverlay = useCallback(
-    (pos: { lat: number; lng: number }, div: HTMLElement, zIndex: number = 100) => {
-      class CustomHtmlOverlay extends google.maps.OverlayView {
-        position: google.maps.LatLng;
-        div: HTMLElement;
+  // ── 3b. Slices Google Maps authoritative overview_path into Traveled vs To Travel (Upcoming) ──
+  const updateTraveledAndUpcoming = useCallback(
+    (busPos?: { lat: number; lng: number } | null) => {
+      const map = mapRef.current;
+      const path = fullOverviewPathRef.current;
+      if (!map || path.length === 0 || !window.google?.maps?.geometry) return;
 
-        constructor(p: { lat: number; lng: number }, d: HTMLElement) {
-          super();
-          this.position = new google.maps.LatLng(p.lat, p.lng);
-          this.div = d;
-        }
+      const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 
-        onAdd() {
-          const panes = this.getPanes();
-          panes?.overlayMouseTarget.appendChild(this.div);
-        }
+      if (!upcomingGlowPolylineRef.current) {
+        upcomingGlowPolylineRef.current = new google.maps.Polyline({
+          map,
+          strokeColor: isExpressDirect ? "#10B981" : "#3B82F6",
+          strokeWeight: 10,
+          strokeOpacity: 0.25,
+          zIndex: 50,
+        });
+      }
+      if (!upcomingPolylineRef.current) {
+        upcomingPolylineRef.current = new google.maps.Polyline({
+          map,
+          strokeColor: isExpressDirect ? "#059669" : "#1A73E8", // Official Google Navigation Blue
+          strokeWeight: 6,
+          strokeOpacity: 1.0,
+          zIndex: 60,
+        });
+      }
+      if (!traveledPolylineRef.current) {
+        traveledPolylineRef.current = new google.maps.Polyline({
+          map,
+          strokeColor: isDark ? "#64748B" : "#94A3B8", // Muted Transit Slate
+          strokeWeight: 5,
+          strokeOpacity: 0.85,
+          zIndex: 55,
+        });
+      }
 
-        draw() {
-          const overlayProjection = this.getProjection();
-          if (!overlayProjection) return;
-          const point = overlayProjection.fromLatLngToDivPixel(this.position);
-          if (point) {
-            this.div.style.left = point.x + "px";
-            this.div.style.top = point.y + "px";
-          }
-        }
+      // If no bus GPS position available yet, whole path is upcoming
+      if (!busPos || typeof busPos.lat !== "number" || typeof busPos.lng !== "number") {
+        traveledPolylineRef.current.setPath([]);
+        upcomingPolylineRef.current.setPath(path);
+        upcomingGlowPolylineRef.current.setPath(path);
+        return;
+      }
 
-        setPosition(p: { lat: number; lng: number }) {
-          this.position = new google.maps.LatLng(p.lat, p.lng);
-          this.draw();
-        }
+      const busLatLng = new google.maps.LatLng(busPos.lat, busPos.lng);
 
-        onRemove() {
-          if (this.div.parentNode) {
-            this.div.parentNode.removeChild(this.div);
-          }
+      // Find the closest point index on the authoritative Google road path
+      let closestIdx = 0;
+      let minDistance = Infinity;
+      for (let i = 0; i < path.length; i++) {
+        const dist = google.maps.geometry.spherical.computeDistanceBetween(path[i], busLatLng);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestIdx = i;
         }
       }
 
-      const overlay = new CustomHtmlOverlay(pos, div);
-      overlay.setMap(mapRef.current);
-      return overlay;
+      // Sub-millisecond slice: Traveled (start to bus) vs Upcoming (bus forward to campus terminal)
+      const traveledPoints = [...path.slice(0, closestIdx + 1), busLatLng];
+      const upcomingPoints = [busLatLng, ...path.slice(closestIdx)];
+
+      traveledPolylineRef.current.setPath(traveledPoints);
+      upcomingPolylineRef.current.setPath(upcomingPoints);
+      upcomingGlowPolylineRef.current.setPath(upcomingPoints);
     },
-    []
+    [isExpressDirect]
   );
 
   // ── 4. Google Maps Directions API with Intelligent Multi-Tier Caching (SessionStorage + In-Memory) ──
@@ -424,6 +536,16 @@ export default function GoogleTransitMap({
       if (!isMounted || !directionsRenderer) return;
       directionsRenderer.setDirections(result);
       cachedRouteKeyRef.current = cacheKey;
+
+      // Extract authoritative road curves and initialize Traveled vs Upcoming Polylines
+      if (result.routes?.[0]?.overview_path) {
+        fullOverviewPathRef.current = result.routes[0].overview_path;
+        const currentBusPos =
+          busLocation && typeof busLocation.latitude === "number"
+            ? { lat: busLocation.latitude, lng: busLocation.longitude }
+            : null;
+        updateTraveledAndUpcoming(currentBusPos);
+      }
 
       // Extract high-accuracy Google Maps transit road metrics
       if (result.routes?.[0]?.legs) {
@@ -532,52 +654,61 @@ export default function GoogleTransitMap({
     return () => {
       isMounted = false;
     };
-  }, [mapLoaded, stops, routeCoordinates, onRouteMetricsCalculated]);
+  }, [mapLoaded, stops, routeCoordinates, onRouteMetricsCalculated, updateTraveledAndUpcoming, busLocation]);
 
-  // ── 5. Render Custom HTML Station Stop Markers ──
+  // ── 5. Render Native High-DPI Station Stop Markers Along Route ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || typeof window === "undefined" || !window.google) return;
 
     // Clean previous stop markers
-    stopOverlaysRef.current.forEach((o) => o.setMap(null));
-    stopOverlaysRef.current = [];
+    stopMarkersRef.current.forEach((m) => m.setMap(null));
+    stopMarkersRef.current = [];
 
     stops.forEach((stop, idx) => {
-      const isSelected = selectedStopId && stop.id === selectedStopId;
+      const isSelected = Boolean(selectedStopId && stop.id === selectedStopId);
       const isNext = idx === activeStopIndex;
       const isPassed = idx < activeStopIndex;
+      const isTerminal = idx === stops.length - 1;
 
-      const el = document.createElement("div");
-      el.className =
-        "absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer select-none transition-transform hover:scale-110";
-      el.style.zIndex = isSelected ? "300" : isNext ? "250" : "100";
+      const state: "passed" | "next" | "upcoming" | "selected" = isSelected
+        ? "selected"
+        : isNext
+          ? "next"
+          : isPassed
+            ? "passed"
+            : "upcoming";
 
-      let bgClass = "bg-blue-600 text-white border-white";
-      if (isSelected) {
-        bgClass = "bg-emerald-600 text-white border-white ring-4 ring-emerald-400/50";
-      } else if (isNext) {
-        bgClass = "bg-amber-500 text-white border-white ring-4 ring-amber-300/60";
-      } else if (isPassed) {
-        bgClass = "bg-zinc-400 dark:bg-zinc-700 text-zinc-100 border-zinc-200 dark:border-zinc-800";
-      }
+      const iconUrl = createStopMarkerSvgUri({
+        index: idx + 1,
+        state,
+        isTerminal,
+        label: stop.code || stop.name,
+      });
 
-      el.innerHTML = `
-        <div class="w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shadow-md border-2 ${bgClass}">
-          <span>${idx + 1}</span>
-        </div>
-      `;
+      const size = isTerminal ? 44 : isNext || isSelected ? 40 : 32;
+      const anchorPoint = isTerminal ? 22 : isNext || isSelected ? 20 : 16;
 
-      el.onclick = (e) => {
-        e.stopPropagation();
+      const marker = new google.maps.Marker({
+        position: { lat: stop.latitude, lng: stop.longitude },
+        map,
+        icon: {
+          url: iconUrl,
+          scaledSize: new google.maps.Size(size, size),
+          anchor: new google.maps.Point(anchorPoint, anchorPoint),
+        },
+        title: `${idx + 1}. ${stop.name} (${isPassed ? "Passed" : isNext ? "Next Stop" : isTerminal ? "Campus Terminal" : "Upcoming"})`,
+        zIndex: isSelected ? 400 : isNext ? 350 : isTerminal ? 300 : 200,
+      });
+
+      marker.addListener("click", () => {
         onStopClick?.(stop);
-      };
+      });
 
-      const overlay = createHtmlOverlay({ lat: stop.latitude, lng: stop.longitude }, el, isSelected ? 300 : 100);
-      stopOverlaysRef.current.push(overlay);
+      stopMarkersRef.current.push(marker);
     });
 
-    // Campus Terminal Landmark
+    // Campus Terminal Landmark Geofence Ring
     if (showCampusLandmark && campusTerminalStop) {
       if (!campusCircleRef.current) {
         campusCircleRef.current = new google.maps.Circle({
@@ -590,63 +721,61 @@ export default function GoogleTransitMap({
           fillOpacity: 0.12,
           map,
         });
-      }
-
-      if (!campusOverlayRef.current) {
-        const campusEl = document.createElement("div");
-        campusEl.className = "absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer select-none";
-        campusEl.style.zIndex = "150";
-        campusEl.innerHTML = `
-          <div class="px-3 py-1.5 rounded-2xl bg-indigo-900 text-white border-2 border-indigo-400 shadow-xl flex items-center gap-1.5 text-xs font-bold ring-4 ring-indigo-500/20">
-            <span>🏛️</span>
-            <span class="whitespace-nowrap">${campusTerminalStop.code || "Campus"}</span>
-          </div>
-        `;
-        campusOverlayRef.current = createHtmlOverlay(
-          { lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude },
-          campusEl,
-          150
-        );
+      } else {
+        campusCircleRef.current.setCenter({ lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude });
+        campusCircleRef.current.setRadius(campusTerminalStop.geofenceRadiusMeters || 150);
       }
     }
-  }, [mapLoaded, stops, activeStopIndex, selectedStopId, showCampusLandmark, campusTerminalStop, createHtmlOverlay]);
+  }, [mapLoaded, stops, activeStopIndex, selectedStopId, showCampusLandmark, campusTerminalStop, onStopClick]);
 
-  // ── 6. Live Bus Vehicle Marker (Updates Smoothly Without Redrawing Road Path -> ZERO FLICKER) ──
+  // ── 6. Live Bus Vehicle Marker & Dynamic Dual-Polyline Traveled/Upcoming Update ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded) return;
+    if (!map || !mapLoaded || !window.google) return;
 
     let activeBusPos: [number, number] | null = null;
+    let heading = 0;
     if (busLocation && typeof busLocation.latitude === "number") {
       activeBusPos = [busLocation.latitude, busLocation.longitude];
+      heading = busLocation.headingDeg || 0;
     } else if (focusedBusId && fleetBuses) {
       const fb = fleetBuses.find((b) => b.busId === focusedBusId);
-      if (fb) activeBusPos = [fb.latitude, fb.longitude];
+      if (fb) {
+        activeBusPos = [fb.latitude, fb.longitude];
+        heading = (fb as any).headingDeg || 0;
+      }
     }
 
     if (activeBusPos) {
-      if (!busOverlayRef.current) {
-        const busEl = document.createElement("div");
-        busEl.className =
-          "absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer select-none transition-transform hover:scale-110";
-        busEl.style.zIndex = "500";
-        busEl.innerHTML = `
-          <div class="relative flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-blue-600 text-white border-2 border-white shadow-xl ring-4 ring-blue-500/30">
-            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 6v6"></path><path d="M15 6v6"></path><path d="M2 12h19.6"></path>
-              <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4C2.9 6 1.9 6.8 1.6 7.8L.2 12.8c-.1.4-.2.8-.2 1.2 0 .4.1.8.2 1.2.3 1.1.8 2.8.8 2.8h3"></path>
-              <circle cx="7" cy="18" r="2" fill="currentColor"></circle><path d="M9 18h5"></path><circle cx="16" cy="18" r="2" fill="currentColor"></circle>
-            </svg>
-            <span class="font-bold text-xs whitespace-nowrap">${busName || "Bus"}</span>
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          </div>
-        `;
-        busOverlayRef.current = createHtmlOverlay({ lat: activeBusPos[0], lng: activeBusPos[1] }, busEl, 500);
+      const posObj = { lat: activeBusPos[0], lng: activeBusPos[1] };
+      const latLng = new google.maps.LatLng(posObj.lat, posObj.lng);
+      const busSvgUri = createBusMarkerSvgUri(busName || "Bus", heading);
+
+      if (!busMarkerRef.current) {
+        busMarkerRef.current = new google.maps.Marker({
+          position: latLng,
+          map,
+          icon: {
+            url: busSvgUri,
+            scaledSize: new google.maps.Size(48, 48),
+            anchor: new google.maps.Point(24, 24),
+          },
+          title: `${busName || "Campus Bus"} (Live GPS)`,
+          zIndex: 500,
+        });
       } else {
-        busOverlayRef.current.setPosition({ lat: activeBusPos[0], lng: activeBusPos[1] });
+        busMarkerRef.current.setPosition(latLng);
+        busMarkerRef.current.setIcon({
+          url: busSvgUri,
+          scaledSize: new google.maps.Size(48, 48),
+          anchor: new google.maps.Point(24, 24),
+        });
       }
+
+      // Smoothly update Traveled vs To Travel polylines with zero re-querying and zero flicker
+      updateTraveledAndUpcoming(posObj);
     }
-  }, [mapLoaded, busLocation, busName, tripStatus, focusedBusId, fleetBuses, createHtmlOverlay]);
+  }, [mapLoaded, busLocation, busName, tripStatus, focusedBusId, fleetBuses, updateTraveledAndUpcoming]);
 
   // ── 7. Draft Pin & Geofence (Admin Interactive Mode) ──
   useEffect(() => {
@@ -671,15 +800,12 @@ export default function GoogleTransitMap({
       }
 
       if (!draftMarkerRef.current) {
-        const draftEl = document.createElement("div");
-        draftEl.className = "absolute -translate-x-1/2 -translate-y-full cursor-pointer select-none";
-        draftEl.style.zIndex = "600";
-        draftEl.innerHTML = `
-          <div class="w-8 h-8 rounded-full bg-red-600 border-2 border-white shadow-2xl flex items-center justify-center text-white text-xs font-black animate-bounce ring-4 ring-red-400/50">
-            📍
-          </div>
-        `;
-        draftMarkerRef.current = createHtmlOverlay({ lat: draftPinLocation[0], lng: draftPinLocation[1] }, draftEl, 600);
+        draftMarkerRef.current = new google.maps.Marker({
+          position: { lat: draftPinLocation[0], lng: draftPinLocation[1] },
+          map,
+          title: "Draft Stop Location",
+          zIndex: 600,
+        });
       } else {
         draftMarkerRef.current.setPosition({ lat: draftPinLocation[0], lng: draftPinLocation[1] });
       }
@@ -695,7 +821,7 @@ export default function GoogleTransitMap({
         draftMarkerRef.current = null;
       }
     }
-  }, [mapLoaded, draftPinLocation, draftGeofenceRadius, createHtmlOverlay]);
+  }, [mapLoaded, draftPinLocation, draftGeofenceRadius]);
 
   // ── 8. Render User Location Dot ──
   useEffect(() => {
@@ -791,10 +917,15 @@ export default function GoogleTransitMap({
       )}
 
       {/* Google Maps Transit Legend */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 shadow-lg text-[10px] font-bold text-zinc-700 dark:text-zinc-300 select-none">
-        <div className="flex items-center gap-1" title="Google Maps Official Navigation Corridor">
+      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 shadow-lg text-[10px] font-bold text-zinc-700 dark:text-zinc-300 select-none">
+        <div className="flex items-center gap-1.5" title="Route segment already covered by the bus">
+          <span className="w-3.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 inline-block"></span>
+          <span>Traveled</span>
+        </div>
+        <span className="text-zinc-300 dark:text-zinc-700">•</span>
+        <div className="flex items-center gap-1.5" title="Remaining route corridor to campus">
           <span className="w-3.5 h-1.5 rounded-full bg-blue-600 inline-block"></span>
-          <span>Google Transit Corridor</span>
+          <span>To Campus</span>
         </div>
         {campusTerminalStop && (
           <>

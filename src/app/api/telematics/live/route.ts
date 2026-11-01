@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     const latestRfid = await cacheGet(`telematics:rfid:latest:${strBusId}`).catch(() => null);
 
     return NextResponse.json(
-      { success: true, liveLocation: liveLocation || null, latestRfid: latestRfid || null },
+      { success: true, liveLocation: liveLocation || null, location: liveLocation || null, latestRfid: latestRfid || null },
       {
         status: 200,
         headers: {

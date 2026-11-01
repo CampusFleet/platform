@@ -26,6 +26,16 @@ INSERT INTO public.routes (id, code, name, description, direction, color, total_
 ('r2222222-2222-2222-2222-222222222222', 'RT-202', 'Metro Feeder Link', 'Frequent connector between Anand Vihar, Vaishali & Campus', 'HOME_TO_CAMPUS', '#0D9488', 14.2, 35, TRUE)
 ON CONFLICT DO NOTHING;
 
+-- 3b. Insert Route Stops (All routes start at origin and end at Campus Terminal)
+INSERT INTO public.route_stops (route_id, stop_id, stop_order, arrival_offset_minutes, buffer_time_minutes) VALUES
+('r1111111-1111-1111-1111-111111111111', 's2222222-2222-2222-2222-222222222222', 1, 0, 2),
+('r1111111-1111-1111-1111-111111111111', 's1111111-1111-1111-1111-111111111111', 2, 15, 2),
+('r1111111-1111-1111-1111-111111111111', 's5555555-5555-5555-5555-555555555555', 3, 45, 5),
+('r2222222-2222-2222-2222-222222222222', 's4444444-4444-4444-4444-444444444444', 1, 0, 2),
+('r2222222-2222-2222-2222-222222222222', 's3333333-3333-3333-3333-333333333333', 2, 12, 2),
+('r2222222-2222-2222-2222-222222222222', 's5555555-5555-5555-5555-555555555555', 3, 35, 5)
+ON CONFLICT DO NOTHING;
+
 -- 4. Shifts
 INSERT INTO public.shifts (id, name, shift_type, start_time, end_time, booking_cutoff_mins) VALUES
 ('sh111111-1111-1111-1111-111111111111', 'Morning Shift 1 (Early Classes)', 'MORNING', '07:30:00', '08:45:00', 45),

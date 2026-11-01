@@ -35,6 +35,15 @@ function getGoogleApiKey(): string {
   return process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 }
 
+/** Resolves HTTP Referer for Google API keys configured with website domain restrictions */
+function getGoogleRefererHeader(): Record<string, string> {
+  const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "https://campusfleet.vercel.app";
+  const sanitized = rawUrl.replace(/\\n/g, "").replace(/\n/g, "").trim().replace(/\/+$/, "");
+  return {
+    Referer: sanitized ? `${sanitized}/` : "https://campusfleet.vercel.app/",
+  };
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface Coordinate {
@@ -252,6 +261,7 @@ async function googleDistance(from: Coordinate, to: Coordinate): Promise<RoadDis
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
+        ...getGoogleRefererHeader(),
         // Essentials tier only — keeps cost at $5/1000 requests
         "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
       },
@@ -306,6 +316,7 @@ async function googleRoute(waypoints: Coordinate[]): Promise<RouteResult> {
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
+        ...getGoogleRefererHeader(),
         "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.legs.distanceMeters,routes.legs.duration,routes.polyline.encodedPolyline",
       },
       body: JSON.stringify(payload),
@@ -356,6 +367,7 @@ async function googleMatrix(origins: Coordinate[], destinations: Coordinate[]): 
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
+        ...getGoogleRefererHeader(),
         "X-Goog-FieldMask": "originIndex,destinationIndex,distanceMeters,duration",
       },
       body: JSON.stringify(payload),

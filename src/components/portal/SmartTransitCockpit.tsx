@@ -122,7 +122,7 @@ export default function SmartTransitCockpit({
   // Fetch Reservation & Settings
   const fetchReservation = async (silent = false) => {
     try {
-      if (!silent && !reservation) {
+      if (!silent && !reservation && !schedule?.isTodayOff && !schedule?.isAllShiftsOver) {
         setIsLoadingReservation(true);
       }
       const url = studentId
@@ -142,7 +142,7 @@ export default function SmartTransitCockpit({
         if (typeof data.isRfidVerified === "boolean") setIsRfidVerified(data.isRfidVerified);
         if (data.lockStatus) setAttendanceLockStatus(data.lockStatus === "UNLOCKED" ? "UNLOCKED" : "LOCKED");
         if (data.settings) setSettings(data.settings);
-        if (data.teacherSchedule || data.schedule) setSchedule(data.teacherSchedule || data.schedule);
+        if (data.schedule || data.teacherSchedule) setSchedule(data.schedule || data.teacherSchedule);
         if (data.previousReservation) setPreviousReservation(data.previousReservation);
       }
     } catch (e) {

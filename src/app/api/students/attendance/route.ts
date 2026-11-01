@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
         .select("*")
         .or(`student_id.eq.${rawStudentId},student_id.eq.${session.userId}`)
         .in("reservation_date", allowedDates)
+        .neq("status", "CANCELLED")
         .order("created_at", { ascending: false }),
       supabaseAdmin
         .from("shifts")
@@ -304,9 +305,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback: if activeReservation is still null, take the most recent reservation
-    if (!activeReservation && reservations && reservations.length > 0) {
-      activeReservation = reservations[0];
+    // Fallback: if activeReservation is still null, take the most recent reservation ONLY if today is not off and shifts are not over
+    if (!isTodayOff && !isAllShiftsOver && !activeReservation && reservations && reservations.length > 0) {
+      activeReservation = reservations.find((r) => r.status !== "CANCELLED") || null;
+    }
+
+    // If today is off for this class, activeReservation is strictly null; auto-cancel any unboarded AI_AUTO reservation
+    if (isTodayOff) {
+      activeReservation = null;
+      if (reservations && reservations.length > 0) {
+        const phantomAutoRes = reservations.filter(
+          (r: any) => r.assigned_by === "AI_AUTO" && r.status !== "CANCELLED" && !r.boarded_at && !r.chosen_seat
+        );
+        if (phantomAutoRes.length > 0) {
+          const idsToCancel = phantomAutoRes.map((r: any) => r.id);
+          await supabaseAdmin
+            .from("bus_reservations")
+            .update({ status: "CANCELLED", cancelled_at: new Date().toISOString() })
+            .in("id", idsToCancel);
+        }
+      }
     }
 
     // 3. If we have a reservation, enrich with bus and stop info

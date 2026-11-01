@@ -274,9 +274,11 @@ export async function POST(req: NextRequest) {
         const day = (entry.day_of_week || entry.dayOfWeek || "").toUpperCase().trim();
         if (!VALID_DAYS.includes(day)) continue;
 
-        const isOff = Boolean(entry.is_today_off ?? entry.isTodayOff);
-        const incomingId = isOff ? null : (entry.incoming_shift_id || entry.incomingShiftId || null);
-        const outgoingId = isOff ? null : (entry.outgoing_shift_id || entry.outgoingShiftId || null);
+        const incomingRaw = entry.incoming_shift_id || entry.incomingShiftId || null;
+        const outgoingRaw = entry.outgoing_shift_id || entry.outgoingShiftId || null;
+        const isOff = Boolean(entry.is_today_off ?? entry.isTodayOff) || (!incomingRaw && !outgoingRaw);
+        const incomingId = isOff ? null : incomingRaw;
+        const outgoingId = isOff ? null : outgoingRaw;
         const notes = entry.notes || null;
 
         classShiftRows.push({

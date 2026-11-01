@@ -144,12 +144,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       for (const d of dayNames) {
         if (shiftSchedule[d]) {
           const entry = shiftSchedule[d];
+          const incId = entry.incomingShiftId || null;
+          const outId = entry.outgoingShiftId || null;
+          const isOff = entry.enabled === false || (!incId && !outId);
           await supabaseAdmin.from("class_shift_schedules").upsert({
             class_id: classId,
             day_of_week: d.toUpperCase(),
-            incoming_shift_id: entry.incomingShiftId || null,
-            outgoing_shift_id: entry.outgoingShiftId || null,
-            is_today_off: entry.enabled === false,
+            incoming_shift_id: isOff ? null : incId,
+            outgoing_shift_id: isOff ? null : outId,
+            is_today_off: isOff,
           }, { onConflict: "class_id,day_of_week" });
         }
       }

@@ -449,12 +449,12 @@ export default function StudentProfilePageView({
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </Link>
               <Link
-                href="/portal/tracker"
+                href="/portal"
                 className="flex items-center justify-between p-3 rounded-none hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors text-xs font-bold text-gray-700 dark:text-gray-200"
               >
                 <div className="flex items-center gap-3">
                   <Compass className="w-4 h-4 text-green-600" />
-                  <span>Live GPS Fleet Radar</span>
+                  <span>Live Commute & Fleet Status</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </Link>

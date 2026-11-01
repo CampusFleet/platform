@@ -145,12 +145,12 @@ const nextConfig = {
       },
       {
         source: "/track",
-        destination: "/portal/tracker",
+        destination: "/portal",
         permanent: true,
       },
       {
         source: "/radar",
-        destination: "/portal/tracker",
+        destination: "/portal",
         permanent: true,
       },
       {

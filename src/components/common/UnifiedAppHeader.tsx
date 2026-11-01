@@ -340,14 +340,6 @@ export function UnifiedAppHeader({
           icon: Building2,
         };
       }
-      if (portalViewRole === "student" && pathname !== "/portal/tracker") {
-        return {
-          label: "Live GPS Bus Radar",
-          href: "/portal/tracker",
-          subtitle: "Real-time transit tracker & telemetry",
-          icon: Radio,
-        };
-      }
       return null;
     })();
 

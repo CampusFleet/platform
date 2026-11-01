@@ -818,15 +818,6 @@ export function ChatPortalView() {
                   <button
                     onClick={() => {
                       setIsAppsMenuOpen(false);
-                      router.push("/portal/tracker");
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
-                  >
-                    Live Bus Radar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAppsMenuOpen(false);
                       router.push("/portal/qr");
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"

@@ -447,12 +447,6 @@ export function MobileBottomNav({
             icon: QrCode,
           },
           {
-            id: "radar",
-            href: "/portal/tracker",
-            label: "Radar",
-            icon: Radio,
-          },
-          {
             id: "chat",
             href: "/chat",
             label: "Chat",

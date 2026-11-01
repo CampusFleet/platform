@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { HubDashboardView, HubModule } from "@/components/common/HubDashboardView";
-import { QrCode, FileText, LayoutGrid, ShieldCheck, BusFront, CheckCircle2, AlertTriangle } from "lucide-react";
+import { QrCode, FileText, LayoutGrid, ShieldCheck, BusFront, CheckCircle2, AlertTriangle, Bus, RefreshCw } from "lucide-react";
 import { useConductorContext } from "@/components/conductor/ConductorContext";
 import { CrewBusSelectorModal } from "@/components/common/CrewBusSelectorModal";
 
@@ -72,64 +72,39 @@ export default function ConductorHubPage() {
   return (
     <div className="space-y-6">
       {/* Active Duty Bus & Attendance Status Hero Card */}
-      <div className="bg-zinc-950 dark:bg-black rounded-3xl p-5 sm:p-6 border border-zinc-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5 text-white">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 shadow-inner">
-            <BusFront className="w-7 h-7 text-blue-400" />
+      <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shrink-0 border bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700">
+            <Bus className="w-7 h-7" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-black text-lg sm:text-xl text-white">
-                {bus?.busNumber || "Vehicle Standby"}
+              <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                Bus {bus?.busNumber || "37"}
               </span>
-              <span className="text-xs font-mono px-2.5 py-0.5 rounded-lg bg-zinc-800 text-zinc-300 font-bold border border-zinc-700">
-                {bus?.registrationNo || "CAMPUS-FLEET"}
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full border bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700">
+                {activeTrip?.status === "IN_PROGRESS" ? "● ON DUTY" : dutyAttendance ? "READY" : "STANDBY"}
               </span>
-              {shift?.name && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  {shift.name}
+              {tripBookings.length > 0 && (
+                <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-900">
+                  {boardedCount} / {tripBookings.length} Boarded ({occupancyPercent}%)
                 </span>
               )}
             </div>
-            <div className="text-xs text-zinc-400 mt-1 font-medium flex items-center gap-2">
-              <span>{route?.name || "Campus Transit Corridor"}</span>
-              {tripBookings.length > 0 && (
-                <>
-                  <span className="text-zinc-600">•</span>
-                  <span className="text-emerald-400 font-mono font-bold">
-                    {boardedCount} / {tripBookings.length} Boarded ({occupancyPercent}%)
-                  </span>
-                </>
-              )}
-            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-0.5">
+              {route?.name || "Lamachaur to GEHU Bhimtal"} {bus?.registrationNo ? `• ${bus.registrationNo}` : "• UK04PA 2354"}
+            </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {dutyAttendance?.method === "BUS_QR_SCAN" ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Duty Verified via Bus QR</span>
-            </span>
-          ) : dutyAttendance ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-bold">
-              <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span>Duty Active (Card Selected)</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold animate-pulse">
-              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>Duty Check-In Pending</span>
-            </span>
-          )}
-
+        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
           <button
             type="button"
             onClick={() => {
               setSelectorTab("SCANNER");
               setIsCrewSelectorOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+            className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
             title="Scan physical QR code on bus door to mark attendance"
           >
             <QrCode className="w-4 h-4" />
@@ -142,14 +117,13 @@ export default function ConductorHubPage() {
               setSelectorTab("CARDS");
               setIsCrewSelectorOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 active:scale-95 text-gray-900 dark:text-gray-100 text-xs font-bold border border-gray-200 dark:border-gray-700 shadow-sm transition-all cursor-pointer"
-            title="Choose a bus like students"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-95 shadow-xs"
           >
-            <BusFront className="w-4 h-4 text-blue-500" />
-            <span>Switch Bus</span>
+            <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Change Bus</span>
           </button>
         </div>
-      </div>
+      </section>
 
       <HubDashboardView 
         title="Conductor Hub" 

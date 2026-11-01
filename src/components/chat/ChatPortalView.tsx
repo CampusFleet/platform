@@ -83,7 +83,6 @@ export function ChatPortalView() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [leftView, setLeftView] = useState<"messages" | "settings">("messages");
-  const [filterTab, setFilterTab] = useState<"All" | "Buses" | "Classes" | "Campus" | "Unread" | "Staff">("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [inputMessage, setInputMessage] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -538,16 +537,10 @@ export function ChatPortalView() {
 
   // Filter conversations
   const filteredConversations = conversations.filter((c) => {
-    const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.lastMessage?.text?.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-
-    if (filterTab === "Unread") return (c.unreadCount || 0) > 0;
-    if (filterTab === "Buses") return c.category === "bus" || c.name.startsWith("Bus ") || c.id.startsWith("bus-");
-    if (filterTab === "Classes") return c.category === "class" || c.id.startsWith("class-");
-    if (filterTab === "Campus") return c.category === "campus" || (c.id.startsWith("campus-") && c.id !== "campusfleet-main");
-    if (filterTab === "Staff") return c.type === "DIRECT" || c.name.toLowerCase().includes("conductor") || c.name.toLowerCase().includes("driver") || c.name.toLowerCase().includes("admin") || c.name.toLowerCase().includes("manager");
-    return true;
+    return (
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.lastMessage?.text?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
   });
 
   const activeConversation = conversations.find((c) => c.id === activeConvId);
@@ -652,7 +645,7 @@ export function ChatPortalView() {
             </div>
 
             {/* Search Pill */}
-            <div className="px-4 py-3">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 pointer-events-none" />
                 <input
@@ -671,26 +664,6 @@ export function ChatPortalView() {
                   </button>
                 )}
               </div>
-            </div>
-
-            {/* Filter Pills */}
-            <div className="px-4 pb-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-gray-100 dark:border-gray-800">
-              {(["All", "Buses", "Classes", "Campus", "Unread", "Staff"] as const).map((tab) => {
-                const isActive = filterTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => setFilterTab(tab)}
-                    className={`px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap transition-all ${
-                      isActive
-                        ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow-xs"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                );
-              })}
             </div>
 
             {/* Conversations List */}

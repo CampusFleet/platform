@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/jwt";
+import { getSession, getSessionFromRequest } from "@/lib/jwt";
 import { getUserConversations, getInitials, updateConversation, deleteConversation } from "@/lib/chat-mongodb";
 import { getMongoDb } from "@/lib/mongodb";
 import { createConversationId } from "@/lib/id";
@@ -8,12 +8,21 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getSession();
+    const session = (await getSessionFromRequest(req)) || (await getSession());
     const userId = session?.userId || "guest";
     const userRole = session?.role || "student";
 
     const conversations = await getUserConversations(userId, userRole);
-    return NextResponse.json({ success: true, conversations });
+    return NextResponse.json(
+      { success: true, conversations },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("GET /api/chat/conversations error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

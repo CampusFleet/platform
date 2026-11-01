@@ -480,70 +480,70 @@ export async function getUserConversations(userId: string, userRole: string): Pr
     }
   }
 
-  // 4. Build Strict Query (Zero Leaks!)
+  // 4. Build Strict Query (Zero Leaks for ALL roles!)
   const isSupervisor = ["transport_admin", "transport_manager", "admin"].includes(userRole);
 
-  let query: any = {
+  const allowedOr: any[] = [
+    // 1. Universal Main Broadcast Channel
+    { id: "campusfleet-main" },
+    // 2. Direct Messages where this user is an explicit participant
+    { type: "DIRECT", memberIds: userId },
+  ];
+
+  // 3. User's Assigned Campus Channel(s)
+  if (userCampusIds.size > 0) {
+    const cList = Array.from(userCampusIds);
+    const cFormatted = [...cList, ...cList.map((c) => (c.startsWith("campus-") ? c : `campus-${c}`))];
+    allowedOr.push({
+      category: "campus",
+      $or: [
+        { id: { $in: cFormatted } },
+        { campusId: { $in: cFormatted } },
+      ],
+    });
+  }
+
+  // 4. User's Assigned Class Channel(s) ONLY
+  // Strictly only classes the user is enrolled in (student) or teaches (teacher). Zero leakage!
+  if (userClassIds.size > 0) {
+    const clList = Array.from(userClassIds);
+    const clGroupIds = clList.map((cid) => `class-${cid}`);
+    allowedOr.push({
+      category: "class",
+      $or: [
+        { id: { $in: clGroupIds } },
+        { classId: { $in: clList } },
+      ],
+    });
+  }
+
+  // 5. User's Assigned Bus Channel(s) ONLY
+  if (userBusNumbers.size > 0) {
+    const bList = Array.from(userBusNumbers);
+    const bGroupIds = bList.map((b) => `bus-${b}`);
+    const bNumeric = bList.map((b) => Number(b)).filter((n) => !isNaN(n));
+    allowedOr.push({
+      category: "bus",
+      $or: [
+        { id: { $in: bGroupIds } },
+        { busNumber: { $in: [...bList, ...bNumeric] } },
+      ],
+    });
+  } else if (isSupervisor && userCampusIds.size > 0) {
+    // Transport supervisors see the transit bus channels operating within their campus
+    const cList = Array.from(userCampusIds);
+    allowedOr.push({
+      category: "bus",
+      campusId: { $in: cList },
+    });
+  }
+
+  const query: any = {
     isArchived: { $ne: true },
     name: { $not: /Corridor$/i },
     id: { $not: /^route-/i },
+    $or: allowedOr,
   };
-
-  if (!isSupervisor) {
-    const allowedOr: any[] = [
-      // 1. Universal Main Broadcast Channel
-      { id: "campusfleet-main" },
-      // 2. Direct Messages where this user is an explicit participant
-      { type: "DIRECT", memberIds: userId },
-    ];
-
-    // 3. User's Assigned Campus Channel(s)
-    if (userCampusIds.size > 0) {
-      const cList = Array.from(userCampusIds);
-      const cFormatted = [...cList, ...cList.map((c) => (c.startsWith("campus-") ? c : `campus-${c}`))];
-      allowedOr.push({
-        category: "campus",
-        $or: [
-          { id: { $in: cFormatted } },
-          { campusId: { $in: cFormatted } },
-        ],
-      });
-    }
-
-    // 4. User's Assigned Class Channel(s) ONLY
-    if (userClassIds.size > 0) {
-      const clList = Array.from(userClassIds);
-      const clGroupIds = clList.map((cid) => `class-${cid}`);
-      allowedOr.push({
-        category: "class",
-        $or: [
-          { id: { $in: clGroupIds } },
-          { classId: { $in: clList } },
-        ],
-      });
-    }
-
-    // 5. User's Assigned Bus Channel(s) ONLY
-    if (userBusNumbers.size > 0) {
-      const bList = Array.from(userBusNumbers);
-      const bGroupIds = bList.map((b) => `bus-${b}`);
-      const bNumeric = bList.map((b) => Number(b)).filter((n) => !isNaN(n));
-      allowedOr.push({
-        category: "bus",
-        $or: [
-          { id: { $in: bGroupIds } },
-          { busNumber: { $in: [...bList, ...bNumeric] } },
-        ],
-      });
-    }
-
-    query = {
-      isArchived: { $ne: true },
-      name: { $not: /Corridor$/i },
-      id: { $not: /^route-/i },
-      $or: allowedOr,
-    };
-  }
 
   const docs = await convCol
     .find(query)

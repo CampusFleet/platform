@@ -24,7 +24,7 @@ import {
 import { GroupDetailsModal } from "./GroupDetailsModal";
 import { MessageActionsMenu } from "./MessageActionsMenu";
 import { useTheme } from "@/components/common/ThemeProvider";
-import { FloatingMobileNavDock } from "@/components/common/FloatingMobileNavDock";
+import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import {
   Search,
   Edit3,
@@ -722,9 +722,7 @@ export function ChatPortalView() {
   return (
     <div className="flex-1 min-h-0 flex flex-col w-full h-full bg-white dark:bg-gray-900 border-x border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden relative">
       {/* ======================================================== */}
-      {/* MOBILE MINIMAL NAVBAR (Matching Haveloc Image 1)         */}
-      {/* Collapses when chat box is active (Matching Image 2)      */}
-      {/* ======================================================== */}
+      {/* Mobile Compact Header - Collapses when chat box is active */}
       <div
         className={`md:hidden flex-shrink-0 transition-all duration-200 overflow-hidden bg-white dark:bg-gray-900 border-b border-gray-200/80 dark:border-gray-800 z-30 ${
           isChatBoxActive
@@ -732,15 +730,35 @@ export function ChatPortalView() {
             : "max-h-12 opacity-100 px-3 py-1.5 flex items-center justify-between"
         }`}
       >
-        {/* Left: Stylized Logo (matching 'h' in screenshot 1) */}
+        {/* Left: CampusFleet Brand Logo with Role Routing */}
         <button
           type="button"
-          onClick={() => router.push("/")}
-          className="flex items-center gap-1.5 text-gray-900 dark:text-white font-black hover:opacity-80 transition-opacity cursor-pointer pl-1"
-          aria-label="Home"
+          onClick={() => {
+            const role = currentUser?.role;
+            const targetPath =
+              role === "admin"
+                ? "/admin"
+                : role === "transport_admin"
+                ? "/transport-admin"
+                : role === "transport_manager"
+                ? "/transport-manager"
+                : role === "conductor"
+                ? "/conductor"
+                : role === "driver"
+                ? "/driver"
+                : role === "teacher"
+                ? "/teacher"
+                : "/portal";
+            router.push(targetPath);
+          }}
+          className="flex items-center gap-2 hover:opacity-85 transition-opacity cursor-pointer pl-1"
+          aria-label="CampusFleet Home"
         >
-          <span className="font-serif italic text-2xl font-bold text-gray-900 dark:text-white tracking-tighter select-none">
-            h
+          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
+            <BusFront className="w-4 h-4" />
+          </div>
+          <span className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
+            Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
           </span>
         </button>
 
@@ -767,29 +785,53 @@ export function ChatPortalView() {
                   <button
                     onClick={() => {
                       setIsAppsMenuOpen(false);
-                      router.push("/");
+                      const role = currentUser?.role;
+                      const targetPath =
+                        role === "admin"
+                          ? "/admin"
+                          : role === "transport_admin"
+                          ? "/transport-admin"
+                          : role === "transport_manager"
+                          ? "/transport-manager"
+                          : role === "conductor"
+                          ? "/conductor"
+                          : role === "driver"
+                          ? "/driver"
+                          : role === "teacher"
+                          ? "/teacher"
+                          : "/portal";
+                      router.push(targetPath);
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
                   >
-                    Transit Home
+                    Transit Operations Hub
                   </button>
                   <button
                     onClick={() => {
                       setIsAppsMenuOpen(false);
-                      router.push("/student");
+                      router.push("/portal");
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
                   >
-                    Commuter Pass
+                    My Commute
                   </button>
                   <button
                     onClick={() => {
                       setIsAppsMenuOpen(false);
-                      router.push("/track");
+                      router.push("/portal/tracker");
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
                   >
-                    Live Bus Tracking
+                    Live Bus Radar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsAppsMenuOpen(false);
+                      router.push("/portal/qr");
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    QR Pass Connect
                   </button>
                   <button
                     onClick={() => {
@@ -898,7 +940,7 @@ export function ChatPortalView() {
                 </div>
               </div>
 
-              {/* Filter Pills: All | Unread | Favorites | Groups (Matching Haveloc Screenshot 5) */}
+              {/* Filter Pills: All | Unread | Favorites | Groups */}
               <div className="px-4 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-gray-100 dark:border-gray-800">
                 {(["all", "unread", "favorites", "groups"] as const).map((filter) => {
                   const isActive = activeFilter === filter;
@@ -1032,8 +1074,8 @@ export function ChatPortalView() {
               )}
             </div>
 
-            {/* Floating Mobile Bottom Navigation Dock (Matching Haveloc Screenshot) */}
-            <FloatingMobileNavDock
+            {/* Common CampusFleet Mobile Bottom Navigation */}
+            <MobileBottomNav
               unreadCount={conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0)}
               onOpenSettings={() => {
                 setLeftView("settings");
@@ -1205,7 +1247,7 @@ export function ChatPortalView() {
               </div>
             )}
 
-            {/* Haveloc-Style Group Details Modal */}
+            {/* CampusFleet Group Details Modal */}
             <GroupDetailsModal
               isOpen={isDetailsOpen}
               onClose={() => setIsDetailsOpen(false)}
@@ -1268,7 +1310,7 @@ export function ChatPortalView() {
                         </div>
                       </div>
                     ) : msg.poll ? (
-                      /* Interactive Poll Card (Matching Haveloc & modern chat standards) */
+                      /* Interactive Poll Card (CampusFleet live transit poll) */
                       <div
                         className={`w-full max-w-sm sm:max-w-md rounded-2xl p-4 shadow-sm border space-y-3 ${
                           isMe
@@ -1454,7 +1496,7 @@ export function ChatPortalView() {
                         })}
                       </div>
 
-                      {/* Menu trigger button for Haveloc message actions */}
+                      {/* Menu trigger button for message actions */}
                       <button
                         type="button"
                         onClick={() => setActiveMessageMenuId(activeMessageMenuId === msg.id ? null : msg.id)}
@@ -1619,7 +1661,7 @@ export function ChatPortalView() {
               </button>
             )}
 
-            {/* Attachment Menu Popup (Matching Haveloc Screenshot) */}
+            {/* Attachment Menu Popup */}
             {isAttachmentOpen && (
               <>
                 <div
@@ -1678,7 +1720,7 @@ export function ChatPortalView() {
 
             {/* Bottom Input Toolbar: Always fixed at bottom */}
             <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200/80 dark:border-gray-800 z-10 sticky bottom-0">
-              {/* Replying quote banner (Matching Haveloc Screenshot 5 & WhatsApp 2) */}
+              {/* Replying quote banner */}
               {replyingTo && (
                 <div className="flex items-center justify-between px-4 py-2 bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/40 animate-in slide-in-from-bottom-2 duration-150">
                   <div className="flex items-start gap-2 min-w-0">

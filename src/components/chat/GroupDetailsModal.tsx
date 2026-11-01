@@ -194,7 +194,7 @@ export function GroupDetailsModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* ======================================================== */}
-        {/* LEFT COLUMN: Navigation Sidebar (Matching Haveloc)       */}
+        {/* LEFT COLUMN: Navigation Sidebar (CampusFleet Group)     */}
         {/* ======================================================== */}
         <div className="w-full md:w-48 bg-gray-50/70 dark:bg-gray-850/60 border-b md:border-b-0 md:border-r border-gray-100 dark:border-gray-800 p-3 sm:p-4 flex flex-row md:flex-col gap-1 flex-shrink-0">
           <div className="hidden md:block text-[11px] font-bold text-gray-400 dark:text-gray-500 tracking-wider uppercase px-2.5 py-1.5 mb-1">

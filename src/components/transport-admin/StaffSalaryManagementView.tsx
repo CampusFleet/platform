@@ -206,7 +206,8 @@ export default function StaffSalaryManagementView() {
 
   // Selected Staff records
   const selectedStaffRecords = useMemo(() => {
-    return staffList.filter((s) => selectedStaffIds.includes(s.staffId));
+    const idSet = new Set(selectedStaffIds);
+    return staffList.filter((s) => idSet.has(s.staffId));
   }, [staffList, selectedStaffIds]);
 
   const selectedTotalNet = useMemo(() => {
@@ -218,16 +219,17 @@ export default function StaffSalaryManagementView() {
     if (selectedStaffIds.length === filteredStaff.length) {
       setSelectedStaffIds([]);
     } else {
-      setSelectedStaffIds(filteredStaff.map((s) => s.staffId));
+      setSelectedStaffIds(Array.from(new Set(filteredStaff.map((s) => s.staffId))));
     }
   };
 
   const handleToggleSelectRow = (staffId: string) => {
-    if (selectedStaffIds.includes(staffId)) {
-      setSelectedStaffIds((prev) => prev.filter((id) => id !== staffId));
-    } else {
-      setSelectedStaffIds((prev) => [...prev, staffId]);
-    }
+    setSelectedStaffIds((prev) => {
+      if (prev.includes(staffId)) {
+        return prev.filter((id) => id !== staffId);
+      }
+      return Array.from(new Set([...prev, staffId]));
+    });
   };
 
   // Handle Edit Individual Salary
@@ -766,7 +768,7 @@ export default function StaffSalaryManagementView() {
                             }`}
                           >
                             <td
-                              className="py-3 px-4 text-center"
+                              className="py-3 px-4 text-center cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleToggleSelectRow(staff.staffId);
@@ -775,8 +777,8 @@ export default function StaffSalaryManagementView() {
                               <input
                                 type="checkbox"
                                 checked={isSelected}
-                                onChange={() => handleToggleSelectRow(staff.staffId)}
-                                className="rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                readOnly
+                                className="rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer pointer-events-none"
                               />
                             </td>
 
@@ -970,7 +972,7 @@ export default function StaffSalaryManagementView() {
                     >
                       {/* Checkbox selector */}
                       <div
-                        className="absolute top-4 right-4 z-10"
+                        className="absolute top-4 right-4 z-10 cursor-pointer p-1"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleSelectRow(staff.staffId);
@@ -979,8 +981,8 @@ export default function StaffSalaryManagementView() {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => handleToggleSelectRow(staff.staffId)}
-                          className="w-4 h-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          readOnly
+                          className="w-4 h-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer pointer-events-none"
                         />
                       </div>
 
@@ -1115,11 +1117,11 @@ export default function StaffSalaryManagementView() {
           )}
 
           {/* Floating Sticky Bulk Actions Dock (when >=1 staff selected) */}
-          {selectedStaffIds.length > 0 && (
+          {selectedStaffRecords.length > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-3 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-700 text-white shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-black">
-                  {selectedStaffIds.length}
+                  {selectedStaffRecords.length}
                 </span>
                 <span className="text-xs font-bold text-slate-300">
                   Staff Selected • Total:{" "}
@@ -1147,7 +1149,7 @@ export default function StaffSalaryManagementView() {
                   className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-black text-white shadow-md cursor-pointer transition-all flex items-center gap-1.5"
                 >
                   <Send className="w-3 h-3" />
-                  <span>Disburse Selected ({selectedStaffIds.length})</span>
+                  <span>Disburse Selected ({selectedStaffRecords.length})</span>
                 </button>
 
                 <button

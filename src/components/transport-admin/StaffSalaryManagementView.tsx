@@ -25,6 +25,9 @@ import {
   Lock,
   Printer,
   Eye,
+  EyeOff,
+  Edit3,
+  CreditCard,
   ChevronRight,
   Check,
   LayoutGrid,
@@ -130,6 +133,20 @@ export default function StaffSalaryManagementView() {
     baseSalary: 20000,
     paymentFrequency: "MONTHLY" as "DAILY" | "WEEKLY" | "MONTHLY",
   });
+
+  // Dedicated Staff Payout / Direct Deposit Credentials Modal
+  const [editingPayoutStaff, setEditingPayoutStaff] = useState<StaffPayrollRecord | null>(null);
+  const [payoutForm, setPayoutForm] = useState({
+    payoutMethod: "BANK_ACCOUNT" as "BANK_ACCOUNT" | "UPI",
+    accountHolderName: "",
+    bankName: "State Bank of India",
+    bankIfsc: "",
+    bankAccount: "",
+    confirmBankAccount: "",
+    upiId: "",
+  });
+  const [showAccountNumbers, setShowAccountNumbers] = useState(false);
+  const [isSavingPayout, setIsSavingPayout] = useState(false);
 
   const [bonusModalStaff, setBonusModalStaff] = useState<StaffPayrollRecord | null>(null);
   const [bonusForm, setBonusForm] = useState({
@@ -276,6 +293,94 @@ export default function StaffSalaryManagementView() {
       }
     } catch (err: any) {
       alert("Error: " + err.message);
+    }
+  };
+
+  // Open Payout / Direct Deposit Credentials Modal
+  const handleOpenPayoutModal = (staff: StaffPayrollRecord) => {
+    setEditingPayoutStaff(staff);
+    setPayoutForm({
+      payoutMethod: staff.payoutMethod || "BANK_ACCOUNT",
+      accountHolderName: staff.accountHolderName || staff.fullName || "",
+      bankName: staff.bankName || "State Bank of India",
+      bankIfsc: staff.bankIfsc || "",
+      bankAccount: "",
+      confirmBankAccount: "",
+      upiId: "",
+    });
+    setShowAccountNumbers(false);
+  };
+
+  // Handle Save Payout Credentials
+  const handleSavePayoutCredentials = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingPayoutStaff) return;
+
+    if (payoutForm.payoutMethod === "BANK_ACCOUNT") {
+      const cleanAcct = payoutForm.bankAccount.replace(/\s+/g, "");
+      if (!cleanAcct || cleanAcct.length < 8) {
+        alert("Please enter a valid bank account number (at least 8 digits).");
+        return;
+      }
+      if (cleanAcct !== payoutForm.confirmBankAccount.replace(/\s+/g, "")) {
+        alert("Bank account number and confirmation account number do not match.");
+        return;
+      }
+      const cleanIfsc = payoutForm.bankIfsc.trim().toUpperCase();
+      if (!cleanIfsc || cleanIfsc.length !== 11) {
+        alert("Please enter a valid 11-character Indian Bank IFSC code (e.g. SBIN0000726).");
+        return;
+      }
+    } else {
+      if (!payoutForm.upiId || !payoutForm.upiId.includes("@")) {
+        alert("Please enter a valid UPI Virtual Payment Address (e.g. driver@oksbi).");
+        return;
+      }
+    }
+
+    setIsSavingPayout(true);
+    try {
+      const res = await fetch("/api/staff/salary/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: editingPayoutStaff.staffId,
+          userId: editingPayoutStaff.userId,
+          payoutMethod: payoutForm.payoutMethod,
+          accountHolderName: payoutForm.accountHolderName.trim() || editingPayoutStaff.fullName,
+          bankName: payoutForm.bankName.trim(),
+          bankIfsc: payoutForm.bankIfsc.trim().toUpperCase(),
+          bankAccount: payoutForm.bankAccount.trim(),
+          upiId: payoutForm.upiId.trim().toLowerCase(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || `✓ Direct deposit credentials encrypted and saved for ${editingPayoutStaff.fullName}`);
+        setEditingPayoutStaff(null);
+
+        // Optimistically update the drawer if currently viewing this staff
+        if (drawerStaff?.staffId === editingPayoutStaff.staffId) {
+          setDrawerStaff({
+            ...drawerStaff,
+            payoutMethod: payoutForm.payoutMethod,
+            accountHolderName: payoutForm.accountHolderName.trim() || editingPayoutStaff.fullName,
+            bankName: payoutForm.bankName.trim(),
+            bankIfsc: payoutForm.bankIfsc.trim().toUpperCase(),
+            bankAccountMasked: data.bankAccountMasked || (payoutForm.bankAccount ? `••••••••${payoutForm.bankAccount.slice(-4)}` : drawerStaff.bankAccountMasked),
+            upiIdMasked: data.upiIdMasked || (payoutForm.upiId ? payoutForm.upiId : drawerStaff.upiIdMasked),
+            isVerified: true,
+          });
+        }
+        fetchData();
+      } else {
+        alert(data.error || "Failed to update payout credentials.");
+      }
+    } catch (err: any) {
+      alert("Error saving payout details: " + err.message);
+    } finally {
+      setIsSavingPayout(false);
     }
   };
 
@@ -950,20 +1055,30 @@ export default function StaffSalaryManagementView() {
                               </span>
                             </td>
 
-                            <td className="py-3 px-3" onClick={() => setDrawerStaff(staff)}>
-                              {staff.payoutMethod === "UPI" ? (
-                                <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                                  <Smartphone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  <span>{staff.upiIdMasked || "UPI VPA Configured"}</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                                  <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                  <span>
-                                    {staff.bankName}: {staff.bankAccountMasked || "••••••••"}
-                                  </span>
-                                </div>
-                              )}
+                            <td className="py-3 px-3">
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPayoutModal(staff);
+                                }}
+                                className="group inline-flex items-center gap-1.5 px-2 py-1 -mx-2 rounded-lg hover:bg-blue-50/80 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-all cursor-pointer"
+                                title="Click to manage bank account & direct deposit vault"
+                              >
+                                {staff.payoutMethod === "UPI" ? (
+                                  <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                                    <Smartphone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                    <span>{staff.upiIdMasked || "UPI VPA Configured"}</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                                    <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 shrink-0 transition-colors" />
+                                    <span>
+                                      {staff.bankName}: {staff.bankAccountMasked || "••••••••"}
+                                    </span>
+                                  </div>
+                                )}
+                                <Edit3 className="w-3 h-3 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                              </div>
                             </td>
 
                             <td className="py-3 px-3 text-center" onClick={() => setDrawerStaff(staff)}>
@@ -1179,24 +1294,37 @@ export default function StaffSalaryManagementView() {
                       </div>
 
                       {/* Banking & Payout Vault */}
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-1.5 font-mono text-slate-600 dark:text-slate-400 text-[11px]">
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenPayoutModal(staff);
+                        }}
+                        className="group p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 hover:bg-blue-50/70 dark:hover:bg-blue-950/30 border border-slate-200 dark:border-slate-700/60 hover:border-blue-400 dark:hover:border-blue-600 flex items-center justify-between text-xs cursor-pointer transition-all shadow-2xs"
+                        title="Click to manage bank account & direct deposit vault"
+                      >
+                        <div className="flex items-center gap-1.5 font-mono text-slate-600 dark:text-slate-400 text-[11px] truncate mr-2">
                           {staff.payoutMethod === "UPI" ? (
                             <>
-                              <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-                              <span>{staff.upiIdMasked || "Active UPI"}</span>
+                              <Smartphone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              <span className="font-semibold truncate">{staff.upiIdMasked || "Active UPI"}</span>
                             </>
                           ) : (
                             <>
-                              <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{staff.bankName}: {staff.bankAccountMasked || "••••••••"}</span>
+                              <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 shrink-0 transition-colors" />
+                              <span className="font-semibold truncate">{staff.bankName}: {staff.bankAccountMasked || "••••••••"}</span>
                             </>
                           )}
                         </div>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                          <Lock className="w-3 h-3" />
-                          <span>AES-256</span>
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            <span>AES-256</span>
+                          </span>
+                          <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 pl-1.5 border-l border-slate-200 dark:border-slate-700">
+                            <Edit3 className="w-3 h-3" />
+                            <span>Edit</span>
+                          </span>
+                        </div>
                       </div>
 
                       {/* Financial Amounts & Action CTA */}
@@ -1860,17 +1988,45 @@ export default function StaffSalaryManagementView() {
                   <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500">
                     Disbursement Vault
                   </h4>
-                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold">
-                    <Lock className="w-3 h-3" />
-                    <span>AES-256-GCM Secure</span>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold">
+                      <Lock className="w-3 h-3" />
+                      <span>AES-256-GCM Secure</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPayoutModal(drawerStaff)}
+                      className="px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800 transition-all cursor-pointer flex items-center gap-1"
+                      title="Edit bank or UPI direct deposit destination"
+                    >
+                      <Edit3 className="w-2.5 h-2.5" />
+                      <span>Edit Vault</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2 text-xs font-mono">
                   <div>
                     <span className="text-slate-400 block text-[10px] font-sans">Method</span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {drawerStaff.payoutMethod === "UPI" ? "UPI VPA Instant Transfer" : "Bank Direct Deposit (IMPS)"}
+                    <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      {drawerStaff.payoutMethod === "UPI" ? (
+                        <>
+                          <Smartphone className="w-3.5 h-3.5 text-blue-500" />
+                          <span>UPI VPA Instant Transfer</span>
+                        </>
+                      ) : (
+                        <>
+                          <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Bank Direct Deposit (IMPS/NEFT)</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-sans">Beneficiary Name</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-sans">
+                      {drawerStaff.accountHolderName || drawerStaff.fullName}
                     </span>
                   </div>
 
@@ -1913,7 +2069,7 @@ export default function StaffSalaryManagementView() {
                   <span>Execute Razorpay Payout (₹{drawerStaff.netPayable.toLocaleString("en-IN")})</span>
                 </button>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1923,18 +2079,27 @@ export default function StaffSalaryManagementView() {
                         paymentFrequency: drawerStaff.paymentFrequency,
                       });
                     }}
-                    className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer transition-all"
+                    className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer transition-all text-center"
                   >
                     Edit Salary
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => handleOpenPayslip(drawerStaff)}
-                    className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    onClick={() => handleOpenPayoutModal(drawerStaff)}
+                    className="py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-1"
                   >
-                    <FileCheck2 className="w-3.5 h-3.5 text-blue-500" />
-                    <span>View Payslip</span>
+                    <CreditCard className="w-3 h-3 text-blue-500" />
+                    <span>Edit Payout</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPayslip(drawerStaff)}
+                    className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-1"
+                  >
+                    <FileCheck2 className="w-3 h-3 text-blue-500" />
+                    <span>Payslip</span>
                   </button>
                 </div>
               </div>
@@ -1989,22 +2154,358 @@ export default function StaffSalaryManagementView() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <CreditCard className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="text-[11px]">Direct Deposit & Banking:</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const s = editingStaff;
+                    setEditingStaff(null);
+                    handleOpenPayoutModal(s);
+                  }}
+                  className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <span>Edit Payout Vault →</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingStaff(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveIndividualSalary}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: STAFF DIRECT DEPOSIT & PAYOUT VAULT (ENTERPRISE CRUD) ─────── */}
+      {editingPayoutStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
+          <div className="w-full max-w-lg my-8 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                  <CreditCard className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Direct Deposit Vault</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                      RazorpayX Auto
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Configure payout destination for <span className="font-bold text-slate-700 dark:text-slate-200">{editingPayoutStaff.fullName}</span> ({editingPayoutStaff.employeeCode})
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => setEditingStaff(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                onClick={() => setEditingPayoutStaff(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveIndividualSalary}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                Save Changes
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Hardware Encryption Notice */}
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="text-[11px] leading-relaxed">
+                <span className="font-bold text-slate-900 dark:text-white">AES-256-GCM Vault:</span> Account numbers and VPA IDs are hardware encrypted before database persistence. Only masked digits are visible across public screens.
+              </div>
+            </div>
+
+            {/* Current on file preview */}
+            <div className="p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-xs">
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>Current Destination on File:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Verified</span>
+                </span>
+              </div>
+              <div className="mt-1 font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
+                {editingPayoutStaff.payoutMethod === "UPI"
+                  ? `UPI VPA: ${editingPayoutStaff.upiIdMasked || "Active UPI"}`
+                  : `${editingPayoutStaff.bankName} (IFSC: ${editingPayoutStaff.bankIfsc}): ${editingPayoutStaff.bankAccountMasked || "••••••••"}`}
+              </div>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSavePayoutCredentials} className="space-y-4">
+              {/* Method Switcher Tabs */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">
+                  Select Payout Channel
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayoutForm({ ...payoutForm, payoutMethod: "BANK_ACCOUNT" })}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      payoutForm.payoutMethod === "BANK_ACCOUNT"
+                        ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/20 shadow-xs"
+                        : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Building2 className={`w-4 h-4 ${payoutForm.payoutMethod === "BANK_ACCOUNT" ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`} />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white">Bank Direct Deposit</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">IMPS / NEFT 24x7 Settlement</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPayoutForm({ ...payoutForm, payoutMethod: "UPI" })}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      payoutForm.payoutMethod === "UPI"
+                        ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/20 shadow-xs"
+                        : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Smartphone className={`w-4 h-4 ${payoutForm.payoutMethod === "UPI" ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`} />
+                      <span className="font-bold text-xs text-slate-900 dark:text-white">Instant UPI VPA</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">Google Pay, PhonePe, Paytm</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Beneficiary Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Beneficiary Account Holder Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={payoutForm.accountHolderName}
+                  onChange={(e) => setPayoutForm({ ...payoutForm, accountHolderName: e.target.value })}
+                  placeholder="e.g. Full Name as registered in bank passbook"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Must match banking records to avoid Razorpay transfer rejection.
+                </span>
+              </div>
+
+              {/* Channel-Specific Fields */}
+              {payoutForm.payoutMethod === "BANK_ACCOUNT" ? (
+                <div className="space-y-3.5">
+                  {/* Bank Name with Quick Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={payoutForm.bankName}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, bankName: e.target.value })}
+                      placeholder="e.g. State Bank of India, HDFC Bank"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+
+                    {/* Quick Select Chips */}
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      <span className="text-[10px] text-slate-400 font-semibold mr-1">Top Banks:</span>
+                      {["State Bank of India", "HDFC Bank", "ICICI Bank", "Punjab National Bank", "Bank of Baroda", "Axis Bank"].map((bank) => (
+                        <button
+                          key={bank}
+                          type="button"
+                          onClick={() => setPayoutForm({ ...payoutForm, bankName: bank })}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer ${
+                            payoutForm.bankName === bank
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          {bank.replace("Bank of ", "").replace(" Bank", "")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* IFSC Code */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Bank IFSC Code
+                      </label>
+                      {payoutForm.bankIfsc && (
+                        <span className={`text-[10px] font-bold flex items-center gap-1 ${
+                          /^[A-Z]{4}0[A-Z0-9]{6}$/.test(payoutForm.bankIfsc.trim().toUpperCase())
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-amber-500"
+                        }`}>
+                          {/^[A-Z]{4}0[A-Z0-9]{6}$/.test(payoutForm.bankIfsc.trim().toUpperCase()) ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Valid 11-Digit IFSC</span>
+                            </>
+                          ) : (
+                            <span>11 characters required (e.g. SBIN0000726)</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={11}
+                      value={payoutForm.bankIfsc}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, bankIfsc: e.target.value.toUpperCase() })}
+                      placeholder="e.g. SBIN0000726"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold uppercase text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Account Number & Confirm Account Number */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Bank Account Number
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowAccountNumbers(!showAccountNumbers)}
+                          className="text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-0.5 cursor-pointer"
+                        >
+                          {showAccountNumbers ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showAccountNumbers ? "Hide" : "Show"}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showAccountNumbers ? "text" : "password"}
+                        required
+                        value={payoutForm.bankAccount}
+                        onChange={(e) => setPayoutForm({ ...payoutForm, bankAccount: e.target.value.replace(/\s+/g, "") })}
+                        placeholder="Enter full account number"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Confirm Account Number
+                        </label>
+                        {payoutForm.confirmBankAccount && (
+                          <span className={`text-[10px] font-bold ${
+                            payoutForm.bankAccount === payoutForm.confirmBankAccount
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-amber-500"
+                          }`}>
+                            {payoutForm.bankAccount === payoutForm.confirmBankAccount ? "✓ Matches" : "⚠️ Mismatch"}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type={showAccountNumbers ? "text" : "password"}
+                        required
+                        value={payoutForm.confirmBankAccount}
+                        onChange={(e) => setPayoutForm({ ...payoutForm, confirmBankAccount: e.target.value.replace(/\s+/g, "") })}
+                        placeholder="Re-enter account number"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* UPI VPA Form */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      UPI Virtual Payment Address (VPA)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={payoutForm.upiId}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, upiId: e.target.value.toLowerCase().trim() })}
+                      placeholder="e.g. driver@oksbi or 9876543210@paytm"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+
+                    {/* Quick UPI Handles */}
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      <span className="text-[10px] text-slate-400 font-semibold mr-1">Common Handles:</span>
+                      {["@oksbi", "@okhdfcbank", "@paytm", "@ybl", "@axl"].map((handle) => (
+                        <button
+                          key={handle}
+                          type="button"
+                          onClick={() => {
+                            const prefix = payoutForm.upiId.split("@")[0] || "staff";
+                            setPayoutForm({ ...payoutForm, upiId: `${prefix}${handle}` });
+                          }}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          {handle}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+                  <Lock className="w-3 h-3 text-emerald-500" />
+                  <span>Hardware Sealed</span>
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingPayoutStaff(null)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingPayout}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-md cursor-pointer disabled:opacity-50 transition-all flex items-center gap-2 active:scale-95"
+                  >
+                    {isSavingPayout ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Encrypting & Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Save & Encrypt Vault</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -4,11 +4,12 @@ import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm, isStartingSeat, getTeacherStartingSeats, generateSeatLayout } from "@/lib/utils";
 import { cacheGet } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
+import { verifyRollingBusToken } from "@/lib/rolling-bus-crypto";
 
 /**
  * Student Self-Service QR Boarding & GPS Attendance Verification
  * Validates that student is physically inside or adjacent to the bus (<200m)
- * using live hardware telematics from Redis / MongoDB.
+ * using live hardware telematics or rolling encrypted dynamic QR display codes.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +19,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { busId, seatId, latitude, longitude, busLatitude, busLongitude } = body;
+    const { busId, seatId, latitude, longitude, busLatitude, busLongitude, rollingPayload, rollingToken } = body;
+
+    // Optional: Cryptographic Dynamic Rolling QR Verification (ESP32 In-Bus Display)
+    let isRollingVerified = false;
+    if (rollingPayload || rollingToken) {
+      const cryptoResult = await verifyRollingBusToken(rollingPayload || rollingToken, session.userId);
+      if (!cryptoResult.valid) {
+        return NextResponse.json({
+          success: false,
+          status: cryptoResult.code || "INVALID_ROLLING_TOKEN",
+          message: cryptoResult.error || "Dynamic QR verification failed.",
+        }, { status: 403 });
+      }
+      isRollingVerified = true;
+    }
 
     if (!busId || latitude === undefined || longitude === undefined) {
       return NextResponse.json({ success: false, message: "Missing busId or GPS geolocation coordinates." }, { status: 400 });
@@ -201,21 +216,25 @@ export async function POST(req: NextRequest) {
 
 
 
-    // 8. Add verified attendance record with Location Distance Unlock
+    // 8. Add verified attendance record with Location Distance or Rolling Crypto Unlock
     const attendanceId = `att-self-${Date.now()}`;
     await supabaseAdmin.from("attendance_records").insert({
       id: attendanceId,
       student_id: resolvedStudentId,
       trip_id: resolvedTripId,
       bus_id: busId,
-      method: "LOCATION_DISTANCE_UNLOCK", 
+      method: isRollingVerified ? "ROLLING_ENCRYPTED_QR" : "LOCATION_DISTANCE_UNLOCK", 
       status: "BOARDED",
-      verified_by: "Live GPS Proximity System",
-      notes: `Geofenced location distance unlock verified (dist: ${calculatedDistMeters}m <= 200m)`,
-      signature_token: `LOCATION-DIST-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+      verified_by: isRollingVerified ? "ESP32 Time-Crypto Display" : "Live GPS Proximity System",
+      notes: isRollingVerified
+        ? "Cryptographically verified via rolling dynamic QR display (HMAC-SHA256, Zero-RFID)"
+        : `Geofenced location distance unlock verified (dist: ${calculatedDistMeters}m <= 200m)`,
+      signature_token: isRollingVerified
+        ? `ROLLING-CRYPTO-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+        : `LOCATION-DIST-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
       timestamp: nowIso,
       lock_status: "UNLOCKED",
-      unlocked_by: "LOCATION_DISTANCE",
+      unlocked_by: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
       distance_meters: calculatedDistMeters,
       unlock_timestamp: nowIso,
     });

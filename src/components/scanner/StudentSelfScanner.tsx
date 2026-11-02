@@ -62,21 +62,47 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
     stopCamera();
     
     try {
-      const payload = JSON.parse(rawCode);
-      
-      // Flow 1: Scanned a BUS_QR -> Redirect to Seat Selection Map for this bus
-      if (payload.type === "BUS_QR" && payload.busId) {
+      let payload: any = null;
+      let isRollingQr = false;
+
+      const trimmed = rawCode.trim();
+      if (trimmed.startsWith("cf://b/")) {
+        // Compact Rolling Bus URI: cf://b/{busId}?t={timeBlock}&k={token}
+        try {
+          const url = new URL(trimmed.replace("cf://", "http://cf.local/"));
+          const pathParts = url.pathname.split("/").filter(Boolean);
+          const busId = pathParts[1] || "";
+          const timeBlock = parseInt(url.searchParams.get("t") || "0", 10);
+          const token = url.searchParams.get("k") || "";
+          payload = { type: "ROLLING_BUS_QR", busId, timeBlock, token, rawCode: trimmed };
+          isRollingQr = true;
+        } catch {
+          throw new Error("Invalid rolling QR URI structure.");
+        }
+      } else {
+        try {
+          payload = JSON.parse(trimmed);
+          if (payload.type === "ROLLING_BUS_QR" || payload.token || payload.k) {
+            isRollingQr = true;
+          }
+        } catch {
+          throw new Error("Invalid QR format. Please scan an authentic bus display or seat QR.");
+        }
+      }
+
+      // Flow 1: Scanned a static BUS_QR -> Redirect to Seat Selection Map
+      if (!isRollingQr && payload.type === "BUS_QR" && payload.busId) {
         setSuccessMsg("Bus identified! Opening seat selection map...");
         setTimeout(() => {
-          // If we are in the dedicated scan page, or anywhere else, just redirect.
           window.location.href = `/portal?busId=${payload.busId}`;
         }, 1200);
         return;
       }
-      
-      // Flow 2: Scanned a SEAT_QR -> Directly board into that specific seat
-      if (payload.type !== "SEAT_QR" || !payload.busId || !payload.seatId) {
-        throw new Error("Invalid QR format. Please scan a valid Bus or Seat QR.");
+
+      // Flow 2: Scanned an ESP32 Dynamic Rolling Cryptographic Bus QR Display (Zero-RFID)
+      // or Flow 3: Scanned a SEAT_QR -> Direct Boarding Attendance
+      if (!isRollingQr && payload.type !== "SEAT_QR") {
+        throw new Error("Invalid QR format. Please scan a valid Bus Display QR or Seat QR.");
       }
 
       // 1. Get Geolocation
@@ -100,7 +126,7 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
       const busLat = liveBusLoc.busId === payload.busId ? liveBusLoc.latitude : undefined;
       const busLng = liveBusLoc.busId === payload.busId ? liveBusLoc.longitude : undefined;
 
-      // 3. Call our API with seatId attached
+      // 3. Call our API with seatId or rolling dynamic QR proof
       const res = await fetch("/api/students/board-self-service", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,7 +136,9 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
           latitude: lat,
           longitude: lng,
           busLatitude: busLat,
-          busLongitude: busLng
+          busLongitude: busLng,
+          rollingPayload: isRollingQr ? (payload.rawCode || rawCode) : undefined,
+          rollingToken: isRollingQr ? payload.token : undefined,
         })
       });
 
@@ -120,7 +148,11 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
         throw new Error(data.message || "Failed to board.");
       }
 
-      setSuccessMsg(`Success! You have boarded Seat ${payload.seatId}.`);
+      setSuccessMsg(
+        isRollingQr
+          ? "✓ Rolling Encrypted QR Verified! Boarding attendance cleared without RFID."
+          : `Success! You have boarded Seat ${payload.seatId}.`
+      );
       setTimeout(() => {
         onSuccess();
       }, 2000);

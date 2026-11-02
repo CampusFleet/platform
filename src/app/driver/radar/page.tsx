@@ -217,7 +217,7 @@ export default async function DriverRadarPage() {
   const activeRoute = routes.find((r) => r.id === myAssignedTrip?.routeId) || routes[0] || null;
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-sans">
+    <div className="min-h-screen bg-white dark:bg-black text-zinc-900 dark:text-white flex flex-col font-sans">
       <UnifiedAppHeader
         role="driver"
         portalTitle="Driver Live Radar"
@@ -226,16 +226,16 @@ export default async function DriverRadarPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/driver"
-              className="px-3 py-1.5 rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs font-bold text-zinc-200 flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 transition-colors shadow-xs"
             >
-              <Gauge className="w-4 h-4 text-blue-400" />
+              <Gauge className="w-4 h-4 text-blue-500" />
               <span>Cockpit Telemetry</span>
             </Link>
           </div>
         }
       />
 
-      <main className="flex-1 relative w-full h-[calc(100vh-68px)]">
+      <main className="flex-1 relative w-full overflow-hidden">
         <DriverLiveRadarView
           initialUser={session}
           initialDriverStaffId={driverStaffId}

@@ -113,7 +113,26 @@ export default function ConductorLiveRadarView({
   const [dismissedStopHaltId, setDismissedStopHaltId] = useState<string | null>(null);
   const [isAlertMinimized, setIsAlertMinimized] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [mapTheme, setMapTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">("GOOGLE_STREETS");
+  const [mapTheme, setMapTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">(() => {
+    if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
+      return "CARTO_DARK";
+    }
+    return "GOOGLE_STREETS";
+  });
+
+  // Dynamically synchronize map style with application light/dark mode
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const updateTheme = () => {
+      const isDark = document.documentElement.classList.contains("dark");
+      setMapTheme(isDark ? "CARTO_DARK" : "GOOGLE_STREETS");
+    };
+    updateTheme();
+
+    const observer = new MutationObserver(() => updateTheme());
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
   const [showSosModal, setShowSosModal] = useState(false);
   const [sosSent, setSosSent] = useState(false);
 
@@ -813,22 +832,22 @@ export default function ConductorLiveRadarView({
       <div
         className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 ease-in-out ${
           isDrawerExpanded ? "max-h-[75vh]" : "max-h-[140px]"
-        } bg-black/95 border-t border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-white`}
+        } bg-white/95 dark:bg-black/95 border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}
       >
         {/* Drag Handle Strip */}
         <div
           onClick={() => setIsDrawerExpanded((prev) => !prev)}
-          className="p-3 pb-2 border-b border-zinc-800 cursor-pointer hover:bg-zinc-900/50 transition-colors flex flex-col items-center select-none"
+          className="p-3 pb-2 border-b border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900/50 transition-colors flex flex-col items-center select-none"
         >
-          <div className="w-12 h-1.5 rounded-full bg-zinc-700 mb-2" />
+          <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 mb-2" />
           <div className="w-full flex items-center justify-between px-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-white text-sm">Corridor Manifest</span>
-              <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[10px] font-bold border border-zinc-700">
+              <span className="font-extrabold text-zinc-900 dark:text-white text-sm">Corridor Manifest</span>
+              <span className="px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700">
                 {routeStops.length} Stops
               </span>
             </div>
-            <div className="flex items-center gap-1 text-zinc-400 text-xs font-semibold">
+            <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400 text-xs font-semibold">
               <span>{isDrawerExpanded ? "Collapse Timeline" : "View Passenger Breakdown"}</span>
               {isDrawerExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
@@ -852,50 +871,50 @@ export default function ConductorLiveRadarView({
                 }}
                 className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                   isCurrent
-                    ? "bg-blue-950/40 border-blue-500 shadow-md text-white"
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500 shadow-md text-blue-950 dark:text-white"
                     : isPast
-                    ? "bg-zinc-900/40 border-zinc-800 opacity-60 text-zinc-400"
-                    : "bg-zinc-900/80 border-zinc-800 hover:border-zinc-700 text-white"
+                    ? "bg-zinc-50 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800 opacity-60 text-zinc-400 dark:text-zinc-500"
+                    : "bg-zinc-50 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
                       isPast
-                        ? "bg-zinc-800 text-zinc-500"
+                        ? "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
                         : isCurrent
                         ? "bg-blue-600 text-white ring-2 ring-blue-400"
-                        : "bg-zinc-800 text-zinc-300"
+                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
                     }`}
                   >
                     {isPast ? "✓" : idx + 1}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold">{stop.name}</span>
+                      <span className="text-sm font-bold text-zinc-900 dark:text-white">{stop.name}</span>
                       {isCurrent && (
                         <span className="text-[10px] px-2 py-0.2 rounded-full bg-blue-600 text-white font-bold">
                           NEXT STOP
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-zinc-400 flex items-center gap-2 mt-0.5">
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center gap-2 mt-0.5">
                       <span>{isIncomingShift ? "Pickup" : "Drop-off"} point</span>
                       {demand && demand.studentsCount > 0 && (
-                        <span className="text-blue-300">• 🎓 {demand.studentsCount} Students</span>
+                        <span className="text-blue-600 dark:text-blue-300">• 🎓 {demand.studentsCount} Students</span>
                       )}
                       {demand && demand.teachersCount > 0 && (
-                        <span className="text-amber-300">• 👨‍🏫 {demand.teachersCount} Faculty</span>
+                        <span className="text-amber-600 dark:text-amber-300">• 👨‍🏫 {demand.teachersCount} Faculty</span>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
-                  <div className="text-xs font-mono font-bold text-white">
+                  <div className="text-xs font-mono font-bold text-zinc-900 dark:text-white">
                     {passengerCount} Commuter{passengerCount !== 1 ? "s" : ""}
                   </div>
-                  <div className="text-[10px] text-zinc-500 font-mono">
+                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
                     {isPast ? "Completed" : isCurrent ? "Approaching" : "Upcoming"}
                   </div>
                 </div>
@@ -904,11 +923,11 @@ export default function ConductorLiveRadarView({
           })}
 
           {/* Route Completion Button */}
-          <div className="pt-3 border-t border-zinc-800">
+          <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800">
             <button
               type="button"
               onClick={handleCompleteRoute}
-              className="w-full py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs border border-zinc-700 transition-all active:scale-95"
+              className="w-full py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-800 dark:text-white font-bold text-xs border border-zinc-200 dark:border-zinc-700 shadow-sm transition-all active:scale-95 cursor-pointer"
             >
               Finish Trip Run & Close Manifest
             </button>
@@ -919,19 +938,19 @@ export default function ConductorLiveRadarView({
       {/* ── 5. PASSENGER MANIFEST ROSTER MODAL ──────────────────────────────── */}
       {selectedRosterStop && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[85vh] text-white">
-            <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-800">
+          <div className="w-full max-w-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[85vh] text-zinc-900 dark:text-white">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-zinc-800">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-600/30 text-blue-300 border border-blue-500/40">
+                  <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-600/15 dark:bg-blue-600/30 text-blue-700 dark:text-blue-300 border border-blue-500/30 dark:border-blue-500/40">
                     STOP MANIFEST
                   </span>
-                  <span className="text-xs font-bold text-zinc-400">
+                  <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
                     {isIncomingShift ? "Boarding at Stop" : "Alighting at Stop"}
                   </span>
                 </div>
-                <h3 className="text-lg font-black text-white mt-1">{selectedRosterStop.stopName}</h3>
-                <p className="text-xs text-zinc-400">
+                <h3 className="text-lg font-black text-zinc-900 dark:text-white mt-1">{selectedRosterStop.stopName}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Total {selectedRosterStop.total} passengers (🎓 {selectedRosterStop.studentsCount} Students • 👨‍🏫 {selectedRosterStop.teachersCount} Faculty)
                 </p>
               </div>
@@ -939,7 +958,7 @@ export default function ConductorLiveRadarView({
               <button
                 type="button"
                 onClick={() => setSelectedRosterStop(null)}
-                className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -948,13 +967,13 @@ export default function ConductorLiveRadarView({
             {/* Commuter Search Filter */}
             <div className="pt-3 pb-2">
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-zinc-500" />
+                <Search className="w-4 h-4 absolute left-3 top-3 text-zinc-400" />
                 <input
                   type="text"
                   value={rosterSearch}
                   onChange={(e) => setRosterSearch(e.target.value)}
                   placeholder="Filter by name or seat code..."
-                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 shadow-xs"
                 />
               </div>
             </div>
@@ -970,26 +989,26 @@ export default function ConductorLiveRadarView({
                 .map((passenger) => (
                   <div
                     key={passenger.id}
-                    className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between gap-3 text-xs"
+                    className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3 text-xs"
                   >
                     <div className="flex items-center gap-2.5">
                       <div
                         className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
                           passenger.role === "faculty"
-                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                            : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                            : "bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30"
                         }`}
                       >
                         {passenger.role === "faculty" ? "FAC" : "STU"}
                       </div>
                       <div>
-                        <div className="font-bold text-white flex items-center gap-2">
+                        <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-2">
                           <span>{passenger.fullName}</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300">
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700">
                             Seat {passenger.seatCode}
                           </span>
                         </div>
-                        <div className="text-[10px] text-zinc-400">
+                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
                           {passenger.role === "faculty" ? "Faculty Member" : "Registered Student"}
                         </div>
                       </div>
@@ -1010,8 +1029,8 @@ export default function ConductorLiveRadarView({
                       <span
                         className={`text-[10px] font-mono font-bold px-2 py-1 rounded-lg ${
                           passenger.isBoarded
-                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                            : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+                            ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
                         }`}
                       >
                         {passenger.isBoarded ? "✓ Boarded" : "Waiting"}

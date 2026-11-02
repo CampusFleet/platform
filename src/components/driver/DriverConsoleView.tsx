@@ -1157,7 +1157,7 @@ export default function DriverConsoleView({
 
       {/* ── FULLSCREEN LIVE RADAR NAVIGATION MODAL OVERLAY ───────────── */}
       {isRadarOpen && (
-        <div className="fixed inset-0 z-50 bg-black animate-in fade-in duration-200 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-white dark:bg-black animate-in fade-in duration-200 flex flex-col overflow-hidden">
           <DriverLiveRadarView
             initialUser={initialUser}
             initialDriverStaffId={initialDriverStaffId}

@@ -296,7 +296,7 @@ export default function LiveFleetTelematicsView({
   // ── 6. RENDER CONSOLE MIRROR (When Conductor Perspective is Active) ────────
   if (selectedBusDetails) {
     return (
-      <div className="fixed inset-0 z-50 bg-black text-white overflow-hidden animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-50 bg-white dark:bg-black text-zinc-900 dark:text-white overflow-hidden animate-in fade-in duration-200">
         <ConductorLiveRadarView
           bus={selectedBusDetails.bus}
           activeTrip={selectedBusDetails.activeTrip}

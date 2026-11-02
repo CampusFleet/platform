@@ -226,7 +226,26 @@ export default function DriverLiveRadarView({
     propHasRealGpsLock ? "GPS Locked" : "GPS Ready"
   );
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [mapTheme, setMapTheme] = useState<"CARTO_DARK" | "GOOGLE_STREETS" | "GOOGLE_HYBRID">("CARTO_DARK");
+  const [mapTheme, setMapTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">(() => {
+    if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
+      return "CARTO_DARK";
+    }
+    return "GOOGLE_STREETS";
+  });
+
+  // Dynamically synchronize map style with application light/dark mode
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const updateTheme = () => {
+      const isDark = document.documentElement.classList.contains("dark");
+      setMapTheme(isDark ? "CARTO_DARK" : "GOOGLE_STREETS");
+    };
+    updateTheme();
+
+    const observer = new MutationObserver(() => updateTheme());
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
   const [isFollowingBus, setIsFollowingBus] = useState(true);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
   const [isHudMinimized, setIsHudMinimized] = useState(false);
@@ -756,7 +775,7 @@ export default function DriverLiveRadarView({
   const isOverspeed = speed > 40;
 
   return (
-    <div className="relative w-full h-[calc(100vh-68px)] min-h-[550px] bg-black text-white select-none overflow-hidden font-sans">
+    <div className="relative w-full h-full min-h-[550px] bg-zinc-100 dark:bg-black text-zinc-900 dark:text-white select-none overflow-hidden font-sans">
       {/* ── 1. FULLSCREEN INTERACTIVE RADAR CANVAS ───────────────────────── */}
       <div className="absolute inset-0 z-0">
         <CampusFleetMap
@@ -776,8 +795,8 @@ export default function DriverLiveRadarView({
 
       {/* ── 2. TOAST NOTIFICATION ────────────────────────────────────────── */}
       {toastMessage && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black/90 text-white border border-zinc-700 text-xs sm:text-sm font-black rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in fade-in slide-in-from-top-4">
-          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-white/95 dark:bg-black/90 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-black rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in fade-in slide-in-from-top-4">
+          <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -1118,7 +1137,7 @@ export default function DriverLiveRadarView({
           className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
             isFollowingBus
               ? "bg-blue-600 border-blue-400 text-white shadow-blue-600/30"
-              : "bg-black/85 border-zinc-800 text-zinc-300 hover:text-white"
+              : "bg-white/95 dark:bg-black/85 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white"
           }`}
           title="Re-Center on Bus"
           aria-label="Re-Center on Bus"
@@ -1131,15 +1150,15 @@ export default function DriverLiveRadarView({
           type="button"
           onClick={() => {
             const nextTheme =
-              mapTheme === "CARTO_DARK"
-                ? "GOOGLE_STREETS"
-                : mapTheme === "GOOGLE_STREETS"
+              mapTheme === "GOOGLE_STREETS"
                 ? "GOOGLE_HYBRID"
-                : "CARTO_DARK";
+                : mapTheme === "GOOGLE_HYBRID"
+                ? "CARTO_DARK"
+                : "GOOGLE_STREETS";
             setMapTheme(nextTheme);
             playChime(523.25, 0.15);
           }}
-          className="w-11 h-11 rounded-2xl bg-black/85 border border-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+          className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-black/85 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
           title={`Map Style: ${mapTheme}`}
           aria-label="Cycle Map Style"
         >
@@ -1159,7 +1178,7 @@ export default function DriverLiveRadarView({
           className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
             isAudioEnabled
               ? "bg-emerald-600 border-emerald-400 text-white"
-              : "bg-black/85 border-zinc-800 text-zinc-500"
+              : "bg-white/95 dark:bg-black/85 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500"
           }`}
           title={isAudioEnabled ? "Voice announcements ON" : "Voice announcements MUTED"}
           aria-label="Toggle voice guidance"
@@ -1184,7 +1203,7 @@ export default function DriverLiveRadarView({
             href={externalNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-11 h-11 rounded-2xl bg-black/85 border border-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all active:scale-95"
+            className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-black/85 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all active:scale-95"
             title="Open Turn-by-Turn in Google Maps app"
             aria-label="Open in Google Maps"
           >
@@ -1206,53 +1225,53 @@ export default function DriverLiveRadarView({
 
       {/* ── 5. BOTTOM TACTICAL DRAWER & ACTION BAR (UBER/RAPIDO SHEET) ───── */}
       <div className="absolute bottom-3 left-3 right-3 sm:left-6 sm:right-6 z-30">
-        <div className="bg-black/95 border border-zinc-800 text-white rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden transition-all">
+        <div className="bg-white/95 dark:bg-black/95 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden transition-all">
           {/* Drawer Handle Strip */}
           <div
             onClick={() => setIsDrawerExpanded((prev) => !prev)}
-            className="w-full pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer hover:bg-zinc-900/50 transition-colors"
+            className="w-full pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900/50 transition-colors"
           >
-            <div className="w-12 h-1.5 rounded-full bg-zinc-700" />
-            <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-zinc-400 uppercase mt-1">
+            <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+            <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mt-1">
               <span>Bus {bus?.busNumber}</span>
               <span>•</span>
               <span>{route?.name || "Corridor"}</span>
               <span>•</span>
-              <span className="text-emerald-400">{gpsStatusText}</span>
-              {isDrawerExpanded ? <ChevronDown className="w-3.5 h-3.5 ml-1" /> : <ChevronUp className="w-3.5 h-3.5 ml-1" />}
+              <span className="text-emerald-600 dark:text-emerald-400">{gpsStatusText}</span>
+              {isDrawerExpanded ? <ChevronDown className="w-3.5 h-3.5 ml-1 text-zinc-400" /> : <ChevronUp className="w-3.5 h-3.5 ml-1 text-zinc-400" />}
             </div>
           </div>
 
           {/* Expanded Drawer Details (Stops sequence & Fleet telemetry) */}
           {isDrawerExpanded && (
-            <div className="px-4 py-3 border-t border-zinc-800 space-y-3 max-h-60 overflow-y-auto">
+            <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 space-y-3 max-h-60 overflow-y-auto">
               {/* Quick Trip & Vehicle Metadata Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
-                  <div className="text-[10px] font-bold text-zinc-400 uppercase">Duty Bus</div>
-                  <div className="font-black text-white mt-0.5">Bus {bus?.busNumber}</div>
+                <div className="p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                  <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">Duty Bus</div>
+                  <div className="font-black text-zinc-900 dark:text-white mt-0.5">Bus {bus?.busNumber}</div>
                   <div className="text-[9px] text-zinc-500">{bus?.registrationNo || "UK-04-TRANSIT"}</div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
-                  <div className="text-[10px] font-bold text-zinc-400 uppercase">Passengers</div>
-                  <div className="font-black text-emerald-400 mt-0.5">{totalTripBookings} Booked</div>
+                <div className="p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                  <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">Passengers</div>
+                  <div className="font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{totalTripBookings} Booked</div>
                   <div className="text-[9px] text-zinc-500">{bus?.capacity || 40} Seats Total</div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
-                  <div className="text-[10px] font-bold text-zinc-400 uppercase">Terminal</div>
-                  <div className="font-black text-white mt-0.5 truncate">{terminalStop?.name || "Campus"}</div>
-                  <div className="text-[9px] text-blue-400 font-bold">Graphic Era Hill Univ</div>
+                <div className="p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                  <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">Terminal</div>
+                  <div className="font-black text-zinc-900 dark:text-white mt-0.5 truncate">{terminalStop?.name || "Campus"}</div>
+                  <div className="text-[9px] text-blue-600 dark:text-blue-400 font-bold">Graphic Era Hill Univ</div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                <div className="p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center">
                   <button
                     type="button"
                     onClick={() => setShowBusSwitchModal(true)}
-                    className="w-full py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                   >
-                    <RefreshCw className="w-3 h-3 text-blue-400" />
+                    <RefreshCw className="w-3 h-3 text-blue-500" />
                     <span>Change Bus</span>
                   </button>
                 </div>
@@ -1260,10 +1279,10 @@ export default function DriverLiveRadarView({
 
               {/* Stop Stations Timeline */}
               <div className="space-y-1 pt-1">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                   Route Corridor Stations ({totalStopsCount} stops)
                 </div>
-                <div className="divide-y divide-zinc-800/80">
+                <div className="divide-y divide-zinc-200 dark:divide-zinc-800/80">
                   {routeStops.map((rs, idx) => {
                     const isCompleted = idx < currentStopIndex;
                     const isCurrent = idx === currentStopIndex;
@@ -1274,10 +1293,10 @@ export default function DriverLiveRadarView({
                         key={rs.stop.id}
                         className={`py-2 px-2.5 rounded-xl flex items-center justify-between gap-3 text-xs ${
                           isCurrent
-                            ? "bg-blue-950/60 border border-blue-800 text-white font-bold"
+                            ? "bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-950 dark:text-white font-bold"
                             : isCompleted
-                            ? "text-zinc-500 line-through"
-                            : "text-zinc-300"
+                            ? "text-zinc-400 dark:text-zinc-500 line-through"
+                            : "text-zinc-700 dark:text-zinc-300"
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -1286,8 +1305,8 @@ export default function DriverLiveRadarView({
                               isCurrent
                                 ? "bg-blue-600 text-white"
                                 : isCompleted
-                                ? "bg-zinc-800 text-zinc-500"
-                                : "bg-zinc-800 text-zinc-300"
+                                ? "bg-zinc-200 dark:bg-zinc-800 text-zinc-500"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
                             }`}
                           >
                             {isCompleted ? "✓" : idx + 1}
@@ -1305,8 +1324,8 @@ export default function DriverLiveRadarView({
                                 onClick={() => setSelectedRosterStop(demand)}
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-transform active:scale-95 ${
                                   isIncomingShift
-                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                    ? "bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                                    : "bg-amber-500/15 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
                                 }`}
                                 title={
                                   isIncomingShift
@@ -1327,7 +1346,7 @@ export default function DriverLiveRadarView({
                             </span>
                           )}
                           {isLast && (
-                            <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-blue-400 text-[9px] font-bold">
+                            <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-blue-600 dark:text-blue-400 border border-zinc-200 dark:border-zinc-700 text-[9px] font-bold">
                               Terminal
                             </span>
                           )}
@@ -1340,7 +1359,7 @@ export default function DriverLiveRadarView({
             </div>
           )}
 
-          {/* Primary Tactical Action Buttons (Glove-Friendly $\ge$60px height) */}
+          {/* Primary Tactical Action Buttons (Glove-Friendly >=60px height) */}
           <div className="p-3 sm:p-4">
             {navigationStage === "HEADING_TO_START" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1391,7 +1410,7 @@ export default function DriverLiveRadarView({
                 <button
                   type="button"
                   onClick={handleCompleteRoute}
-                  className="h-14 sm:h-16 rounded-2xl bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-rose-400 font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all cursor-pointer border border-zinc-700"
+                  className="h-14 sm:h-16 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 active:scale-98 text-rose-600 dark:text-rose-400 font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all cursor-pointer border border-zinc-200 dark:border-zinc-700 shadow-sm"
                 >
                   <Square className="w-4 h-4 fill-current" />
                   <span>FINISH ROUTE</span>
@@ -1416,9 +1435,9 @@ export default function DriverLiveRadarView({
                     setToastMessage("Route reset to SCHEDULED standby");
                   }
                 }}
-                className="w-full h-14 sm:h-16 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-black text-base flex items-center justify-center gap-2.5 border border-zinc-700 cursor-pointer"
+                className="w-full h-14 sm:h-16 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-black text-base flex items-center justify-center gap-2.5 border border-zinc-200 dark:border-zinc-700 cursor-pointer shadow-sm active:scale-98 transition-all"
               >
-                <RotateCcw className="w-5 h-5" />
+                <RotateCcw className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
                 <span>RESET / PREPARE NEXT SHIFT</span>
               </button>
             )}
@@ -1429,29 +1448,29 @@ export default function DriverLiveRadarView({
       {/* ── 6. EMERGENCY SOS MODAL ───────────────────────────────────────── */}
       {showSosModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl text-white space-y-4">
+          <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-2xl text-zinc-900 dark:text-white space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-rose-600/20 border border-rose-500 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-6 h-6 text-rose-500 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-white">Emergency Assistance</h3>
-                <p className="text-xs text-zinc-400">Institutional Transit Command Center</p>
+                <h3 className="text-xl font-black text-zinc-900 dark:text-white">Emergency Assistance</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Institutional Transit Command Center</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1 text-xs">
+            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1 text-xs">
               <div className="flex justify-between">
-                <span className="text-zinc-500">Vehicle:</span>
-                <span className="font-bold text-white">Bus {bus?.busNumber}</span>
+                <span className="text-zinc-500 dark:text-zinc-400">Vehicle:</span>
+                <span className="font-bold text-zinc-900 dark:text-white">Bus {bus?.busNumber}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Driver:</span>
-                <span className="font-bold text-white">{initialUser?.name || "Driver"}</span>
+                <span className="text-zinc-500 dark:text-zinc-400">Driver:</span>
+                <span className="font-bold text-zinc-900 dark:text-white">{initialUser?.name || "Driver"}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">GPS Location:</span>
-                <span className="font-mono text-emerald-400">
+                <span className="text-zinc-500 dark:text-zinc-400">GPS Location:</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
                   {currentCoords.latitude.toFixed(5)}, {currentCoords.longitude.toFixed(5)}
                 </span>
               </div>
@@ -1468,9 +1487,9 @@ export default function DriverLiveRadarView({
 
               <a
                 href="tel:+918000000000"
-                className="w-full h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm flex items-center justify-center gap-2 border border-zinc-700"
+                className="w-full h-12 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold text-sm flex items-center justify-center gap-2 border border-zinc-300 dark:border-zinc-700"
               >
-                <Building2 className="w-4 h-4 text-blue-400" />
+                <Building2 className="w-4 h-4 text-blue-500" />
                 <span>Call Campus Security Dispatch</span>
               </a>
             </div>
@@ -1478,7 +1497,7 @@ export default function DriverLiveRadarView({
             <button
               type="button"
               onClick={() => setShowSosModal(false)}
-              className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold"
+              className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold border border-zinc-200 dark:border-zinc-700 cursor-pointer"
             >
               Close
             </button>
@@ -1489,13 +1508,13 @@ export default function DriverLiveRadarView({
       {/* ── 7. BUS SWITCH MODAL ──────────────────────────────────────────── */}
       {showBusSwitchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl text-white space-y-4">
+          <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-2xl text-zinc-900 dark:text-white space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-white">Select Duty Bus</h3>
+              <h3 className="text-lg font-black text-zinc-900 dark:text-white">Select Duty Bus</h3>
               <button
                 type="button"
                 onClick={() => setShowBusSwitchModal(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white"
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1506,7 +1525,7 @@ export default function DriverLiveRadarView({
               placeholder="Search bus number or registration..."
               value={busSearchQuery}
               onChange={(e) => setBusSearchQuery(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 shadow-xs"
             />
 
             <div className="max-h-60 overflow-y-auto space-y-2">
@@ -1530,17 +1549,17 @@ export default function DriverLiveRadarView({
                         setToastMessage(`Switched to Bus ${b.busNumber}`);
                         setTimeout(() => setToastMessage(null), 2500);
                       }}
-                      className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                      className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
                         isSelected
-                          ? "bg-blue-950 border-blue-600 text-white"
-                          : "bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-800"
+                          ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-950 dark:text-white shadow-xs"
+                          : "bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-700"
                       }`}
                     >
                       <div>
                         <div className="font-black text-sm">Bus {b.busNumber}</div>
-                        <div className="text-[10px] text-zinc-500">{b.registrationNo} • {b.model || "Transit Coach"}</div>
+                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400">{b.registrationNo} • {b.model || "Transit Coach"}</div>
                       </div>
-                      {isSelected && <Check className="w-5 h-5 text-blue-400" />}
+                      {isSelected && <Check className="w-5 h-5 text-blue-500" />}
                     </button>
                   );
                 })}

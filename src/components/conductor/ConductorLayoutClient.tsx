@@ -22,6 +22,7 @@ import { CrewBusSelectorModal } from "@/components/common/CrewBusSelectorModal";
 import ConductorLiveRadarView from "./ConductorLiveRadarView";
 import { store } from "@/lib/store";
 import { useConductorContext } from "./ConductorContext";
+import { getBestTripForBus, getTodayIST } from "@/lib/trip-resolver";
 
 export default function ConductorLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -35,6 +36,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
     trips,
     buses,
     routes,
+    shifts,
     stops,
     bookings,
     students,
@@ -121,12 +123,24 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
   else if (pathname.includes("/audit")) currentTitle = "Attendance Audit";
   else if (pathname.includes("/bus-qr")) currentTitle = "Bus QR";
 
+  const todayStr = getTodayIST();
+  const currentBusTrips = React.useMemo(() => {
+    if (!bus?.id) return [];
+    return trips
+      .filter(t => t.busId === bus.id && (t.tripDate === todayStr || t.status === "IN_PROGRESS"))
+      .sort((a, b) => {
+        const sA = shifts.find(sh => sh.id === a.shiftId);
+        const sB = shifts.find(sh => sh.id === b.shiftId);
+        return (sA?.startTime || "").localeCompare(sB?.startTime || "");
+      });
+  }, [trips, bus?.id, todayStr, shifts]);
+
   return (
     <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
       <UnifiedAppHeader
         role="conductor"
         portalTitle={currentTitle}
-        portalSubtitle={activeTrip ? `${bus?.busNumber || "Bus"} • ${route?.name || "Corridor"}` : "Conductor Operations"}
+        portalSubtitle={activeTrip ? `Bus ${bus?.busNumber || "Bus"} • ${shift?.name || route?.name || "Corridor"}` : "Conductor Operations"}
         navLinks={currentNavLinks}
         mobilePrimaryAction={{
           label: t('driverHud'),
@@ -169,11 +183,55 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
               title="Choose bus from cards"
             >
               <BusFront className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="truncate">{bus?.busNumber || "Select Bus"}</span>
+              <span className="truncate">{bus?.busNumber ? `Bus ${bus.busNumber}` : "Select Bus"}</span>
             </button>
           </div>
         }
       />
+
+      {/* Dynamic Operational Shift Switcher Bar */}
+      {currentBusTrips.length > 1 && (
+        <div className="w-full bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 px-4 py-2 sticky top-14 z-30 shadow-xs">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Bus {bus?.busNumber} Today&apos;s Shifts:</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {currentBusTrips.map(t => {
+                const s = shifts.find(sh => sh.id === t.shiftId);
+                const isSelected = activeTrip?.id === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setSelectedTripId(t.id);
+                      showToast(`✓ Shift active: ${s?.name || t.tripCode}`);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      isSelected
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-black"
+                        : "bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-800"
+                    }`}
+                  >
+                    <span>{s?.name || t.tripCode}</span>
+                    {s?.startTime && (
+                      <span className={`text-[10px] font-mono px-1 py-0.5 rounded-md ${
+                        isSelected ? "bg-white/20 text-white font-bold" : "bg-black/5 dark:bg-white/5 text-gray-400"
+                      }`}>
+                        {s.startTime}
+                      </span>
+                    )}
+                    {t.status === "IN_PROGRESS" && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-24 min-w-0">
@@ -194,8 +252,13 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
           if (tripId) {
             setSelectedTripId(tripId);
           } else {
-            const match = trips.find(t => t.busId === busId && t.status !== "COMPLETED") || trips.find(t => t.busId === busId);
-            if (match) setSelectedTripId(match.id);
+            const best = getBestTripForBus(busId, trips, shifts);
+            if (best) {
+              setSelectedTripId(best.id);
+            } else {
+              const match = trips.find(t => t.busId === busId && t.status !== "COMPLETED") || trips.find(t => t.busId === busId);
+              if (match) setSelectedTripId(match.id);
+            }
           }
           showToast("✓ Conductor duty active! Bus claimed and attendance recorded.");
         }}

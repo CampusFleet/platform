@@ -7,7 +7,7 @@ import { Volume2, VolumeX, BellRing, RefreshCw } from "lucide-react";
 
 export default function ScannerPage() {
   const { 
-    activeTrip, bus, bookings, students, 
+    activeTrip, bus, tripBookings, students, 
     pendingCount, outsideCount, onboardConfirmedCount, runningCount,
     activeDepartureAlert, triggerDepartureAlert, dismissDepartureAlert,
     showToast 
@@ -89,7 +89,7 @@ export default function ScannerPage() {
 
       <QRPassScanner
         trip={activeTrip}
-        bookings={bookings}
+        bookings={tripBookings}
         students={students}
         fullScreenMode={true}
         backHref="/conductor"

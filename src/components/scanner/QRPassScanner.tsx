@@ -640,13 +640,24 @@ export function QRPassScanner({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-black text-sm text-white">
-                  {trip?.tripCode || "Live Scanner"}
+                  {(() => {
+                    const bus = store.getBuses().find(b => b.id === trip?.busId);
+                    const shift = store.getShifts().find(s => s.id === trip?.shiftId);
+                    const busLabel = bus?.busNumber ? `Bus ${bus.busNumber}` : (trip?.busId ? `Bus ${trip.busId}` : "Vehicle");
+                    const shiftLabel = shift?.name || (trip?.tripCode?.includes("-") ? trip.tripCode.split("-").slice(0, 2).join("-") : trip?.tripCode || "Live Scanner");
+                    return `${busLabel} • ${shiftLabel}`;
+                  })()}
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-green-500/20 text-green-400 border border-green-500/30 font-bold">
                   RADAR
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400">Boarding & Attendance Radar</p>
+              <p className="text-[11px] text-gray-400">
+                {(() => {
+                  const shift = store.getShifts().find(s => s.id === trip?.shiftId);
+                  return shift?.startTime ? `Departure ${shift.startTime} • ` : "";
+                })()}Boarding & Attendance Radar
+              </p>
             </div>
           </div>
 

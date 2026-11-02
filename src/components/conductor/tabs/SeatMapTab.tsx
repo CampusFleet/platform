@@ -81,12 +81,13 @@ export function SeatMapTab({
         b => b.seatNumber === seatCode || (b as any).seatCode === seatCode
       );
       const student = booking ? (booking as EnrichedPassenger).student || studentMap.get(booking.studentId) : undefined;
+      const isBoarded = booking?.status === "BOARDED" || (booking as any)?.isBoarded;
       return {
         seatCode,
         booking,
         student,
-        isBoarded: booking?.status === "BOARDED",
-        isConfirmed: booking?.status === "CONFIRMED",
+        isBoarded,
+        isConfirmed: booking?.status === "CONFIRMED" || (booking?.status as any) === "ASSIGNED",
         isWaitlisted: booking?.status === "WAITLISTED",
       };
     };

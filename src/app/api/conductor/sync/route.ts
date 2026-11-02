@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { redis, cacheGet } from "@/lib/redis";
-import type { HaltRequest } from "@/lib/types";
+import type { HaltRequest, Booking } from "@/lib/types";
+import { mergeReservationsIntoBookings } from "@/lib/trip-resolver";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Conductor Live Sync API:
  * Lightweight, high-frequency synchronization endpoint for active duty conductors.
- * Returns recent attendance records, updated booking statuses, and pending SOS halt requests.
+ * Returns recent attendance records, updated booking statuses (including smart transit bus reservations),
+ * and pending SOS halt requests.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -24,8 +26,8 @@ export async function GET(req: NextRequest) {
 
     const todayDate = new Date().toISOString().split("T")[0];
 
-    // Parallel fetch: Trip attendance, updated bookings, Redis SOS halt requests, and active Departure Alert
-    const [attendanceRes, bookingsRes, haltRequests, departureAlertRes] = await Promise.all([
+    // Parallel fetch: Trip attendance, updated bookings, smart reservations, Redis SOS halt requests, and active Departure Alert
+    const [attendanceRes, bookingsRes, reservationsRes, haltRequests, departureAlertRes] = await Promise.all([
       supabaseAdmin
         .from("attendance_records")
         .select("*")
@@ -36,6 +38,12 @@ export async function GET(req: NextRequest) {
         .from("bookings_full")
         .select("*")
         .eq("trip_id", tripId)
+        .limit(100),
+      supabaseAdmin
+        .from("bus_reservations")
+        .select("*")
+        .eq("trip_id", tripId)
+        .neq("status", "CANCELLED")
         .limit(100),
       (async () => {
         if (!redis) return [];
@@ -84,7 +92,7 @@ export async function GET(req: NextRequest) {
       unlockTimestamp: a.unlock_timestamp,
     }));
 
-    const bookings = (bookingsRes.data || []).map((b: any) => ({
+    const baseBookings: Booking[] = (bookingsRes.data || []).map((b: any) => ({
       id: b.id,
       bookingCode: b.booking_code || "",
       studentId: b.student_id,
@@ -99,6 +107,8 @@ export async function GET(req: NextRequest) {
       mergeStopId: b.merge_stop_id,
       createdAt: b.created_at || new Date().toISOString(),
     }));
+
+    const bookings = mergeReservationsIntoBookings(baseBookings, reservationsRes.data || []);
 
     return NextResponse.json({
       success: true,

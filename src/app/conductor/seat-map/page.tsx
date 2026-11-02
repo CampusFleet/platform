@@ -46,7 +46,7 @@ export default function SeatMapPage() {
         <SeatInspectorModal
           seatData={selectedSeatForModal}
           trip={activeTrip}
-          bookings={bookings}
+          bookings={tripBookings}
           students={students}
           onClose={() => setSelectedSeatForModal(null)}
           onMarkAttendance={(studentId, status) => {

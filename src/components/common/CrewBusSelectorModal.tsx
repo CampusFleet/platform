@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import jsQR from "jsqr";
 import { store } from "@/lib/store";
 import { Bus, Trip, Route, Shift, AttendanceRecord } from "@/lib/types";
+import { getBestTripForBus } from "@/lib/trip-resolver";
 import {
   BusFront,
   QrCode,
@@ -84,12 +85,8 @@ export function CrewBusSelectorModal({
   // Group bus entries with their corresponding trip & route
   const busEntries = buses
     .map((bus) => {
-      // Find active trip or scheduled trip
-      const activeTrip =
-        trips.find((t) => t.busId === bus.id && t.status === "IN_PROGRESS") ||
-        trips.find((t) => t.busId === bus.id && t.status === "SCHEDULED") ||
-        trips.find((t) => t.busId === bus.id && t.status !== "COMPLETED") ||
-        trips.find((t) => t.busId === bus.id);
+      // Find active trip or scheduled operational shift for this bus
+      const activeTrip = getBestTripForBus(bus.id, trips, shifts);
 
       const route = routes.find((r) => r.id === (activeTrip?.routeId || bus.currentRouteId));
       const shift = shifts.find((s) => s.id === activeTrip?.shiftId);

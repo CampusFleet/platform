@@ -38,12 +38,12 @@ export function SeatInspectorModal({
   const [showScanner, setShowScanner] = useState(false);
   const tripBookings = bookings.filter(b => b.tripId === trip.id);
 
-  const student = seatData.student;
-  const booking = seatData.booking;
-  const fullName = student?.fullName || (booking as any)?.fullName || "University Passenger";
-  const studentCollegeId = student?.studentIdCode || (booking as any)?.studentIdCode || "";
-  const photoUrl = student?.photoUrl || (booking as any)?.photoUrl || "";
-  const phone = student?.phone || (booking as any)?.phone;
+  const booking = seatData.booking || tripBookings.find(b => b.seatNumber === seatData.seatCode || (b as any).seatCode === seatData.seatCode);
+  const student = seatData.student || (booking ? (booking as any).student || students.find(s => s.id === booking.studentId || s.userId === booking.studentId) : undefined);
+  const fullName = student?.fullName || (booking as any)?.fullName || (booking as any)?.student?.fullName || "University Passenger";
+  const studentCollegeId = student?.studentIdCode || (booking as any)?.studentIdCode || (booking as any)?.student?.studentIdCode || "";
+  const photoUrl = student?.photoUrl || (booking as any)?.photoUrl || (booking as any)?.student?.photoUrl || "";
+  const phone = student?.phone || (booking as any)?.phone || (booking as any)?.student?.phone;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">

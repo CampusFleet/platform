@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { store } from "@/lib/store";
 import { Trip, Bus, Route, Booking, Student, Stop, Shift, AttendanceRecord, HaltRequest } from "@/lib/types";
+import { resolveActiveTrip } from "@/lib/trip-resolver";
 
 // Play subtle transit alert chime when new SOS request is received
 function playTransitNotification(type: "sos" | "success" | "toggle") {
@@ -194,11 +195,13 @@ export function ConductorProvider({
       t.conductorId === currentUser?.fullName
   );
 
-  const activeTrip =
-    visibleTripsForConductor.find(t => t.id === selectedTripId) ||
-    myTrips.find(t => t.id === selectedTripId) ||
-    myTrips[0] ||
-    visibleTripsForConductor[0];
+  const activeTrip = React.useMemo(() => {
+    return resolveActiveTrip(visibleTripsForConductor, shifts, {
+      selectedTripId,
+      conductorId: currentUser?.id,
+      conductorName: currentUser?.fullName,
+    });
+  }, [visibleTripsForConductor, shifts, selectedTripId, currentUser?.id, currentUser?.fullName]);
 
   const bus = buses.find(b => b.id === activeTrip?.busId) || buses[0];
   const route = routes.find(r => r.id === activeTrip?.routeId);
@@ -293,7 +296,7 @@ export function ConductorProvider({
 
     const rosterMap = new Map<string, EnrichedPassenger>();
 
-    // 1. Process Direct Reservations from bookings_full
+    // 1. Process Direct Reservations from bookings & bus_reservations
     directBookings.forEach(b => {
       const stud = studentMap.get(b.studentId);
       const att = tripAttendance.find(
@@ -305,7 +308,7 @@ export function ConductorProvider({
         status = att.status;
       }
 
-      const isBoarded = status === "BOARDED";
+      const isBoarded = status === "BOARDED" || b.status === "BOARDED" || Boolean(b.boardedAt) || Boolean(att?.timestamp);
       const isAbsent = status === "ABSENT" || status === "NO_SHOW";
       const isWaitlisted = status === "WAITLISTED";
 
@@ -315,8 +318,7 @@ export function ConductorProvider({
           : "PASS"
       );
 
-      const itemKey = b.studentId || b.id;
-      rosterMap.set(itemKey, {
+      const passengerEntry: EnrichedPassenger = {
         id: b.id,
         bookingCode: b.bookingCode || `BK-${b.id.substring(0, 6)}`,
         studentId: b.studentId,
@@ -325,15 +327,15 @@ export function ConductorProvider({
         boardingStopId: b.boardingStopId || stud?.primaryStopId || "",
         seatNumber: seatCode,
         seatCode,
-        status,
+        status: isBoarded ? "BOARDED" : status,
         isBoarded,
         isAbsent,
         isWaitlisted,
         waitlistPosition: b.waitlistPosition,
-        passengerType: b.passengerType || "SEATED",
-        roamingStatus: (b as any).roamingStatus || (stud && stud.primaryRouteId && stud.primaryRouteId !== routeId ? "ROAMING" : "CONFIRMED"),
+        passengerType: seatCode !== "PASS" ? "SEATED" : (b.passengerType || "SEATED"),
+        roamingStatus: isBoarded ? "ONBOARD_CONFIRMED" : ((b as any).roamingStatus || (stud && stud.primaryRouteId && stud.primaryRouteId !== routeId ? "ROAMING" : "CONFIRMED")),
         boardedAt: att?.timestamp || (b as any).boardedAt,
-        unlockedBy: att?.method || (b as any).unlocked_by,
+        unlockedBy: att?.method || (b as any).unlocked_by || (isBoarded ? "GEOFENCE_AUTODETECT" : undefined),
         student: stud,
         fullName: stud?.fullName || (b as any).passengerName || "Student Passenger",
         studentIdCode: stud?.studentIdCode || "",
@@ -343,19 +345,23 @@ export function ConductorProvider({
         semester: stud?.semester || "",
         className: stud?.className || "",
         createdAt: b.createdAt || new Date().toISOString(),
-      });
+      };
+
+      const itemKey = b.studentId || b.id;
+      rosterMap.set(itemKey, passengerEntry);
+      if (stud?.id) rosterMap.set(stud.id, passengerEntry);
+      if (stud?.userId) rosterMap.set(stud.userId, passengerEntry);
     });
 
     // 2. Process Route-assigned students (Guaranteed to be present for morning/evening shifts)
     routeStudents.forEach(s => {
-      const itemKey = s.id;
-      if (!rosterMap.has(itemKey)) {
+      if (!rosterMap.has(s.id) && !rosterMap.has(s.userId)) {
         const att = tripAttendance.find(a => a.studentId === s.id || a.studentId === s.userId);
         const status: any = att ? att.status : "CONFIRMED";
         const isBoarded = status === "BOARDED";
         const isAbsent = status === "ABSENT" || status === "NO_SHOW";
 
-        rosterMap.set(itemKey, {
+        const passengerEntry: EnrichedPassenger = {
           id: att?.id || `roster-${s.id}`,
           bookingCode: `ATD-${s.id.substring(0, 6)}`,
           studentId: s.id,
@@ -369,7 +375,7 @@ export function ConductorProvider({
           isAbsent,
           isWaitlisted: false,
           passengerType: "SEATED",
-          roamingStatus: "CONFIRMED",
+          roamingStatus: isBoarded ? "ONBOARD_CONFIRMED" : "CONFIRMED",
           boardedAt: att?.timestamp,
           unlockedBy: att?.method,
           student: s,
@@ -381,7 +387,10 @@ export function ConductorProvider({
           semester: s.semester || "",
           className: s.className || "",
           createdAt: new Date().toISOString(),
-        });
+        };
+
+        rosterMap.set(s.id, passengerEntry);
+        if (s.userId) rosterMap.set(s.userId, passengerEntry);
       }
     });
 
@@ -404,7 +413,7 @@ export function ConductorProvider({
           isAbsent: a.status === "ABSENT" || a.status === "NO_SHOW",
           isWaitlisted: false,
           passengerType: "STANDING_TILL_MERGE",
-          roamingStatus: "ROAMING",
+          roamingStatus: a.status === "BOARDED" ? "ONBOARD_CONFIRMED" : "ROAMING",
           boardedAt: a.timestamp,
           unlockedBy: a.method,
           student: stud,
@@ -420,18 +429,18 @@ export function ConductorProvider({
       }
     });
 
-    return Array.from(rosterMap.values());
+    return Array.from(new Set(rosterMap.values()));
   }, [activeTrip, attendanceRecords, students, bookings]);
 
-  const totalConfirmed = tripBookings.filter(b => b.status === "CONFIRMED" || b.status === "BOARDED").length;
-  const boardedCount = tripBookings.filter(b => b.status === "BOARDED").length;
-  const pendingCount = tripBookings.filter(b => b.status === "CONFIRMED").length;
+  const totalConfirmed = tripBookings.filter(b => b.status === "CONFIRMED" || b.status === "BOARDED" || b.isBoarded).length;
+  const boardedCount = tripBookings.filter(b => b.status === "BOARDED" || b.isBoarded || b.roamingStatus === "ONBOARD_CONFIRMED").length;
+  const pendingCount = tripBookings.filter(b => (b.status === "CONFIRMED" || (b.status as any) === "ASSIGNED") && !b.isBoarded && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
   const waitlistCount = tripBookings.filter(b => b.status === "WAITLISTED").length;
   const absentCount = tripBookings.filter(b => b.status === "ABSENT" || b.status === "NO_SHOW").length;
   const roamingCount = tripBookings.filter(b => b.roamingStatus === "ROAMING").length;
-  const onboardConfirmedCount = tripBookings.filter(b => b.roamingStatus === "ONBOARD_CONFIRMED").length;
+  const onboardConfirmedCount = tripBookings.filter(b => b.status === "BOARDED" || b.isBoarded || b.roamingStatus === "ONBOARD_CONFIRMED").length;
   const runningCount = tripBookings.filter(b => b.roamingStatus === "RUNNING_TO_BUS").length;
-  const outsideCount = tripBookings.filter(b => b.status === "CONFIRMED" && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
+  const outsideCount = tripBookings.filter(b => b.status === "CONFIRMED" && !b.isBoarded && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);

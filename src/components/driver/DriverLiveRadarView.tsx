@@ -50,6 +50,7 @@ import { telematicsService } from "@/lib/telematicsService";
 import { store } from "@/lib/store";
 import { calculateDistanceKm, calculateExactDistanceMeters, formatTime } from "@/lib/utils";
 import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation, Shift, Student, TripDirection } from "@/lib/types";
+import { estimateRouteStopTimings } from "@/lib/transit-timing";
 
 export type DriverNavigationStage =
   | "HEADING_TO_START"   // Deadhead: Navigating from bus/driver GPS to Route Origin (Stop 0)
@@ -250,6 +251,17 @@ export default function DriverLiveRadarView({
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
   const [isHudMinimized, setIsHudMinimized] = useState(false);
   const [isSimulationMode, setIsSimulationMode] = useState(false);
+
+  // Dynamic Google Maps-style stop timing estimates
+  const stopEstimates = useMemo(() => {
+    if (!routeStops || routeStops.length === 0) return [];
+    return estimateRouteStopTimings(routeStops, {
+      currentCoords,
+      activeStopIndex: currentStopIndex,
+      baseScheduledTime: propShift?.startTime,
+      departNow: activeTrip?.status === "IN_PROGRESS" || !propShift?.startTime,
+    });
+  }, [routeStops, currentCoords, currentStopIndex, propShift?.startTime, activeTrip?.status]);
 
   // Sync external coords if provided by parent cockpit
   useEffect(() => {
@@ -1287,6 +1299,7 @@ export default function DriverLiveRadarView({
                     const isCompleted = idx < currentStopIndex;
                     const isCurrent = idx === currentStopIndex;
                     const isLast = idx === totalStopsCount - 1;
+                    const est = stopEstimates[idx];
 
                     return (
                       <div
@@ -1315,6 +1328,27 @@ export default function DriverLiveRadarView({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
+                          {est && (
+                            <div className="flex items-baseline gap-1 text-right">
+                              <span
+                                className={`font-bold ${
+                                  isCurrent
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : isCompleted
+                                    ? "text-zinc-400 dark:text-zinc-500"
+                                    : "text-zinc-800 dark:text-zinc-200"
+                                }`}
+                              >
+                                {est.displayTime}
+                              </span>
+                              {est.legMinutes > 0 && !isCompleted && (
+                                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-normal">
+                                  (+{est.legMinutes}m)
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           {(() => {
                             const demand = stopPassengerRosterMap.get(rs.stop.id);
                             if (!demand || demand.total === 0) return null;

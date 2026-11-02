@@ -38,6 +38,8 @@ import {
   Wrench,
   Flame,
   Award,
+  Flag,
+  Zap,
 } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { useTheme } from "@/components/common/ThemeProvider";
@@ -46,6 +48,7 @@ import { store } from "@/lib/store";
 import { calculateDistanceKm } from "@/lib/utils";
 import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation } from "@/lib/types";
 import DriverLiveRadarView from "@/components/driver/DriverLiveRadarView";
+import { estimateRouteStopTimings, type StopEstimate } from "@/lib/transit-timing";
 
 interface DriverConsoleViewProps {
   initialUser?: any;
@@ -141,6 +144,20 @@ export default function DriverConsoleView({
     if (!activeTrip?.routeId) return routes[0] || null;
     return routes.find((r) => r.id === activeTrip.routeId) || routes[0] || null;
   }, [routes, activeTrip]);
+
+  // Active transit shift (for scheduled timetable comparison)
+  const activeShift = useMemo(() => {
+    if (!activeTrip?.shiftId) return null;
+    try {
+      const allShifts = store.getShifts();
+      return allShifts.find((s) => s.id === activeTrip.shiftId) || null;
+    } catch {
+      return null;
+    }
+  }, [activeTrip?.shiftId]);
+
+  // Timing estimate mode: "DEPART_NOW" (live rolling ETA from current time/GPS) vs "SCHEDULED" (shift timetable)
+  const [timingMode, setTimingMode] = useState<"DEPART_NOW" | "SCHEDULED">("DEPART_NOW");
 
   // ── 2. HARDWARE SENSORS: SPEEDOMETER, GYROSCOPE & ACCELEROMETER ───────────
   const [isBroadcasting, setIsBroadcasting] = useState(true);
@@ -483,6 +500,29 @@ export default function DriverConsoleView({
       (b) => b.boardingStopId === currentStopObj.id && b.status !== "CANCELLED"
     ).length;
   }, [currentStopObj, bookings]);
+
+  // Passenger boarding counts across all corridor stops
+  const stopPassengerCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!bookings) return map;
+    for (const b of bookings) {
+      if (b.status === "CANCELLED" || !b.boardingStopId) continue;
+      const count = map.get(b.boardingStopId) || 0;
+      map.set(b.boardingStopId, count + 1);
+    }
+    return map;
+  }, [bookings]);
+
+  // Dynamic Google Maps-style stop timings (depart now or scheduled timetable)
+  const stopEstimates = useMemo(() => {
+    if (!route?.stops || route.stops.length === 0) return [];
+    return estimateRouteStopTimings(route.stops, {
+      currentCoords,
+      activeStopIndex: currentStopIndex,
+      baseScheduledTime: activeShift?.startTime,
+      departNow: timingMode === "DEPART_NOW" || !activeShift?.startTime,
+    });
+  }, [route?.stops, currentCoords, currentStopIndex, activeShift?.startTime, timingMode]);
 
   // Auto-advance station when entering 150m geofence radius
   useEffect(() => {
@@ -1081,31 +1121,229 @@ export default function DriverConsoleView({
           )}
         </section>
 
-        {/* 6. ROUTE STATIONS TIMELINE RIBBON */}
+        {/* 6. VERTICAL ROUTE CORRIDOR TIMELINE WITH LIVE GOOGLE-MAPS ETAs */}
         {route?.stops && route.stops.length > 0 && (
-          <section className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
-              <span>Route Sequence ({route.stops.length} Stops)</span>
-              <span>Stop {currentStopIndex + 1} of {totalStopsCount} Active</span>
+          <section className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            {/* Header: Title, Active Stop Counter & Mode Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Transit Corridor Sequence
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    {route.stops.length} Stops
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                  <span>Stop {currentStopIndex + 1} of {totalStopsCount} Active</span>
+                  <span>•</span>
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">
+                    {currentStopIndex === 0
+                      ? "At Starting Point"
+                      : currentStopIndex === totalStopsCount - 1
+                      ? "Arriving Terminal"
+                      : "Corridor in Transit"}
+                  </span>
+                </p>
+              </div>
+
+              {/* Timing Selector (Live ETA vs Scheduled Timetable) */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/60 self-start sm:self-auto text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTimingMode("DEPART_NOW")}
+                  className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    timingMode === "DEPART_NOW"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                  title="Compute dynamic ETAs rolling from current time and live GPS"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Depart Now (Live ETA)</span>
+                </button>
+                {activeShift?.startTime && (
+                  <button
+                    type="button"
+                    onClick={() => setTimingMode("SCHEDULED")}
+                    className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      timingMode === "SCHEDULED"
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                    title={`Calculate timings anchored to shift start time (${activeShift.startTime})`}
+                  >
+                    <Clock className="w-3 h-3" />
+                    <span>Shift ({activeShift.startTime})</span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+            {/* Smart Road Model Badge (if fallback estimation was used) */}
+            {stopEstimates.some((e) => e.isEstimatedFromRoad) && (
+              <div className="px-3 py-2 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span>Google Maps-style ETAs calculated via road distance & ~28 km/h speed profile.</span>
+                </span>
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  Road Calibrated
+                </span>
+              </div>
+            )}
+
+            {/* Vertical Spine Timeline */}
+            <div className="relative pl-7 sm:pl-8 space-y-3 pt-1">
+              {/* Continuous Left Spine Rail */}
+              <div className="absolute left-[13px] sm:left-[15px] top-3.5 bottom-6 w-0.5 bg-slate-200 dark:bg-slate-800" />
+
               {route.stops.map((rs, idx) => {
                 const isPast = idx < currentStopIndex;
                 const isCurrent = idx === currentStopIndex;
+                const isLast = idx === totalStopsCount - 1;
+                const est = stopEstimates[idx];
+                const pickups = stopPassengerCounts.get(rs.stop?.id || "") || 0;
+
                 return (
-                  <div
-                    key={idx}
-                    className={`px-3 py-2 rounded-xl whitespace-nowrap flex items-center gap-1.5 border font-semibold ${
-                      isCurrent
-                        ? "bg-blue-600 text-white border-blue-700 shadow-sm font-bold"
-                        : isPast
-                        ? "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 line-through"
-                        : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700"
-                    }`}
-                  >
-                    <span>{idx + 1}.</span>
-                    <span>{rs.stop?.name || `Stop ${idx + 1}`}</span>
+                  <div key={rs.stop?.id || idx} className="relative group">
+                    {/* Spine Node Icon */}
+                    <div
+                      className={`absolute -left-7 sm:-left-8 top-3 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-white dark:ring-slate-900 z-10 transition-transform ${
+                        isCurrent
+                          ? "bg-blue-600 text-white shadow-md scale-110 ring-blue-100 dark:ring-blue-900/60"
+                          : isPast
+                          ? "bg-emerald-500 text-white"
+                          : isLast
+                          ? "bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-400 dark:border-indigo-600"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700"
+                      }`}
+                    >
+                      {isPast ? (
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      ) : isCurrent ? (
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+                        </span>
+                      ) : isLast ? (
+                        <Flag className="w-3 h-3" />
+                      ) : (
+                        <span>{idx + 1}</span>
+                      )}
+                    </div>
+
+                    {/* Stop Card */}
+                    {isCurrent ? (
+                      // ACTIVE TARGET STATION CALLOUT CARD
+                      <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/80 dark:bg-blue-950/40 border-2 border-blue-500 shadow-sm transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider">
+                                Next Target Stop
+                              </span>
+                              {pickups > 0 && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                                  <Users className="w-3 h-3" />
+                                  <span>{pickups} to board</span>
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                              {rs.stop?.name || `Stop ${idx + 1}`}
+                            </h4>
+                            {rs.stop?.landmark && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-slate-400" />
+                                <span>{rs.stop.landmark}</span>
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between border-t sm:border-t-0 border-blue-200/60 dark:border-blue-900/40 pt-2 sm:pt-0">
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-black font-mono text-blue-700 dark:text-blue-300">
+                                {est?.displayTime || "--:--"}
+                              </span>
+                              <span className="text-[10px] font-bold uppercase text-blue-500 dark:text-blue-400">
+                                ETA
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                              {distanceToCurrentStopMeters !== null && (
+                                <span className="font-mono text-slate-700 dark:text-slate-300">
+                                  {(distanceToCurrentStopMeters / 1000).toFixed(1)} km away
+                                </span>
+                              )}
+                              <span>•</span>
+                              <span className="text-blue-600 dark:text-blue-400">
+                                ~{est?.etaMinutesFromBus ?? est?.legMinutes ?? 0}m remaining
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : isPast ? (
+                      // COMPLETED / PASSED STOP ROW
+                      <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between gap-3 opacity-60">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 line-through truncate">
+                            {rs.stop?.name || `Stop ${idx + 1}`}
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                            Passed
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-right shrink-0">
+                          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">
+                            {est?.displayTime || "--:--"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      // UPCOMING CORRIDOR STOP ROW
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-center justify-between gap-3 shadow-2xs">
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {rs.stop?.name || `Stop ${idx + 1}`}
+                            </span>
+                            {isLast && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                Terminal
+                              </span>
+                            )}
+                            {pickups > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <Users className="w-2.5 h-2.5" />
+                                <span>+{pickups}</span>
+                              </span>
+                            )}
+                          </div>
+                          {rs.stop?.landmark && (
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                              {rs.stop.landmark}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-right shrink-0 font-mono">
+                          <div className="flex flex-col items-end">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                              {est?.displayTime || "--:--"}
+                            </span>
+                            {est && est.legMinutes > 0 && (
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                                +{est.legMinutes}m
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1164,6 +1402,7 @@ export default function DriverConsoleView({
             activeTrip={activeTrip}
             route={route}
             bus={bus}
+            shift={activeShift}
             allTrips={trips}
             allBuses={buses}
             allRoutes={routes}

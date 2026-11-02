@@ -25,6 +25,11 @@ import {
   Clock,
   Check,
   BusFront,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  X,
+  Phone,
 } from "lucide-react";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
@@ -37,7 +42,26 @@ export default function StudentOnboardingPage() {
   const [stops, setStops] = useState(store.getStops());
   const [transitZones, setTransitZones] = useState<TransitZone[]>(() => store.getTransitZones(store.getPrimaryCampus()?.id));
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  
+  // Toast Notification state (Modern Vercel / Linear standard)
+  const [toast, setToast] = useState<{
+    id: string;
+    type: "success" | "error" | "warning" | "info";
+    title?: string;
+    message: string;
+  } | null>(null);
+
+  const showToast = (type: "success" | "error" | "warning" | "info", message: string, title?: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToast({ id, type, message, title });
+  };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const [serverStudent, setServerStudent] = useState<Student | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -160,7 +184,7 @@ export default function StudentOnboardingPage() {
 
   const handlePhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isPhotoLocked) {
-      alert("Official photo is locked. Only Campus Staff/Admin can update your photo.");
+      showToast("warning", "Official photo is locked. Only Campus Staff/Admin can update your photo.", "Photo Locked");
       return;
     }
     const file = e.target.files?.[0];
@@ -237,14 +261,13 @@ export default function StudentOnboardingPage() {
       if (res.ok && data.success) {
         setPhotoUrl(data.url);
         setImageLoadFailed(false);
-        setToast("Official photo uploaded successfully.");
-        setTimeout(() => setToast(null), 3000);
+        showToast("success", "Official photo uploaded successfully.", "Upload Complete");
       } else {
-        alert(data.error || "Failed to upload photo. Please try again.");
+        showToast("error", data.error || "Failed to upload photo. Please try again.", "Upload Failed");
       }
     } catch (err: any) {
       console.error("Photo upload error:", err);
-      alert(err.message || "Failed to upload photo");
+      showToast("error", err.message || "Failed to upload photo", "Upload Error");
     } finally {
       setIsUploadingPhoto(false);
     }
@@ -267,7 +290,7 @@ export default function StudentOnboardingPage() {
 
   const handleDetectGPS = () => {
     if (typeof window === "undefined" || !navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      showToast("warning", "Geolocation is not supported by your browser.", "GPS Error");
       return;
     }
     setIsDetectingGPS(true);
@@ -278,10 +301,11 @@ export default function StudentOnboardingPage() {
         setHomeLat(lat.toFixed(6));
         setHomeLng(lng.toFixed(6));
         setIsDetectingGPS(false);
+        showToast("success", `GPS location locked (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "Coordinates Acquired");
         fetchAddressForCoordinates(lat, lng);
       },
       err => {
-        alert("Failed to acquire GPS location: " + err.message);
+        showToast("error", "Failed to acquire GPS location: " + err.message, "GPS Error");
         setIsDetectingGPS(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -292,7 +316,7 @@ export default function StudentOnboardingPage() {
     const lat = parseFloat(homeLat);
     const lng = parseFloat(homeLng);
     if (isNaN(lat) || isNaN(lng)) {
-      alert("Please provide valid numeric latitude and longitude coordinates.");
+      showToast("warning", "Please provide valid numeric latitude and longitude coordinates.", "Coordinates Required");
       return;
     }
     const studentId = activeStudent?.id || currentUser?.id;
@@ -323,9 +347,11 @@ export default function StudentOnboardingPage() {
       if (data.nearestStops) {
         setNearestStops(data.nearestStops);
       }
-      setHomeStatusMsg(data.message || "Coordinates saved and nearest stops calculated!");
+      const successMsg = data.message || "Coordinates saved and optimal stops calculated!";
+      setHomeStatusMsg(successMsg);
+      showToast("success", successMsg, "Stops Calculated");
     } catch (err: any) {
-      alert(err.message || "Error saving coordinates");
+      showToast("error", err.message || "Error saving coordinates", "Calculation Error");
     } finally {
       setIsSavingHome(false);
     }
@@ -352,16 +378,16 @@ export default function StudentOnboardingPage() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.message || "Failed to update pickup stop");
+        showToast("error", data.message || "Failed to update pickup stop", "Stop Selection Failed");
       } else {
-        setToast(`✓ Boarding stop updated to "${stopName || 'Selected Stop'}"`);
-        setTimeout(() => setToast(null), 3500);
+        showToast("success", `Boarding stop updated to "${stopName || 'Selected Stop'}"`, "Stop Assigned");
         if (data.student?.zone_code && !isZoneLocked) {
           setSelectedZoneCode(data.student.zone_code);
         }
       }
     } catch (err: any) {
       console.warn("Error selecting pickup stop:", err);
+      showToast("error", err.message || "Error selecting pickup stop", "Stop Selection Error");
     } finally {
       setIsSelectingStop(false);
     }
@@ -571,13 +597,12 @@ export default function StudentOnboardingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone.trim()) {
-      alert("Please fill in your Contact Phone Number.");
+      showToast("warning", "Please fill in your Contact Phone Number.", "Phone Required");
       return;
     }
 
     if (!photoUrl) {
-      setToast("Error: You must upload an official ID photo before activating your pass.");
-      setTimeout(() => setToast(null), 5000);
+      showToast("error", "You must upload an official ID photo before activating your pass.", "Photo Required");
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -645,9 +670,8 @@ export default function StudentOnboardingPage() {
 
     setIsSubmitting(false);
     if (res.success) {
-      setToast("✓ Student Profile Saved & Verified in Institutional Database!");
+      showToast("success", "Student Profile Saved & Verified in Institutional Database!", "Profile Saved");
       setTimeout(() => {
-        setToast(null);
         if (!isPassApproved) {
           router.push("/portal/payments");
         } else {
@@ -655,7 +679,7 @@ export default function StudentOnboardingPage() {
         }
       }, 1200);
     } else {
-      alert(res.message);
+      showToast("error", res.message || "Failed to save profile.", "Save Error");
     }
   };
 
@@ -699,11 +723,38 @@ export default function StudentOnboardingPage() {
       </div>
 
       <div className="flex-1 w-full max-w-4xl mx-auto py-6 sm:py-8 px-4 sm:px-6 animate-in fade-in duration-300">
-        {toast && (
-          <div className="mb-6 p-4 border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 text-green-800 dark:text-green-300 text-sm font-medium flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> {toast}
+      {/* Toast Notification Container (Floating Top-Right) */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[9999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className={`p-4 rounded-xl shadow-2xl border backdrop-blur-xl flex items-start gap-3 transition-all ${
+            toast.type === "success" 
+              ? "bg-zinc-900/95 text-zinc-100 border-emerald-500/50 shadow-emerald-950/30" 
+              : toast.type === "error"
+              ? "bg-zinc-900/95 text-zinc-100 border-rose-500/50 shadow-rose-950/30"
+              : toast.type === "warning"
+              ? "bg-zinc-900/95 text-zinc-100 border-amber-500/50 shadow-amber-950/30"
+              : "bg-zinc-900/95 text-zinc-100 border-zinc-700/60 shadow-zinc-950/40"
+          }`}>
+            <div className="shrink-0 mt-0.5">
+              {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+              {toast.type === "error" && <AlertCircle className="w-5 h-5 text-rose-400" />}
+              {toast.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-400" />}
+              {toast.type === "info" && <Info className="w-5 h-5 text-sky-400" />}
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              {toast.title && <h4 className="text-sm font-semibold tracking-tight text-white mb-0.5">{toast.title}</h4>}
+              <p className="text-xs text-zinc-300 leading-relaxed font-normal">{toast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="shrink-0 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
         <div className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-none shadow-none">
           <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800/60">
@@ -1029,34 +1080,41 @@ export default function StudentOnboardingPage() {
             <div className="h-px bg-gray-100 dark:bg-gray-800/60" />
 
             {/* 4. Home Location & Commute Stops (Requested) */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white uppercase tracking-wider">
-                    Home Location & Commute Stops
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Configure your residential GPS coordinates for automatic nearest stop assignment
+            <div className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/40 p-5 sm:p-6 shadow-xs space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 text-xs font-bold font-mono">
+                      4
+                    </span>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
+                      Home Location & Commute Stops
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Configure your residential GPS coordinates for automated nearest boarding stop & route assignment.
                   </p>
                 </div>
-                <div className="p-2 border border-gray-100 dark:border-gray-800 text-gray-500">
+                <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 shrink-0">
                   <MapPin className="w-5 h-5" />
                 </div>
               </div>
 
               {homeStatusMsg && (
-                <div className="p-3 text-xs border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 text-green-800 dark:text-green-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                  <span>{homeStatusMsg}</span>
+                <div className="p-3.5 rounded-xl border border-emerald-200/80 bg-emerald-50/80 dark:bg-emerald-950/40 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-300 text-xs flex items-center gap-2.5 animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  <span className="font-medium">{homeStatusMsg}</span>
                 </div>
               )}
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Street / Area Address</label>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      Street / Area Address
+                    </label>
                     {isResolvingAddress && (
-                      <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 font-medium animate-pulse">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-medium animate-pulse">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         Fetching street address from map...
                       </span>
@@ -1067,41 +1125,47 @@ export default function StudentOnboardingPage() {
                     value={homeAddress}
                     onChange={e => setHomeAddress(e.target.value)}
                     placeholder="Mukhani, Haldwani, Uttarakhand, 263141"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm"
+                    className="w-full px-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm transition-all shadow-2xs placeholder:text-gray-400"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Latitude</label>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center justify-between">
+                      <span>Latitude</span>
+                      <span className="text-[10px] text-gray-400 font-mono">DEG (N)</span>
+                    </label>
                     <input
                       type="text"
                       value={homeLat}
                       onChange={e => setHomeLat(e.target.value)}
                       placeholder="29.220936"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm font-mono"
+                      className="w-full px-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono transition-all shadow-2xs"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Longitude</label>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center justify-between">
+                      <span>Longitude</span>
+                      <span className="text-[10px] text-gray-400 font-mono">DEG (E)</span>
+                    </label>
                     <input
                       type="text"
                       value={homeLng}
                       onChange={e => setHomeLng(e.target.value)}
                       placeholder="79.514496"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm font-mono"
+                      className="w-full px-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono transition-all shadow-2xs"
                     />
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
                   <button
                     type="button"
                     onClick={handleDetectGPS}
                     disabled={isDetectingGPS || isResolvingAddress}
-                    className="px-4 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200 font-medium rounded-none transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                    className="px-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-800 dark:text-gray-200 font-medium rounded-xl transition-all text-sm flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
                   >
-                    <Navigation className={`w-4 h-4 ${isDetectingGPS ? "animate-spin text-green-600" : "text-gray-500"}`} />
+                    <Navigation className={`w-4 h-4 ${isDetectingGPS ? "animate-spin text-emerald-600" : "text-gray-500"}`} />
                     <span>
                       {isDetectingGPS
                         ? "Acquiring GPS..."
@@ -1115,31 +1179,41 @@ export default function StudentOnboardingPage() {
                     type="button"
                     onClick={handleSaveHomeLocation}
                     disabled={isSavingHome || isResolvingAddress || !homeLat || !homeLng}
-                    className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-none transition-colors text-sm shadow-sm active:scale-95 cursor-pointer text-center"
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-medium rounded-xl transition-all text-sm shadow-xs hover:shadow active:scale-95 cursor-pointer text-center flex items-center justify-center gap-2"
                   >
-                    {isSavingHome ? "Saving & Calculating..." : "Save Coordinates & Calculate Stops"}
+                    {isSavingHome ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving & Calculating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Save & Calculate Nearest Stops</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
                 {/* Nearest Stops Interactive Selection */}
                 {nearestStops && nearestStops.length > 0 && (
-                  <div className="pt-4 border-t border-gray-100 dark:border-gray-800/60 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div className="pt-5 border-t border-gray-100 dark:border-zinc-800/80 space-y-3.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                       <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
-                          <BusFront className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-                          Choose Bus Boarding / Pickup Stop
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                          <BusFront className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          Recommended Bus Boarding Stops
                         </h4>
-                        <p className="text-[11px] text-gray-500">
-                          Select where you want to board the bus based on walking distance from home
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                          Ranked by walking proximity to your saved residence coordinates
                         </p>
                       </div>
-                      <span className="text-[11px] font-mono text-gray-400">
-                        {nearestStops.length} stops in corridor
+                      <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300">
+                        {nearestStops.length} stops nearby
                       </span>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {nearestStops.map((stop: any, idx: number) => {
                         const isChosen = stop.id === primaryStopId;
                         const isNearest = idx === 0;
@@ -1148,36 +1222,36 @@ export default function StudentOnboardingPage() {
                           <div
                             key={stop.id || idx}
                             onClick={() => !isSelectingStop && handleSelectPickupStop(stop.id, stop.zoneCode, stop.name)}
-                            className={`p-3.5 border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 ${
                               isChosen
-                                ? "border-green-600 bg-green-50/40 dark:bg-green-950/20 dark:border-green-500 shadow-sm"
-                                : "border-gray-200 dark:border-gray-800 bg-white dark:bg-black hover:border-gray-400 dark:hover:border-gray-700"
+                                ? "border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30 dark:border-emerald-500 shadow-xs ring-1 ring-emerald-500/30"
+                                : "border-gray-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/60 hover:border-emerald-300 dark:hover:border-zinc-700 hover:shadow-2xs"
                             }`}
                           >
-                            <div className="flex items-start gap-3">
+                            <div className="flex items-start gap-3.5">
                               <div className="flex flex-col items-center pt-0.5">
-                                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 border ${
+                                <span className={`text-[11px] font-mono font-bold w-7 h-7 rounded-lg flex items-center justify-center border ${
                                   isNearest
-                                    ? "bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300 border-green-300 dark:border-green-700"
-                                    : "border-gray-200 dark:border-gray-700 text-gray-500"
+                                    ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
+                                    : "border-gray-200 dark:border-zinc-700 text-gray-500 bg-gray-50 dark:bg-zinc-800"
                                 }`}>
                                   #{idx + 1}
                                 </span>
                               </div>
 
-                              <div className="space-y-1">
+                              <div className="space-y-1.5">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-sm font-bold text-gray-900 dark:text-white">
                                     {stop.name}
                                   </span>
                                   {isNearest && (
-                                    <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase bg-green-600 text-white">
+                                    <span className="text-[10px] px-2 py-0.5 font-bold uppercase rounded-full bg-emerald-600 text-white shadow-2xs">
                                       ★ Recommended
                                     </span>
                                   )}
                                   {isChosen && (
-                                    <span className="text-[10px] px-2 py-0.5 font-bold uppercase bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 border border-green-300 dark:border-green-700 flex items-center gap-1">
-                                      <Check className="w-3 h-3" /> Selected Boarding Stop
+                                    <span className="text-[10px] px-2.5 py-0.5 font-bold uppercase rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                                      <Check className="w-3 h-3" /> Selected Stop
                                     </span>
                                   )}
                                 </div>
@@ -1188,14 +1262,14 @@ export default function StudentOnboardingPage() {
                                   </p>
                                 )}
 
-                                <div className="flex flex-wrap items-center gap-2 text-[11px] pt-1">
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] pt-0.5">
                                   {stop.routeName && (
-                                    <span className="px-2 py-0.5 border border-blue-200 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium">
+                                    <span className="px-2.5 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium">
                                       🚌 {stop.routeName}
                                     </span>
                                   )}
                                   {stop.zoneCode && (
-                                    <span className="px-2 py-0.5 border border-purple-200 dark:border-purple-900/50 bg-purple-50/60 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-medium">
+                                    <span className="px-2.5 py-0.5 rounded-lg border border-purple-200 dark:border-purple-900/50 bg-purple-50/70 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-medium">
                                       🏷️ Zone {stop.zoneCode.replace("ZONE_", "")}
                                       {stop.semesterFee ? ` • ₹${stop.semesterFee.toLocaleString()}/sem` : ""}
                                     </span>
@@ -1204,13 +1278,13 @@ export default function StudentOnboardingPage() {
                               </div>
                             </div>
 
-                            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100 dark:border-gray-800 gap-2 shrink-0">
+                            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100 dark:border-zinc-800 gap-2 shrink-0">
                               <div className="text-left sm:text-right">
                                 <p className="text-sm font-extrabold text-gray-900 dark:text-white font-mono">
                                   {stop.distanceKm !== undefined ? `${stop.distanceKm} km` : "Nearby"}
                                 </p>
-                                <p className="text-xs text-gray-500 flex items-center sm:justify-end gap-1">
-                                  <Clock className="w-3 h-3 text-gray-400" />
+                                <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center sm:justify-end gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-gray-400" />
                                   {stop.walkTimeMins ? `~${stop.walkTimeMins} min walk` : "Walkable"}
                                 </p>
                               </div>
@@ -1222,10 +1296,10 @@ export default function StudentOnboardingPage() {
                                   e.stopPropagation();
                                   handleSelectPickupStop(stop.id, stop.zoneCode, stop.name);
                                 }}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-none transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
                                   isChosen
-                                    ? "bg-green-600 text-white pointer-events-none"
-                                    : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700"
+                                    ? "bg-emerald-600 text-white pointer-events-none shadow-xs"
+                                    : "bg-gray-100 dark:bg-zinc-800 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-zinc-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-zinc-700"
                                 }`}
                               >
                                 {isChosen ? (
@@ -1248,21 +1322,21 @@ export default function StudentOnboardingPage() {
                       <button
                         type="button"
                         onClick={() => setShowAllStopsPicker(prev => !prev)}
-                        className="text-xs text-green-700 dark:text-green-400 hover:underline flex items-center gap-1 font-medium"
+                        className="text-xs text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1.5 font-medium cursor-pointer"
                       >
                         {showAllStopsPicker ? "Hide full stop catalog" : "Looking for another stop? Browse all campus route stops →"}
                       </button>
 
                       {showAllStopsPicker && (
-                        <div className="mt-3 p-3 border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-zinc-950 space-y-3">
+                        <div className="mt-3 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-950 space-y-3">
                           <input
                             type="text"
                             value={stopSearchQuery}
                             onChange={(e) => setStopSearchQuery(e.target.value)}
                             placeholder="Search stop by name, landmark, or route..."
-                            className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500"
+                            className="w-full px-3.5 py-2 text-xs border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                           />
-                          <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+                          <div className="max-h-52 overflow-y-auto divide-y divide-gray-100 dark:divide-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
                             {stops
                               .filter(s =>
                                 !stopSearchQuery ||
@@ -1275,26 +1349,26 @@ export default function StudentOnboardingPage() {
                                   <div
                                     key={s.id}
                                     onClick={() => handleSelectPickupStop(s.id, s.zoneCode, s.name)}
-                                    className={`p-2.5 flex items-center justify-between text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors ${
-                                      isCurrent ? "bg-green-50/60 dark:bg-green-950/30 font-bold" : ""
+                                    className={`p-3 flex items-center justify-between text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors ${
+                                      isCurrent ? "bg-emerald-50/70 dark:bg-emerald-950/40 font-bold" : ""
                                     }`}
                                   >
                                     <div>
-                                      <p className="text-gray-900 dark:text-white">{s.name}</p>
-                                      {s.landmark && <p className="text-[11px] text-gray-500">{s.landmark}</p>}
+                                      <p className="text-gray-900 dark:text-white font-medium">{s.name}</p>
+                                      {s.landmark && <p className="text-[11px] text-gray-500 dark:text-gray-400">{s.landmark}</p>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {s.zoneCode && (
-                                        <span className="text-[10px] px-1.5 py-0.5 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300">
+                                        <span className="text-[10px] px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/30">
                                           {s.zoneCode}
                                         </span>
                                       )}
                                       {isCurrent ? (
-                                        <span className="text-green-600 font-bold flex items-center gap-1 text-[11px]">
-                                          <Check className="w-3 h-3" /> Active
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                                          <Check className="w-3.5 h-3.5" /> Active
                                         </span>
                                       ) : (
-                                        <span className="text-gray-500 hover:text-green-600">Select</span>
+                                        <span className="text-gray-500 hover:text-emerald-600">Select</span>
                                       )}
                                     </div>
                                   </div>
@@ -1312,20 +1386,32 @@ export default function StudentOnboardingPage() {
             <div className="h-px bg-gray-100 dark:bg-gray-800/60" />
 
             {/* 5. Residential Transit Zone */}
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center justify-between">
-                <span>Residential Transit Zone & Subscription Fee *</span>
+            <div className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/40 p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 text-xs font-bold font-mono">
+                      5
+                    </span>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
+                      Residential Transit Zone & Subscription Fee
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Defines your semester transportation tier and fee structure
+                  </p>
+                </div>
                 {isZoneLocked && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300">
-                    <Lock className="w-3 h-3" /> Locked
+                  <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                    <Lock className="w-3.5 h-3.5" /> Locked
                   </span>
                 )}
-              </label>
+              </div>
 
               {isZoneLocked ? (
-                <div className="p-4 border border-green-200 dark:border-green-800/80 bg-green-50/50 dark:bg-green-950/20 text-xs text-green-900 dark:text-green-200">
+                <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-emerald-900 dark:text-emerald-200">
                   <div className="font-bold flex items-center gap-2 mb-1.5">
-                    <ShieldCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     Zone {selectedZoneCode} — Locked after Fee Clearance
                   </div>
                   <p className="text-xs opacity-80 leading-relaxed">
@@ -1348,20 +1434,20 @@ export default function StudentOnboardingPage() {
               )}
 
               {/* Stop & Zone Linkage Summary Card */}
-              <div className="p-3.5 border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-zinc-950 text-xs space-y-2">
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-950 text-xs space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Selected Boarding Stop:</span>
+                  <span className="text-gray-500 dark:text-gray-400">Selected Boarding Stop:</span>
                   <span className="font-bold text-gray-900 dark:text-white">
                     {stops.find(s => s.id === primaryStopId)?.name || nearestStops.find(s => s.id === primaryStopId)?.name || "Auto-assigned by location"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Zone Subscription Fee:</span>
-                  <span className="font-mono font-bold text-green-600 dark:text-green-400 text-sm">
+                  <span className="text-gray-500 dark:text-gray-400">Zone Subscription Fee:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
                     ₹{transitZones.find(z => z.code === selectedZoneCode)?.semesterFee.toLocaleString() || "12,000"} / Semester
                   </span>
                 </div>
-                <p className="text-[11px] text-gray-400 pt-1 border-t border-gray-100 dark:border-gray-800">
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-100 dark:border-zinc-800">
                   Corridor: {transitZones.find(z => z.code === selectedZoneCode)?.corridorDescription || "Haldwani / Kathgodam Regional Corridor"}
                 </p>
               </div>
@@ -1370,30 +1456,60 @@ export default function StudentOnboardingPage() {
             <div className="h-px bg-gray-100 dark:bg-gray-800/60" />
 
             {/* 6. Emergency & Guardian Contact */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white uppercase tracking-wider">
-                Emergency & Guardian Contact
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Guardian Name</label>
-                  <input
-                    type="text"
-                    value={emergencyName}
-                    onChange={e => setEmergencyName(e.target.value)}
-                    placeholder="Parent / Guardian Name"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm"
-                  />
+            <div className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/40 p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 text-xs font-bold font-mono">
+                      6
+                    </span>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
+                      Emergency & Guardian Contact
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Primary contact for campus transport notifications and transit safety
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Guardian Phone</label>
-                  <input
-                    type="tel"
-                    value={emergencyPhone}
-                    onChange={e => setEmergencyPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm font-mono"
-                  />
+                <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 shrink-0">
+                  <HeartHandshake className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                    Guardian Name
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={emergencyName}
+                      onChange={e => setEmergencyName(e.target.value)}
+                      placeholder="Parent / Guardian Name"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm transition-all shadow-2xs placeholder:text-gray-400"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                    Guardian Phone
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="tel"
+                      value={emergencyPhone}
+                      onChange={e => setEmergencyPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono transition-all shadow-2xs placeholder:text-gray-400"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1402,7 +1518,7 @@ export default function StudentOnboardingPage() {
               <button
                 type="submit"
                 disabled={isSubmitting || !photoUrl}
-                className="w-full sm:w-auto px-8 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-none transition-colors text-sm shadow-sm active:scale-95 cursor-pointer text-center flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-all text-sm shadow-md hover:shadow-lg active:scale-95 cursor-pointer text-center flex items-center justify-center gap-2.5"
               >
                 {!photoUrl ? (
                   <Lock className="w-4 h-4" />

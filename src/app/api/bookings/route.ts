@@ -106,9 +106,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Fetch Student from Database
+    // 1. Fetch Student from Database (students_full view has payment_status and has_active_subscription)
     const { data: studentsList, error: studErr } = await supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("*")
       .or(`id.eq.${studentId},user_id.eq.${studentId}`)
       .limit(1);

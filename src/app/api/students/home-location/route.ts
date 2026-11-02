@@ -107,9 +107,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, message: "studentId required" }, { status: 400 });
     }
 
-    // Query authoritative student record
+    // Query authoritative student record from students_full view (normalized 3NF)
     const { data: dbStudent } = await supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, user_id, full_name, home_latitude, home_longitude, home_address, auto_assigned_stop_id, primary_stop_id, primary_route_id, zone_id, zone_code, payment_status, total_fee_due, total_fee_paid")
       .or(`id.eq.${studentId},user_id.eq.${studentId}`)
       .maybeSingle();
@@ -245,22 +245,17 @@ export async function PUT(req: NextRequest) {
     }
     if (targetZone?.id) {
       updatePayload.zone_id = targetZone.id;
-      updatePayload.zone_code = targetZone.code;
     }
     if (targetRouteId) {
       updatePayload.primary_route_id = targetRouteId;
     }
 
-    // Inspect if student already approved payment
+    // Inspect if student already approved payment (from students_full view)
     const { data: curStud } = await supabaseAdmin
-      .from("students")
-      .select("id, payment_status, total_fee_due")
+      .from("students_full")
+      .select("id, payment_status, total_fee_due, zone_code")
       .or(`id.eq.${studentId},user_id.eq.${studentId}`)
       .maybeSingle();
-
-    if (curStud && curStud.payment_status !== "APPROVED" && targetZone?.semester_fee) {
-      updatePayload.total_fee_due = Number(targetZone.semester_fee);
-    }
 
     // 3. Update database
     let { data: updated } = await supabaseAdmin
@@ -296,7 +291,6 @@ export async function PUT(req: NextRequest) {
           full_name: userRow?.full_name || "Commuter",
           semester: "1",
           transport_access_suspended: false,
-          total_fee_due: targetZone?.semester_fee ? Number(targetZone.semester_fee) : 12000,
           ...updatePayload,
         })
         .select("*")
@@ -400,8 +394,9 @@ export async function PUT(req: NextRequest) {
         autoAssignedStopId: updated.auto_assigned_stop_id,
         primaryStopId: updated.primary_stop_id,
         primaryRouteId: updated.primary_route_id,
-        zoneCode: updated.zone_code || targetZone?.code,
-        totalFeeDue: updated.total_fee_due,
+        zoneCode: targetZone?.code || curStud?.zone_code || "ZONE_B",
+        totalFeeDue: targetZone?.semester_fee ? Number(targetZone.semester_fee) : (curStud?.total_fee_due || 12000),
+        paymentStatus: curStud?.payment_status || "UNPAID",
       },
       selectedStop: nearestStops.find(s => s.id === targetStopId) || nearestStops[0],
       nearestStops,
@@ -449,9 +444,9 @@ export async function POST(req: NextRequest) {
 
       const targetRouteId = routeStopsRes.data?.[0]?.route_id || null;
 
-      // 2. Inspect Student & Zone Lock Guardrail
+      // 2. Inspect Student & Zone Lock Guardrail (from students_full view)
       const { data: curStudent } = await supabaseAdmin
-        .from("students")
+        .from("students_full")
         .select("id, payment_status, zone_code, primary_stop_id")
         .or(`id.eq.${studentId},user_id.eq.${studentId}`)
         .maybeSingle();
@@ -474,12 +469,8 @@ export async function POST(req: NextRequest) {
       const updatePayload: Record<string, any> = {
         primary_stop_id: targetStop.id,
         zone_id: targetZone.id,
-        zone_code: targetZone.code,
       };
       if (targetRouteId) updatePayload.primary_route_id = targetRouteId;
-      if (!isZoneLocked && targetZone.semester_fee) {
-        updatePayload.total_fee_due = Number(targetZone.semester_fee);
-      }
 
       await supabaseAdmin.from("students").update(updatePayload).eq("id", curStudent.id);
 

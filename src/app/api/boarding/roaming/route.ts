@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     // Find active trip if studentId provided
     if (!resolvedTripId && studentId) {
       const { data: bData } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .select("trip_id")
         .eq("student_id", studentId)
         .in("status", ["CONFIRMED", "BOARDED"])
@@ -51,13 +51,17 @@ export async function GET(req: NextRequest) {
       const busNumber = tripData?.bus?.bus_number || "Campus Shuttle";
       const regNo = tripData?.bus?.registration_no || "";
 
-      // 2. Fetch all bookings
+      // 2. Fetch all reservations
       const { data: tripBookings } = await supabaseAdmin
-        .from("bookings")
-        .select("id, student_id, seat_number, status, roaming_status, running_grace_until, boarded_at")
-        .eq("trip_id", resolvedTripId);
+        .from("bus_reservations")
+        .select("id, student_id, chosen_seat, status, roaming_status, running_grace_until, boarded_at")
+        .eq("trip_id", resolvedTripId)
+        .neq("status", "CANCELLED");
       
-      const bookingsList = tripBookings || [];
+      const bookingsList = (tripBookings || []).map((r) => ({
+        ...r,
+        seat_number: r.chosen_seat,
+      }));
 
       // 3. Check for Active Departure Alert
       const { data: activeAlerts } = await supabaseAdmin
@@ -165,7 +169,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      let query = supabaseAdmin.from("bookings").select("*");
+      let query = supabaseAdmin.from("bus_reservations").select("*");
       if (bookingId) query = query.eq("id", bookingId);
       else if (studentId) query = query.eq("student_id", studentId).eq("status", "CONFIRMED");
 
@@ -180,9 +184,9 @@ export async function POST(req: NextRequest) {
       const targetBooking = bookingsFound[0];
       const resolvedTripId = tripId || targetBooking.trip_id;
 
-      // Update booking to ROAMING seat-hold
+      // Update reservation to ROAMING seat-hold
       await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .update({
           status: "BOARDED",
           roaming_status: "ROAMING",
@@ -231,7 +235,7 @@ export async function POST(req: NextRequest) {
       const { data: tripData } = await supabaseAdmin.from("trips").select("*, bus:buses(*)").eq("id", resolvedTripId).single();
       const busCap = tripData?.bus?.capacity || 40;
       const { data: currentBoarded } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .select("id")
         .eq("trip_id", resolvedTripId)
         .eq("status", "BOARDED");
@@ -259,9 +263,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         status: "ROAMING",
-        message: `Seat ${targetBooking.seat_number || "Held"} digitally registered! Student is free to roam campus.`,
+        message: `Seat ${targetBooking.chosen_seat || "Held"} digitally registered! Student is free to roam campus.`,
         bookingId: targetBooking.id,
-        seatNumber: targetBooking.seat_number,
+        seatNumber: targetBooking.chosen_seat,
         totalClaimed,
         capacity: busCap,
         isBusFull: totalClaimed >= busCap,
@@ -280,7 +284,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      let query = supabaseAdmin.from("bookings").update({
+      let query = supabaseAdmin.from("bus_reservations").update({
         roaming_status: "ONBOARD_CONFIRMED",
       });
 
@@ -322,7 +326,7 @@ export async function POST(req: NextRequest) {
       // 2-minute grace period
       const graceTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
 
-      let query = supabaseAdmin.from("bookings").update({
+      let query = supabaseAdmin.from("bus_reservations").update({
         roaming_status: "RUNNING_TO_BUS",
         running_grace_until: graceTime,
       });
@@ -393,9 +397,10 @@ export async function POST(req: NextRequest) {
 
       // Disseminate push notifications to all booked students for this trip
       const { data: tripBookings } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .select("student_id")
-        .eq("trip_id", tripId);
+        .eq("trip_id", tripId)
+        .neq("status", "CANCELLED");
 
       await invalidateTrip(tripId);
       if (tripBookings && tripBookings.length > 0) {

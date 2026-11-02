@@ -77,9 +77,9 @@ export async function executeDailyRollover(
         archivedTripsCount = pastTripIds.length;
       }
 
-      // Transition unboarded bookings on those past trips from CONFIRMED to NO_SHOW
+      // Transition unboarded reservations on those past trips from CONFIRMED to NO_SHOW
       const { data: pastConfirmedBookings } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .select("id")
         .in("trip_id", pastTripIds)
         .eq("status", "CONFIRMED");
@@ -87,7 +87,7 @@ export async function executeDailyRollover(
       if (pastConfirmedBookings && pastConfirmedBookings.length > 0) {
         const bkIds = pastConfirmedBookings.map((b) => b.id);
         const { error: bkErr } = await supabaseAdmin
-          .from("bookings")
+          .from("bus_reservations")
           .update({ status: "NO_SHOW" })
           .in("id", bkIds);
 

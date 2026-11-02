@@ -685,21 +685,21 @@ CampusFleetStore.prototype.syncUserData = async function(this: CampusFleetStore)
       }));
     }
 
-    // 9. Fetch Bookings
-    const { data: dbBookings } = await supabase.from("bookings_full").select("*");
-    if (dbBookings) {
-      this.bookings = dbBookings.map(b => ({
+    // 9. Fetch Auto Reservations (Authoritative Commuter Manifest)
+    const { data: dbReservations } = await supabase.from("bus_reservations_full").select("*");
+    if (dbReservations) {
+      this.bookings = dbReservations.map(b => ({
         id: b.id,
-        bookingCode: b.booking_code,
+        bookingCode: b.booking_code || `RES-${b.chosen_seat || "PASS"}-${b.id.slice(0, 6)}`,
         studentId: b.student_id,
         tripId: b.trip_id,
         busId: b.bus_id || "",
-        bookingDate: b.booking_date || (b.created_at ? b.created_at.split("T")[0] : ""),
+        bookingDate: b.reservation_date || b.booking_date || (b.created_at ? b.created_at.split("T")[0] : ""),
         boardingStopId: b.boarding_stop_id,
         status: b.status || "CONFIRMED",
         waitlistPosition: b.waitlist_position,
-        seatNumber: b.seat_number,
-        passengerType: b.passenger_type || "SEATED",
+        seatNumber: b.chosen_seat || b.seat_number,
+        passengerType: b.chosen_seat ? "SEATED" : "STANDING_TILL_MERGE",
         mergeStopId: b.merge_stop_id,
         createdAt: b.created_at || new Date().toISOString(),
       }));

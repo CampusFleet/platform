@@ -479,9 +479,9 @@ export async function getUserConversations(userId: string, userRole: string): Pr
         if (student.campus) userCampusIds.add(student.campus);
         if (student.class_id) userClassIds.add(student.class_id);
 
-        // Bus from active or recent confirmed bookings
+        // Bus from active or recent confirmed auto-reservations
         const { data: studentBookings } = await supabaseAdmin
-          .from("bookings")
+          .from("bus_reservations")
           .select("bus_id, buses(bus_number)")
           .or(`student_id.eq.${student.id},user_id.eq.${userId}`)
           .order("created_at", { ascending: false })

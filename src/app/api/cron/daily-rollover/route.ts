@@ -23,9 +23,9 @@ export async function GET(req: NextRequest) {
     if (tripsErr) throw tripsErr;
 
     const { data: bookings, error: bkErr } = await supabaseAdmin
-      .from("bookings")
+      .from("bus_reservations")
       .select("id, status")
-      .eq("booking_date", targetDate);
+      .eq("reservation_date", targetDate);
 
     if (bkErr) throw bkErr;
 

@@ -103,11 +103,11 @@ export async function GET(req: NextRequest) {
         if (!bus) return null;
 
         const { count: seatedCount } = await supabaseAdmin
-          .from("bookings")
+          .from("bus_reservations")
           .select("*", { count: "exact", head: true })
           .eq("trip_id", t.id)
           .in("status", ["CONFIRMED", "BOARDED"])
-          .neq("passenger_type", "STANDING_TILL_MERGE");
+          .not("chosen_seat", "is", null);
 
         const capacity = bus.capacity || 50;
         const occupied = seatedCount || 0;
@@ -248,11 +248,11 @@ export async function POST(req: NextRequest) {
 
     // 3. Count occupied seated bookings
     const { data: seatedBookings } = await supabaseAdmin
-      .from("bookings")
-      .select("seat_number")
+      .from("bus_reservations")
+      .select("chosen_seat")
       .eq("trip_id", tripId)
       .in("status", ["CONFIRMED", "BOARDED"])
-      .neq("passenger_type", "STANDING_TILL_MERGE");
+      .not("chosen_seat", "is", null);
 
     const occupiedCount = (seatedBookings || []).length;
     const hasFreeSeat = occupiedCount < capacity;
@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
 
     if (hasFreeSeat) {
       // Find lowest unallocated seat number (1..capacity)
-      const takenSeats = new Set((seatedBookings || []).map((b) => b.seat_number));
+      const takenSeats = new Set((seatedBookings || []).map((b: any) => b.chosen_seat));
       for (let i = 1; i <= capacity; i++) {
         const candidate = `${i}`;
         if (!takenSeats.has(candidate) && !takenSeats.has(`${candidate}A`) && !takenSeats.has(`${candidate}B`)) {
@@ -311,7 +311,7 @@ export async function POST(req: NextRequest) {
     const bookingId = `book-${Date.now()}`;
 
     const { data: booking, error: bookErr } = await supabaseAdmin
-      .from("bookings")
+      .from("bus_reservations")
       .insert({
         id: bookingId,
         booking_code: bookingCode,
@@ -320,9 +320,8 @@ export async function POST(req: NextRequest) {
         bus_id: bus.id,
         boarding_stop_id: stopId,
         status: "CONFIRMED",
-        seat_number: allocatedSeatNumber,
-        passenger_type: passengerType,
-        merge_stop_id: mergeStopId || null,
+        chosen_seat: allocatedSeatNumber,
+        reservation_date: trip.trip_date || new Date().toISOString().split("T")[0],
         created_at: new Date().toISOString(),
       })
       .select()

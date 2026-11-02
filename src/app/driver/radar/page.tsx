@@ -59,13 +59,14 @@ export default async function DriverRadarPage() {
       },
     }),
     getOrFetchWithCache({
-      key: "driver:bookings_recent",
+      key: "driver:reservations_recent",
       ttl: 15,
       allowEmpty: true,
       fetchFn: async () => {
         const { data } = await supabaseAdmin
-          .from("bookings_full")
+          .from("bus_reservations_full")
           .select("*")
+          .neq("status", "CANCELLED")
           .order("created_at", { ascending: false })
           .limit(200);
         return data;

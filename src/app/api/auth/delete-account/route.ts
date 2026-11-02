@@ -53,18 +53,7 @@ export async function DELETE(req: NextRequest) {
         }
       }
 
-      // Collect student booking IDs to clean booking status history
-      const { data: studentBookings } = await supabaseAdmin
-        .from("bookings")
-        .select("id")
-        .eq("student_id", studentId);
-
-      const bookingIds = (studentBookings || []).map((b: any) => b.id).filter(Boolean);
-
       const studentCleanup = [
-        bookingIds.length > 0
-          ? supabaseAdmin.from("booking_status_history").delete().in("booking_id", bookingIds)
-          : Promise.resolve(),
         supabaseAdmin.from("attendance_records").delete().eq("student_id", studentId),
         supabaseAdmin.from("halt_requests").delete().eq("student_id", studentId),
         supabaseAdmin.from("bus_departure_alerts").delete().eq("student_id", studentId),
@@ -74,7 +63,6 @@ export async function DELETE(req: NextRequest) {
         supabaseAdmin.from("bus_switch_requests").delete().eq("student_id", studentId),
         supabaseAdmin.from("bus_reservations").delete().eq("student_id", studentId),
         supabaseAdmin.from("subscriptions").delete().eq("student_id", studentId),
-        supabaseAdmin.from("bookings").delete().eq("student_id", studentId),
       ];
 
       await Promise.allSettled(studentCleanup);

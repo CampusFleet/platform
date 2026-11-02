@@ -47,31 +47,20 @@ export async function POST(req: NextRequest) {
     const utcToday = now.toISOString().split("T")[0];
     const allowedDates = Array.from(new Set([today, utcToday]));
 
-    // 2. Query student's active reservation in bus_reservations (Smart Transit) or bookings_full
-    const [resResult, bookingsResult] = await Promise.all([
-      supabaseAdmin
-        .from("bus_reservations")
-        .select("*, buses(*)")
-        .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
-        .in("reservation_date", allowedDates)
-        .neq("status", "CANCELLED")
-        .order("created_at", { ascending: false }),
-      supabaseAdmin
-        .from("bookings_full")
-        .select("*")
-        .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
-        .in("status", ["CONFIRMED", "SEAT_SELECTED", "ASSIGNED", "BOARDED"])
-        .order("created_at", { ascending: false }),
-    ]);
+    // 2. Query student's active reservation in bus_reservations (Smart Transit Auto-Reservation System)
+    const { data: resResult } = await supabaseAdmin
+      .from("bus_reservations")
+      .select("*, buses(*)")
+      .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
+      .in("reservation_date", allowedDates)
+      .neq("status", "CANCELLED")
+      .order("created_at", { ascending: false });
 
-    const reservations = resResult.data || [];
-    const bookingsData = bookingsResult.data || [];
-
+    const reservations = resResult || [];
     const targetReservation = reservations.find((r) => r.bus_id === busId) || (reservations.length > 0 ? reservations[0] : null);
-    const targetBooking = bookingsData.find((b) => b.bus_id === busId) || (bookingsData.length > 0 ? bookingsData[0] : null);
 
-    // If neither exists, verify if bus has an active trip today
-    if (!targetReservation && !targetBooking) {
+    // If no reservation exists, verify if bus has an active trip today
+    if (!targetReservation) {
       const { data: activeTrips } = await supabaseAdmin
         .from("trips")
         .select("id, bus_id, status")
@@ -138,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Resolve Trip ID
-    let resolvedTripId = targetReservation?.trip_id || targetBooking?.trip_id;
+    let resolvedTripId = targetReservation?.trip_id;
     if (!resolvedTripId) {
       const { data: tripRow } = await supabaseAdmin
         .from("trips")
@@ -151,7 +140,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Check Teacher Reserved Seats
-    const chosenSeat = seatId || targetReservation?.chosen_seat || targetBooking?.seat_number || "1A";
+    const chosenSeat = seatId || targetReservation?.chosen_seat || "1A";
     if (chosenSeat) {
       const { data: busData } = await supabaseAdmin
         .from("buses")
@@ -210,27 +199,7 @@ export async function POST(req: NextRequest) {
         .in("reservation_date", allowedDates);
     }
 
-    // 7. Update seat_attendance (via bookings compatibility view)
-    if (targetBooking?.id) {
-      await supabaseAdmin
-        .from("bookings")
-        .update({
-          status: "BOARDED",
-          boarded_at: nowIso,
-          seat_number: chosenSeat,
-        })
-        .eq("id", targetBooking.id);
-    } else {
-      await supabaseAdmin
-        .from("bookings")
-        .update({
-          status: "BOARDED",
-          boarded_at: nowIso,
-          seat_number: chosenSeat,
-        })
-        .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
-        .eq("trip_id", resolvedTripId);
-    }
+
 
     // 8. Add verified attendance record with Location Distance Unlock
     const attendanceId = `att-self-${Date.now()}`;

@@ -5,7 +5,7 @@ import { getOrFetchWithCache } from "@/lib/redis";
 import ConductorLayoutClient from "@/components/conductor/ConductorLayoutClient";
 import { ConductorProvider } from "@/components/conductor/ConductorContext";
 import type { Trip, Bus, Route, Booking, Stop, Shift, Student, AttendanceRecord } from "@/lib/types";
-import { mergeReservationsIntoBookings } from "@/lib/trip-resolver";
+import { mapBusReservationToBooking } from "@/lib/trip-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -56,20 +56,19 @@ export default async function ConductorLayout({
         return { dbTrips, dbBuses, dbRoutes, dbStops, dbShifts };
       },
     }),
-    // Bookings & smart transit bus_reservations during active boarding — 10s cache
+    // Auto-reservations passenger manifest — 10s cache
     getOrFetchWithCache({
-      key: "conductor:bookings_and_reservations_v2",
+      key: "conductor:reservations_manifest_v3",
       ttl: 10,
       allowEmpty: true,
       fetchFn: async () => {
-        const [{ data: dbBookings }, { data: dbReservations }] = await Promise.all([
-          supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(300),
-          supabaseAdmin.from("bus_reservations").select("*").neq("status", "CANCELLED").order("created_at", { ascending: false }).limit(300),
-        ]);
-        return {
-          bookings: dbBookings || [],
-          reservations: dbReservations || [],
-        };
+        const { data } = await supabaseAdmin
+          .from("bus_reservations_full")
+          .select("*")
+          .neq("status", "CANCELLED")
+          .order("created_at", { ascending: false })
+          .limit(500);
+        return data || [];
       },
     }),
     // Authoritative Student Directory (photos, college student IDs, route assignments)
@@ -95,8 +94,7 @@ export default async function ConductorLayout({
   ]);
 
   const { dbTrips, dbBuses, dbRoutes, dbStops, dbShifts } = sharedData;
-  const rawBookings = bookingsData?.bookings || (Array.isArray(bookingsData) ? bookingsData : []);
-  const rawReservations = bookingsData?.reservations || [];
+  const rawReservations = Array.isArray(bookingsData) ? bookingsData : [];
   const dbStudents = studentsData;
   const dbAttendance = attendanceData;
 
@@ -148,23 +146,9 @@ export default async function ConductorLayout({
     stops: [],
   }));
 
-  const baseBookings: Booking[] = (rawBookings || []).map((b: any) => ({
-    id: b.id,
-    bookingCode: b.booking_code || "",
-    studentId: b.student_id,
-    tripId: b.trip_id,
-    busId: b.bus_id || "",
-    bookingDate: b.booking_date || (b.created_at ? b.created_at.split("T")[0] : ""),
-    boardingStopId: b.boarding_stop_id || b.stop_id || "",
-    status: b.status || "",
-    waitlistPosition: b.waitlist_position,
-    seatNumber: b.seat_number,
-    passengerType: b.passenger_type || "",
-    mergeStopId: b.merge_stop_id,
-    createdAt: b.created_at || new Date().toISOString(),
-  }));
-
-  const bookings: Booking[] = mergeReservationsIntoBookings(baseBookings, rawReservations);
+  const bookings: Booking[] = (rawReservations || []).map((r: any) =>
+    mapBusReservationToBooking(r)
+  );
 
   const stops: Stop[] = (dbStops || []).map((s: any) => ({
     id: s.id,

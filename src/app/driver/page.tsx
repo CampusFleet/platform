@@ -51,13 +51,18 @@ export default async function DriverPage() {
         return { dbTrips, dbBuses, dbRoutes, dbStops, dbRouteStops };
       },
     }),
-    // Bookings change during active boarding — shorter 15s cache
+    // Auto-reservations passenger manifest during active boarding — 15s cache
     getOrFetchWithCache({
-      key: "driver:bookings_recent",
+      key: "driver:reservations_recent",
       ttl: 15,
       allowEmpty: true,
       fetchFn: async () => {
-        const { data } = await supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(200);
+        const { data } = await supabaseAdmin
+          .from("bus_reservations_full")
+          .select("*")
+          .neq("status", "CANCELLED")
+          .order("created_at", { ascending: false })
+          .limit(200);
         return data;
       },
     }),

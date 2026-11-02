@@ -10,7 +10,7 @@ export async function GET() {
     const { data: routes } = await supabaseAdmin.from("routes").select("*");
     const { data: routeStops } = await supabaseAdmin.from("route_stops").select("*, stops(*)");
     const { data: students } = await supabaseAdmin.from("students_full").select("id, full_name, primary_route_id, primary_stop_id, zone_code, payment_status");
-    const { data: bookings } = await supabaseAdmin.from("bookings").select("id, trip_id, bus_id, student_id, boarding_stop_id, status");
+    const { data: bookings } = await supabaseAdmin.from("bus_reservations").select("id, trip_id, bus_id, student_id, boarding_stop_id, status");
     const { data: trips } = await supabaseAdmin.from("trips").select("id, route_id, bus_id, status");
     const { data: buses } = await supabaseAdmin.from("buses").select("id, bus_number, capacity, status");
 

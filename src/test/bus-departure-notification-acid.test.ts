@@ -45,12 +45,13 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
           status: "IN_TRANSIT",
         },
       ],
-      bookings: [
+      bus_reservations: [
         {
           id: "bk-student-01",
           trip_id: "trip-alpha-001",
           student_id: "stud-01",
           seat_number: "12A",
+          chosen_seat: "12A",
           status: "CONFIRMED",
           roaming_status: "ROAMING",
         },
@@ -59,10 +60,12 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
           trip_id: "trip-alpha-001",
           student_id: "stud-02",
           seat_number: "14B",
+          chosen_seat: "14B",
           status: "CONFIRMED",
           roaming_status: "CONFIRMED",
         },
       ],
+      bookings: [],
       bus_departure_alerts: [],
       audit_logs: [],
       notifications: [],
@@ -70,19 +73,31 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
 
     // Chainable Supabase Query Builder Mock
     mockSupabaseAdmin.from.mockImplementation((table: string) => {
-      return {
-        select: vi.fn().mockReturnThis(),
+      const builder: any = {
+        select: vi.fn().mockImplementation(() => {
+          const rows = (dbTables as any)[table] || [];
+          builder.data = rows;
+          return builder;
+        }),
         eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
         in: vi.fn().mockReturnThis(),
         order: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
+        data: (dbTables as any)[table] || [],
+        error: null,
+        then: vi.fn().mockImplementation((resolve) => {
+          const rows = (dbTables as any)[table] || [];
+          return Promise.resolve(resolve({ data: rows, error: null }));
+        }),
         single: vi.fn().mockImplementation(() => {
           if (table === "trips") {
             const t = dbTables.trips[0];
             const b = dbTables.buses[0];
             return Promise.resolve({ data: { ...t, bus: b }, error: null });
           }
-          return Promise.resolve({ data: null, error: null });
+          const row = ((dbTables as any)[table] || [])[0] || null;
+          return Promise.resolve({ data: row, error: null });
         }),
         insert: vi.fn().mockImplementation((rows: any) => {
           const arr = Array.isArray(rows) ? rows : [rows];
@@ -94,6 +109,13 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
         update: vi.fn().mockImplementation((updates: any) => {
           return {
             eq: vi.fn().mockImplementation((col: string, val: any) => {
+              if ((dbTables as any)[table]) {
+                (dbTables as any)[table].forEach((row: any) => {
+                  if (row[col] === val) {
+                    Object.assign(row, updates);
+                  }
+                });
+              }
               return {
                 eq: vi.fn().mockImplementation((col2: string, val2: any) => {
                   if ((dbTables as any)[table]) {
@@ -105,11 +127,14 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
                   }
                   return Promise.resolve({ data: null, error: null });
                 }),
+                then: (resolve: any) => resolve({ data: null, error: null }),
               };
             }),
+            then: (resolve: any) => resolve({ data: null, error: null }),
           };
         }),
       };
+      return builder;
     });
   });
 

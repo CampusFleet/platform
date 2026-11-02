@@ -50,7 +50,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
         supabaseAdmin.from("trips").select("*").order("trip_code"),
         supabaseAdmin.from("buses").select("*"),
         supabaseAdmin.from("routes").select("*"),
-        supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(250),
+        supabaseAdmin.from("bus_reservations_full").select("*").order("created_at", { ascending: false }).limit(250),
         supabaseAdmin.from("stops").select("*"),
         supabaseAdmin.from("students_full").select("*"),
         supabaseAdmin.from("staff").select("*"),

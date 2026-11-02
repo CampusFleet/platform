@@ -55,7 +55,7 @@ export default async function TeacherCommutePage() {
     supabaseAdmin.from("stops").select("*").order("name"),
     supabaseAdmin.from("shifts").select("*").eq("is_active", true).order("start_time"),
     supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false }).limit(20),
-    supabaseAdmin.from("bookings").select("*").eq("user_id", teacherUserId).order("created_at", { ascending: false }).limit(10),
+    supabaseAdmin.from("bus_reservations_full").select("*").or(`student_id.eq.${teacherUserId},student_id.eq.stud-${teacherUserId}`).order("created_at", { ascending: false }).limit(10),
     supabaseAdmin.from("routes").select("*").eq("is_active", true).order("name"),
   ]);
 

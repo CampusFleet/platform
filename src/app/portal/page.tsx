@@ -74,9 +74,9 @@ export default async function StudentPortalPage() {
         return { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses, dbStaff };
       },
     }),
-    // Per-student queries — MUST stay dynamic (user-specific)
+    // Per-student auto-reservations manifest — MUST stay dynamic (user-specific)
     supabaseAdmin
-      .from("bookings_full")
+      .from("bus_reservations_full")
       .select("*")
       .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
       .order("created_at", { ascending: false })

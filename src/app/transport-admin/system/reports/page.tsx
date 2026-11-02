@@ -12,7 +12,7 @@ export default async function StaffSystemReportsPage() {
     { data: dbBookings },
     { data: dbPayments },
   ] = await Promise.all([
-    supabaseAdmin.from("bookings_full").select("*").order("created_at", { ascending: false }).limit(500),
+    supabaseAdmin.from("bus_reservations_full").select("*").order("created_at", { ascending: false }).limit(500),
     supabaseAdmin.from("payments").select("*").order("created_at", { ascending: false }).limit(200),
   ]);
 

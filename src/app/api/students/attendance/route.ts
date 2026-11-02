@@ -419,24 +419,15 @@ export async function GET(req: NextRequest) {
     // Query seats occupied by other students on this specific trip
     let occupiedSeats: string[] = [];
     if (activeReservation?.trip_id) {
-      const [tripRes, tripBks] = await Promise.all([
-        supabaseAdmin
-          .from("bus_reservations")
-          .select("chosen_seat")
-          .eq("trip_id", activeReservation.trip_id)
-          .neq("id", activeReservation.id)
-          .not("chosen_seat", "is", null),
-        supabaseAdmin
-          .from("bookings")
-          .select("seat_number")
-          .eq("trip_id", activeReservation.trip_id)
-          .in("status", ["CONFIRMED", "BOARDED"])
-          .not("seat_number", "is", null),
-      ]);
+      const { data: tripRes } = await supabaseAdmin
+        .from("bus_reservations")
+        .select("chosen_seat")
+        .eq("trip_id", activeReservation.trip_id)
+        .neq("id", activeReservation.id)
+        .in("status", ["CONFIRMED", "BOARDED"])
+        .not("chosen_seat", "is", null);
 
-      const resSeats = (tripRes.data || []).map((r: any) => r.chosen_seat).filter(Boolean);
-      const bkSeats = (tripBks.data || []).map((b: any) => b.seat_number).filter(Boolean);
-      occupiedSeats = Array.from(new Set([...resSeats, ...bkSeats]));
+      occupiedSeats = (tripRes || []).map((r: any) => r.chosen_seat).filter(Boolean);
     }
 
     // Check if student was verified via RFID tap today or unlocked via attendance lock

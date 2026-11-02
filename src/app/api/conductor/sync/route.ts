@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { redis, cacheGet } from "@/lib/redis";
 import type { HaltRequest, Booking } from "@/lib/types";
-import { mergeReservationsIntoBookings } from "@/lib/trip-resolver";
+import { mapBusReservationToBooking } from "@/lib/trip-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
 
     const todayDate = new Date().toISOString().split("T")[0];
 
-    // Parallel fetch: Trip attendance, updated bookings, smart reservations, Redis SOS halt requests, and active Departure Alert
-    const [attendanceRes, bookingsRes, reservationsRes, haltRequests, departureAlertRes] = await Promise.all([
+    // Parallel fetch: Trip attendance, smart reservations manifest, Redis SOS halt requests, and active Departure Alert
+    const [attendanceRes, reservationsRes, haltRequests, departureAlertRes] = await Promise.all([
       supabaseAdmin
         .from("attendance_records")
         .select("*")
@@ -35,12 +35,7 @@ export async function GET(req: NextRequest) {
         .order("timestamp", { ascending: false })
         .limit(100),
       supabaseAdmin
-        .from("bookings_full")
-        .select("*")
-        .eq("trip_id", tripId)
-        .limit(100),
-      supabaseAdmin
-        .from("bus_reservations")
+        .from("bus_reservations_full")
         .select("*")
         .eq("trip_id", tripId)
         .neq("status", "CANCELLED")
@@ -92,23 +87,9 @@ export async function GET(req: NextRequest) {
       unlockTimestamp: a.unlock_timestamp,
     }));
 
-    const baseBookings: Booking[] = (bookingsRes.data || []).map((b: any) => ({
-      id: b.id,
-      bookingCode: b.booking_code || "",
-      studentId: b.student_id,
-      tripId: b.trip_id,
-      busId: b.bus_id || "",
-      bookingDate: b.booking_date || todayDate,
-      boardingStopId: b.boarding_stop_id || b.stop_id || "",
-      status: b.status || "",
-      waitlistPosition: b.waitlist_position,
-      seatNumber: b.seat_number,
-      passengerType: b.passenger_type || "",
-      mergeStopId: b.merge_stop_id,
-      createdAt: b.created_at || new Date().toISOString(),
-    }));
-
-    const bookings = mergeReservationsIntoBookings(baseBookings, reservationsRes.data || []);
+    const bookings: Booking[] = (reservationsRes.data || []).map((r: any) =>
+      mapBusReservationToBooking(r, todayDate)
+    );
 
     return NextResponse.json({
       success: true,

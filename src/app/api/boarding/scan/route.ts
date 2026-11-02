@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
     let student = studentsFound?.[0];
 
     if (studentErr || !student) {
-      // Maybe the searchId was an old booking code? Let's check bookings just in case for backward compatibility
-      const { data: oldBooking } = await supabaseAdmin.from("bookings").select("student_id").eq("booking_code", searchId).limit(1);
+      // Check auto-reservations by booking code or reservation ID
+      const { data: oldBooking } = await supabaseAdmin.from("bus_reservations").select("student_id").or(`booking_code.eq.${searchId},id.eq.${searchId}`).limit(1);
       if (oldBooking && oldBooking.length > 0) {
           const { data: st } = await supabaseAdmin.from("students_full").select("id, full_name, email, phone, class_id, class_name, transport_access_suspended, photo_url, department, semester, payment_status, primary_route_id, primary_stop_id, student_id_code").eq("id", oldBooking[0].student_id).limit(1);
           if (st && st[0]) {

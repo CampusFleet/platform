@@ -80,7 +80,7 @@ export default async function LiveRadarPage({
       },
     }),
     supabaseAdmin
-      .from("bookings_full")
+      .from("bus_reservations_full")
       .select("*")
       .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
       .order("created_at", { ascending: false })

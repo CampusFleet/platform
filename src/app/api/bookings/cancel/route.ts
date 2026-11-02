@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     // 1. Fetch the target booking
     const { data: booking, error: fetchErr } = await supabaseAdmin
-      .from("bookings")
+      .from("bus_reservations")
       .select("*, trips(*, buses(*))")
       .eq("id", bookingId)
       .single();
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Mark as CANCELLED
     const { error: cancelErr } = await supabaseAdmin
-      .from("bookings")
+      .from("bus_reservations")
       .update({
         status: "CANCELLED",
         cancelled_at: now,
@@ -76,23 +76,23 @@ export async function POST(req: NextRequest) {
 
     // 3. Promote standby / waitlisted passenger if any
     let promotedPassenger: any = null;
-    if (booking.seat_number) {
+    const seatToFree = booking.chosen_seat || booking.seat_number;
+    if (seatToFree) {
       const { data: waitlist } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .select("*")
         .eq("trip_id", booking.trip_id)
         .eq("status", "WAITLISTED")
-        .order("waitlist_position", { ascending: true })
+        .order("created_at", { ascending: true })
         .limit(1);
 
       if (waitlist && waitlist.length > 0) {
         const topStandby = waitlist[0];
         await supabaseAdmin
-          .from("bookings")
+          .from("bus_reservations")
           .update({
             status: "CONFIRMED",
-            seat_number: booking.seat_number,
-            waitlist_position: null,
+            chosen_seat: seatToFree,
           })
           .eq("id", topStandby.id);
 

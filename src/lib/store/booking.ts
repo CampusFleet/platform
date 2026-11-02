@@ -121,11 +121,11 @@ CampusFleetStore.prototype.recordAttendance = async function (
     }
 
     if (matchedBooking?.id) {
-      const { error: bkErr } = await supabase.from("bookings").update(updatePayload).eq("id", matchedBooking.id);
-      if (bkErr) console.error("bookings update error:", bkErr);
+      const { error: bkErr } = await supabase.from("bus_reservations").update(updatePayload).eq("id", matchedBooking.id);
+      if (bkErr) console.error("bus_reservations update error:", bkErr);
     } else {
-      const { error: bkErr } = await supabase.from("bookings").update(updatePayload).eq("trip_id", tripId).eq("student_id", resolvedStudentId);
-      if (bkErr) console.error("bookings update error:", bkErr);
+      const { error: bkErr } = await supabase.from("bus_reservations").update(updatePayload).eq("trip_id", tripId).eq("student_id", resolvedStudentId);
+      if (bkErr) console.error("bus_reservations update error:", bkErr);
     }
 
     // Record audit log in PostgreSQL
@@ -334,10 +334,9 @@ CampusFleetStore.prototype.assignWaitlistSeat = async function (this: CampusFlee
 
   // Persist to PostgreSQL database (Single Source of Truth)
   try {
-    await supabase.from("bookings").update({
+    await supabase.from("bus_reservations").update({
       status: "CONFIRMED",
-      seat_number: seatCode,
-      waitlist_position: null,
+      chosen_seat: seatCode,
     }).eq("id", bookingId);
 
     await supabase.from("audit_logs").insert({
@@ -452,7 +451,7 @@ CampusFleetStore.prototype.bookShift = async function (this: CampusFleetStore, s
 
     // Persist to Supabase
     try {
-      supabase.from("bookings").insert({
+      supabase.from("bus_reservations").insert({
         id: res.booking.id,
         booking_code: res.booking.bookingCode,
         student_id: res.booking.studentId,
@@ -460,9 +459,8 @@ CampusFleetStore.prototype.bookShift = async function (this: CampusFleetStore, s
         bus_id: bus.id,
         boarding_stop_id: res.booking.boardingStopId,
         status: res.booking.status,
-        waitlist_position: res.booking.waitlistPosition,
-        seat_number: res.booking.seatNumber,
-        booking_date: new Date().toISOString().split("T")[0],
+        chosen_seat: res.booking.seatNumber,
+        reservation_date: new Date().toISOString().split("T")[0],
         created_at: res.booking.createdAt,
       }).then(() => {});
     } catch (e) {
@@ -529,8 +527,9 @@ CampusFleetStore.prototype.cancelBooking = async function (this: CampusFleetStor
 
   // Update Supabase cancellation
   try {
-    supabase.from("bookings").update({
+    supabase.from("bus_reservations").update({
       status: "CANCELLED",
+      cancelled_at: new Date().toISOString(),
     }).eq("id", cancelledBooking.id).then(() => {});
   } catch (e) {
     console.warn("DB cancelBooking sync notice:", e);

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     let tripBookings: any[] = [];
     if (tripId) {
       const { data: dbTripBookings, error: tripErr } = await supabaseAdmin
-        .from("bookings_full")
+        .from("bus_reservations_full")
         .select("*")
         .eq("trip_id", tripId)
         .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
       if (shiftTripIds.length > 0) {
         const { data: activeBookings } = await supabaseAdmin
-          .from("bookings_full")
+          .from("bus_reservations_full")
           .select("*")
           .in("trip_id", shiftTripIds)
           .or(`student_id.eq.${studentId},student_id.eq.stud-${studentId}`)
@@ -277,8 +277,8 @@ export async function POST(req: NextRequest) {
     const siblingTripIds = (siblingTrips || []).map((t) => t.id);
 
     const { data: existingShiftBookings } = await supabaseAdmin
-      .from("bookings")
-      .select("id, booking_code, trip_id, seat_number, status")
+      .from("bus_reservations")
+      .select("id, booking_code, trip_id, chosen_seat, status")
       .in("trip_id", siblingTripIds)
       .eq("student_id", student.id)
       .in("status", ["CONFIRMED", "WAITLISTED", "BOARDED"]);
@@ -292,7 +292,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           code: "SHIFT_BOOKING_LOCKED",
-          message: `Booking Locked: You already hold a confirmed reservation on ${conflictBusName} (Seat ${conflicting.seat_number || "Reserved"}) for this shift (${shift?.name || "Shift"}). Please cancel your existing seat if you wish to switch buses.`,
+          message: `Booking Locked: You already hold a confirmed reservation on ${conflictBusName} (Seat ${conflicting.chosen_seat || "Reserved"}) for this shift (${shift?.name || "Shift"}). Please cancel your existing seat if you wish to switch buses.`,
           existingBooking: conflicting,
         },
         { status: 409 }
@@ -302,8 +302,8 @@ export async function POST(req: NextRequest) {
     // 6. ATOMIC SEAT CAPACITY & CONCURRENCY LOCK
     // Fetch all active seated reservations on this trip
     const { data: activeTripBookings, error: bkFetchErr } = await supabaseAdmin
-      .from("bookings")
-      .select("seat_number, status")
+      .from("bus_reservations")
+      .select("chosen_seat, status")
       .eq("trip_id", tripId)
       .in("status", ["CONFIRMED", "BOARDED"]);
 
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
     }
 
     const occupiedSeatSet = new Set(
-      (activeTripBookings || []).map((b) => b.seat_number).filter(Boolean)
+      (activeTripBookings || []).map((b) => b.chosen_seat).filter(Boolean)
     );
 
     const allSeats = generateSeatLayout(bus.capacity, bus.seat_layout || "NONE");
@@ -331,7 +331,7 @@ export async function POST(req: NextRequest) {
     // Determine N number of teachers for this bus/trip
     const busTeacherQuota = Number((bus as any)?.teacher_seats_count ?? (bus as any)?.teacherSeatsCount ?? 0);
     const { count: teacherBookingsCount } = await supabaseAdmin
-      .from("bookings_full")
+      .from("bus_reservations_full")
       .select("*", { count: "exact", head: true })
       .eq("trip_id", tripId)
       .in("passenger_type", ["FACULTY", "TEACHER", "STAFF"]);
@@ -383,13 +383,13 @@ export async function POST(req: NextRequest) {
       allocatedSeat = candidateSeats[0] || availableSeats[0];
     }
 
-    // 7. Atomic Insert into public.bookings
+    // 7. Atomic Insert into public.bus_reservations
     const now = new Date().toISOString();
     const todayDate = trip.trip_date || now.split("T")[0];
     const bookingCode = `BS-${trip.trip_code || "BUS"}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const { data: newBooking, error: insertError } = await supabaseAdmin
-      .from("bookings")
+      .from("bus_reservations")
       .insert({
         id: createBookingId(),
         booking_code: bookingCode,
@@ -398,9 +398,8 @@ export async function POST(req: NextRequest) {
         bus_id: bus.id,
         boarding_stop_id: boardingStopId,
         status: instantBoard ? "BOARDED" : "CONFIRMED",
-        seat_number: allocatedSeat,
-        passenger_type: "SEATED",
-        booking_date: todayDate,
+        chosen_seat: allocatedSeat,
+        reservation_date: todayDate,
         created_at: now,
         boarded_at: instantBoard ? now : null,
       })

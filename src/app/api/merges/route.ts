@@ -148,9 +148,9 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 5. Fetch outgoing shift bookings for today
+      // 5. Fetch outgoing shift auto-reservations for today
       const { data: rawBookings } = await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations_full")
         .select("*")
         .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
 
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
         studentId: b.student_id,
         tripId: b.trip_id,
         busId: b.bus_id,
-        bookingDate: b.booking_date,
+        bookingDate: b.reservation_date || b.booking_date,
         boardingStopId: b.boarding_stop_id,
         status: b.status,
         createdAt: b.created_at,
@@ -229,10 +229,10 @@ export async function POST(req: NextRequest) {
         Number(maxDetourMinutes) || 15
       );
 
-      // 9. Prune absentee students from outgoing bookings if actual attendees were found
+      // 9. Prune absentee students from outgoing reservations if actual attendees were found
       if (orchestrationPlan.summary.prunedStudentIds.length > 0) {
         await supabaseAdmin
-          .from("bookings")
+          .from("bus_reservations")
           .update({
             status: "CANCELLED",
           })
@@ -393,12 +393,11 @@ export async function POST(req: NextRequest) {
         })
         .eq("id", suggestionId);
 
-      // 2. Reassign active bookings from source bus to target bus
+      // 2. Reassign active reservations from source bus to target bus
       await supabaseAdmin
-        .from("bookings")
+        .from("bus_reservations")
         .update({
           bus_id: targetBus.id,
-          merge_stop_id: suggestion.bus_merge_points?.id || suggestion.merge_point_id || null,
         })
         .eq("bus_id", sourceBus.id)
         .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
@@ -466,12 +465,11 @@ export async function POST(req: NextRequest) {
         if (tBus && sBus && sBus.status !== "STANDBY_DISASSEMBLED" && sBus.status !== "MAINTENANCE") {
           const combined = (sBus.occupancy || 0) + (tBus.occupancy || 0);
           if (combined <= (tBus.capacity || 50)) {
-            // Reassign bookings
+            // Reassign reservations
             await supabaseAdmin
-              .from("bookings")
+              .from("bus_reservations")
               .update({
                 bus_id: tBus.id,
-                merge_stop_id: sug.merge_point_id || null,
               })
               .eq("bus_id", sBus.id)
               .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);

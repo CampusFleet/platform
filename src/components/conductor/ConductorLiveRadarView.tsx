@@ -109,6 +109,7 @@ export default function ConductorLiveRadarView({
   const [selectedRosterStop, setSelectedRosterStop] = useState<StopPassengerInfo | null>(null);
   const [rosterSearch, setRosterSearch] = useState("");
   const [dismissedStopHaltId, setDismissedStopHaltId] = useState<string | null>(null);
+  const [isAlertMinimized, setIsAlertMinimized] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [mapTheme, setMapTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">("GOOGLE_STREETS");
   const [showSosModal, setShowSosModal] = useState(false);
@@ -158,6 +159,11 @@ export default function ConductorLiveRadarView({
   const nextTargetStop = routeStops[currentStopIndex + 1]?.stop || null;
   const originStop = routeStops[0]?.stop || null;
   const terminalStop = routeStops[routeStops.length - 1]?.stop || null;
+
+  // Automatically un-minimize halt alert when the bus approaches a new target stop
+  useEffect(() => {
+    setIsAlertMinimized(false);
+  }, [currentTargetStop?.id]);
 
   // Real-time Bus Telematics Location
   const [currentCoords, setCurrentCoords] = useState<{
@@ -434,7 +440,7 @@ export default function ConductorLiveRadarView({
   };
 
   return (
-    <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden flex flex-col font-sans select-none">
+    <div className="relative w-full h-[100dvh] bg-zinc-100 dark:bg-black text-zinc-900 dark:text-white overflow-hidden flex flex-col font-sans select-none">
       {/* ── 1. TOP CONDUCTOR NAVIGATION BAR ─────────────────────────────────── */}
       <header className="absolute top-3 inset-x-3 sm:inset-x-6 z-30 pointer-events-none flex flex-col gap-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -443,7 +449,7 @@ export default function ConductorLiveRadarView({
             <button
               type="button"
               onClick={onClose}
-              className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-black/90 hover:bg-zinc-900 text-white border border-zinc-800 shadow-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group cursor-pointer"
+              className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-white/95 dark:bg-black/90 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
               <span>Conductor Dashboard</span>
@@ -451,7 +457,7 @@ export default function ConductorLiveRadarView({
           ) : (
             <Link
               href="/conductor"
-              className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-black/90 hover:bg-zinc-900 text-white border border-zinc-800 shadow-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
+              className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-white/95 dark:bg-black/90 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
               <span>Conductor Dashboard</span>
@@ -460,11 +466,11 @@ export default function ConductorLiveRadarView({
 
           {/* Operational Status Pill */}
           <div className="flex items-center gap-2 pointer-events-auto">
-            <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-black/90 text-white border-zinc-800 shadow-xl">
+            <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-white/95 dark:bg-black/90 text-zinc-900 dark:text-white border-zinc-200 dark:border-zinc-800 shadow-xl">
               <span className={`w-2 h-2 rounded-full shrink-0 ${hasLiveGps ? "bg-emerald-500 animate-pulse" : "bg-blue-500"}`} />
               <span>{hasLiveGps ? "LIVE GPS" : "ACTIVE RUN"}</span>
-              <span className="text-zinc-400 font-semibold">• Bus {bus?.busNumber || "45"}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600/30 text-blue-300 border border-blue-500/40 font-mono">
+              <span className="text-zinc-500 dark:text-zinc-400 font-semibold">• Bus {bus?.busNumber || "45"}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 dark:bg-blue-600/30 text-blue-700 dark:text-blue-300 border border-blue-400/30 dark:border-blue-500/40 font-mono font-bold">
                 {isIncomingShift ? "PICKUP" : "DROP-OFF"}
               </span>
             </div>
@@ -482,7 +488,7 @@ export default function ConductorLiveRadarView({
               className={`p-2.5 rounded-2xl border shadow-xl transition-all active:scale-95 cursor-pointer ${
                 isAudioEnabled
                   ? "bg-emerald-600 border-emerald-400 text-white"
-                  : "bg-black/90 border-zinc-800 text-zinc-400 hover:text-white"
+                  : "bg-white/95 dark:bg-black/90 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
               }`}
               title={isAudioEnabled ? "Voice Announcer ON" : "Voice Announcer MUTED"}
             >
@@ -495,17 +501,17 @@ export default function ConductorLiveRadarView({
               onClick={() => {
                 setMapTheme((prev) => (prev === "GOOGLE_STREETS" ? "GOOGLE_HYBRID" : prev === "GOOGLE_HYBRID" ? "CARTO_DARK" : "GOOGLE_STREETS"));
               }}
-              className="p-2.5 rounded-2xl bg-black/90 hover:bg-zinc-900 text-zinc-200 border border-zinc-800 shadow-xl transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 rounded-2xl bg-white/95 dark:bg-black/90 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-95 cursor-pointer"
               title="Cycle Map Style"
             >
-              <Layers className="w-4 h-4 text-blue-400" />
+              <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </button>
 
             {/* Fullscreen Toggle */}
             <button
               type="button"
               onClick={toggleFullScreenMode}
-              className="p-2.5 rounded-2xl bg-black/90 hover:bg-zinc-900 text-zinc-200 border border-zinc-800 shadow-xl transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 rounded-2xl bg-white/95 dark:bg-black/90 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-95 cursor-pointer"
               title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Radar Mode"}
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -515,136 +521,181 @@ export default function ConductorLiveRadarView({
 
         {/* Toast feedback banner */}
         {toastMessage && (
-          <div className="pointer-events-auto self-center px-4 py-2 rounded-2xl bg-black/95 text-white border border-zinc-700 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2">
+          <div className="pointer-events-auto self-center px-4 py-2 rounded-2xl bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border border-zinc-300 dark:border-zinc-700 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2">
             {toastMessage}
           </div>
         )}
 
         {/* ── 2. CONDUCTOR HIGH-PRIORITY STOP HALT ALERT CARD ── */}
         {currentTargetStop && currentStopDemand && currentStopDemand.total > 0 && dismissedStopHaltId !== currentTargetStop.id && (
-          <div className="pointer-events-auto bg-black/95 text-white border-2 border-emerald-500 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-xl animate-in slide-in-from-top-4 duration-300 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3.5">
+          isAlertMinimized ? (
+            /* MINIMIZED COMPACT ALERT BUTTON */
+            <div className="pointer-events-auto flex items-center justify-start animate-in fade-in slide-in-from-top-2 duration-200">
+              <button
+                type="button"
+                onClick={() => setIsAlertMinimized(false)}
+                className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border-2 border-emerald-500 shadow-2xl backdrop-blur-xl hover:border-emerald-400 active:scale-95 transition-all cursor-pointer group"
+                title="Tap to expand passenger pickup instructions"
+              >
                 <div
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                  className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
                     isIncomingShift ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
                   }`}
                 >
-                  <BellRing className="w-6 h-6 animate-bounce" />
+                  <BellRing className="w-3.5 h-3.5 animate-bounce" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                        isIncomingShift
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                          : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                      }`}
-                    >
-                      {isIncomingShift ? "🛑 STOP BUS FOR PICKUP" : "🛑 STOP BUS FOR DROP-OFF"}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-zinc-400">
-                      Corridor Stop #{currentStopIndex + 1}
-                    </span>
+                <div className="flex items-center gap-2 text-xs font-black">
+                  <span className={isIncomingShift ? "text-emerald-600 dark:text-emerald-400 font-extrabold uppercase tracking-wide" : "text-amber-600 dark:text-amber-400 font-extrabold uppercase tracking-wide"}>
+                    {isIncomingShift ? "🛑 STOP FOR PICKUP" : "🛑 STOP FOR DROP-OFF"}
+                  </span>
+                  <span className="text-zinc-400 dark:text-zinc-600">•</span>
+                  <span className="font-bold truncate max-w-[170px] sm:max-w-[260px] text-zinc-900 dark:text-white">
+                    {currentTargetStop.name} ({currentStopDemand.total})
+                  </span>
+                </div>
+                <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors ml-1 shrink-0">
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </div>
+              </button>
+            </div>
+          ) : (
+            /* EXPANDED STOP HALT ALERT CARD (LIGHT & DARK THEMED) */
+            <div className="pointer-events-auto bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border-2 border-emerald-500 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-xl animate-in slide-in-from-top-4 duration-300 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                      isIncomingShift ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
+                    }`}
+                  >
+                    <BellRing className="w-6 h-6 animate-bounce" />
                   </div>
-                  <h2 className="text-base sm:text-lg font-black text-white mt-1">
-                    {isIncomingShift
-                      ? `Halt bus at ${currentTargetStop.name} to pickup ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`
-                      : `Halt bus at ${currentTargetStop.name} to drop-off ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`}
-                  </h2>
-                  <div className="flex items-center gap-2 text-xs font-mono text-zinc-300 mt-1">
-                    <span className="px-2 py-0.5 rounded bg-zinc-800 text-blue-300 font-bold">
-                      🎓 {currentStopDemand.studentsCount} Students
-                    </span>
-                    {currentStopDemand.teachersCount > 0 && (
-                      <span className="px-2 py-0.5 rounded bg-zinc-800 text-amber-300 font-bold">
-                        👨‍🏫 {currentStopDemand.teachersCount} Faculty
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                          isIncomingShift
+                            ? "bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 dark:border-emerald-500/40"
+                            : "bg-amber-500/15 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 dark:border-amber-500/40"
+                        }`}
+                      >
+                        {isIncomingShift ? "🛑 STOP BUS FOR PICKUP" : "🛑 STOP BUS FOR DROP-OFF"}
                       </span>
-                    )}
+                      <span className="text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
+                        Corridor Stop #{currentStopIndex + 1}
+                      </span>
+                    </div>
+                    <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white mt-1">
+                      {isIncomingShift
+                        ? `Halt bus at ${currentTargetStop.name} to pickup ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`
+                        : `Halt bus at ${currentTargetStop.name} to drop-off ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`}
+                    </h2>
+                    <div className="flex items-center gap-2 text-xs font-mono text-zinc-600 dark:text-zinc-300 mt-1 flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-blue-700 dark:text-blue-300 font-bold border border-zinc-200 dark:border-zinc-700">
+                        🎓 {currentStopDemand.studentsCount} Students
+                      </span>
+                      {currentStopDemand.teachersCount > 0 && (
+                        <span className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-amber-700 dark:text-amber-300 font-bold border border-zinc-200 dark:border-zinc-700">
+                          👨‍🏫 {currentStopDemand.teachersCount} Faculty
+                        </span>
+                      )}
+                    </div>
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRosterStop(currentStopDemand)}
+                    className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold text-zinc-700 hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer border border-zinc-200 dark:border-zinc-700"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Roster ({currentStopDemand.total})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAlertMinimized(true)}
+                    className="w-8 h-8 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center border border-zinc-200 dark:border-zinc-700 transition-all active:scale-90 cursor-pointer shrink-0"
+                    title="Minimize alert banner into button"
+                    aria-label="Minimize alert"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedRosterStop(currentStopDemand)}
-                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer border border-zinc-700"
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Roster ({currentStopDemand.total})</span>
-              </button>
-            </div>
+              {/* Commuter Chips Preview */}
+              <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
+                {currentStopDemand.passengers.slice(0, 5).map((p) => (
+                  <div
+                    key={p.id}
+                    className="px-2.5 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 shrink-0"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${p.role === "faculty" ? "bg-amber-500" : "bg-blue-500"}`} />
+                    <span className="font-bold truncate max-w-[120px]">{p.fullName}</span>
+                    <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-400">({p.seatCode})</span>
+                  </div>
+                ))}
+                {currentStopDemand.passengers.length > 5 && (
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono px-2">
+                    +{currentStopDemand.passengers.length - 5} more
+                  </span>
+                )}
+              </div>
 
-            {/* Commuter Chips Preview */}
-            <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
-              {currentStopDemand.passengers.slice(0, 5).map((p) => (
-                <div
-                  key={p.id}
-                  className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] flex items-center gap-1.5 shrink-0"
+              {/* Tactical Action Buttons (Glove-Friendly) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-zinc-200 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={handleConfirmStopAction}
+                  className={`h-12 rounded-xl text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
+                    isIncomingShift ? "bg-emerald-600 hover:bg-emerald-500 active:scale-95" : "bg-amber-600 hover:bg-amber-500 active:scale-95"
+                  }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${p.role === "faculty" ? "bg-amber-400" : "bg-blue-400"}`} />
-                  <span className="font-bold truncate max-w-[120px]">{p.fullName}</span>
-                  <span className="text-[9px] font-mono text-zinc-400">({p.seatCode})</span>
-                </div>
-              ))}
-              {currentStopDemand.passengers.length > 5 && (
-                <span className="text-[10px] text-zinc-400 font-mono px-2">
-                  +{currentStopDemand.passengers.length - 5} more
-                </span>
-              )}
-            </div>
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>{isIncomingShift ? "✓ ALL PASSENGERS BOARDED" : "✓ PASSENGERS SAFELY ALIGHTED"}</span>
+                </button>
 
-            {/* Tactical Action Buttons (Glove-Friendly) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-zinc-800">
-              <button
-                type="button"
-                onClick={handleConfirmStopAction}
-                className={`h-12 rounded-xl text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
-                  isIncomingShift ? "bg-emerald-600 hover:bg-emerald-500 active:scale-95" : "bg-amber-600 hover:bg-amber-500 active:scale-95"
-                }`}
-              >
-                <CheckCircle2 className="w-5 h-5" />
-                <span>{isIncomingShift ? "✓ ALL PASSENGERS BOARDED" : "✓ PASSENGERS SAFELY ALIGHTED"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRosterStop(currentStopDemand)}
-                className="h-12 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-zinc-700 transition-all cursor-pointer"
-              >
-                <UserCheck className="w-4 h-4 text-blue-400" />
-                <span>Inspect Passenger Manifest</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRosterStop(currentStopDemand)}
+                  className="h-12 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-zinc-300 dark:border-zinc-700 transition-all cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>Inspect Passenger Manifest</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )
         )}
 
         {/* Regular Turn-By-Turn HUD Card (When no active stop halt alert) */}
         {(!currentTargetStop || !currentStopDemand || currentStopDemand.total === 0 || dismissedStopHaltId === currentTargetStop.id) && (
-          <div className="pointer-events-auto bg-black/95 text-white border border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-xl animate-in slide-in-from-top-4 duration-300">
+          <div className="pointer-events-auto bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-xl animate-in slide-in-from-top-4 duration-300">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-lg">
                   <Navigation className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-400 flex items-center gap-1.5">
+                  <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
                     <span>Corridor Target</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold font-mono">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-semibold font-mono">
                       Stop {currentStopIndex + 1} of {totalStopsCount}
                     </span>
                   </div>
-                  <h2 className="text-base sm:text-xl font-black text-white tracking-tight mt-0.5">
+                  <h2 className="text-base sm:text-xl font-black text-zinc-900 dark:text-white tracking-tight mt-0.5">
                     {currentTargetStop?.name || "Transit Stop"}
                   </h2>
-                  <div className="text-xs text-zinc-400 flex items-center gap-2 mt-0.5">
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 mt-0.5">
                     <span>Bus {bus?.busNumber}</span>
                     <span>•</span>
                     <span>{route?.name || "Transit Line"}</span>
                     {currentCoords.speedKmh > 0 && (
                       <>
                         <span>•</span>
-                        <span className="font-mono font-bold text-zinc-200">{currentCoords.speedKmh} km/h</span>
+                        <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{currentCoords.speedKmh} km/h</span>
                       </>
                     )}
                   </div>
@@ -652,10 +703,10 @@ export default function ConductorLiveRadarView({
               </div>
 
               <div className="text-right shrink-0">
-                <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
-                  ~{etaToCurrentTargetMins} <span className="text-xs font-bold text-zinc-400 font-sans">min</span>
+                <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white font-mono">
+                  ~{etaToCurrentTargetMins} <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-sans">min</span>
                 </div>
-                <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider font-mono">
+                <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-mono">
                   {distanceToCurrentTargetMeters < 1000
                     ? `${distanceToCurrentTargetMeters} m`
                     : `${(distanceToCurrentTargetMeters / 1000).toFixed(1)} km`}
@@ -664,7 +715,7 @@ export default function ConductorLiveRadarView({
             </div>
 
             {/* Quick Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-800">
+            <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
               <button
                 type="button"
                 onClick={handleAdvanceNextStop}
@@ -677,9 +728,9 @@ export default function ConductorLiveRadarView({
               <button
                 type="button"
                 onClick={() => setIsDrawerExpanded((prev) => !prev)}
-                className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:scale-95 text-zinc-200 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-zinc-700 transition-all cursor-pointer"
+                className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 active:scale-95 text-zinc-800 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-zinc-300 dark:border-zinc-700 transition-all cursor-pointer"
               >
-                <Users className="w-4 h-4 text-amber-400" />
+                <Users className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                 <span>Manifest Timeline</span>
               </button>
             </div>

@@ -532,9 +532,21 @@ export default function GoogleTransitMap({
         }
       }
 
-      // Sub-millisecond slice: Traveled (start to bus) vs Upcoming (bus forward to campus terminal)
-      const traveledPoints = [...path.slice(0, closestIdx + 1), busLatLng];
-      const upcomingPoints = [busLatLng, ...path.slice(closestIdx)];
+      // Strictly road-following geometry: traveled and upcoming paths must ONLY contain points on the road network.
+      // Never insert raw off-road GPS coordinates into the road polyline.
+      let traveledPoints: google.maps.LatLng[] = [];
+      let upcomingPoints: google.maps.LatLng[] = [];
+
+      if (closestIdx === 0) {
+        traveledPoints = [];
+        upcomingPoints = path;
+      } else if (closestIdx >= path.length - 1) {
+        traveledPoints = path;
+        upcomingPoints = [];
+      } else {
+        traveledPoints = path.slice(0, closestIdx + 1);
+        upcomingPoints = path.slice(closestIdx);
+      }
 
       traveledPolylineRef.current.setPath(traveledPoints);
       upcomingPolylineRef.current.setPath(upcomingPoints);
@@ -679,9 +691,28 @@ export default function GoogleTransitMap({
           } catch { }
         } else {
           console.warn("[GoogleTransitMap] DirectionsService query returned non-OK status:", status);
-          if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
-            onError?.(`Google Directions service error: ${status}`);
-          }
+          // Fallback to internal road directions API to keep path strictly on roads
+          const coordsStr = waypoints.map((w) => `${w[0]},${w[1]}`).join(";");
+          fetch(`/api/geo/directions?coords=${coordsStr}`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data?.success && Array.isArray(data.coordinates) && data.coordinates.length >= 2 && isMounted) {
+                const roadPath = data.coordinates.map(([lat, lng]: [number, number]) => new google.maps.LatLng(lat, lng));
+                fullOverviewPathRef.current = roadPath;
+                const currentBusPos =
+                  busLocation && typeof busLocation.latitude === "number"
+                    ? { lat: busLocation.latitude, lng: busLocation.longitude }
+                    : null;
+                updateTraveledAndUpcoming(currentBusPos);
+              } else if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
+                onError?.(`Google Directions service error: ${status}`);
+              }
+            })
+            .catch(() => {
+              if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
+                onError?.(`Google Directions service error: ${status}`);
+              }
+            });
         }
       }
     );

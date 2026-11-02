@@ -114,6 +114,23 @@ async function fetchRoadSnappedRoute(coordinates: [number, number][]): Promise<[
     } catch {}
   }
 
+  // 1. First try internal /api/geo/directions (which leverages Google Routes API + server-side OSRM fallback)
+  try {
+    const apiCoords = coordinates.map(([lat, lng]) => `${lat},${lng}`).join(";");
+    const apiRes = await fetch(`/api/geo/directions?coords=${apiCoords}`, { signal: AbortSignal.timeout(6000) });
+    if (apiRes.ok) {
+      const apiData = await apiRes.json();
+      if (apiData.success && Array.isArray(apiData.coordinates) && apiData.coordinates.length >= 2) {
+        if (typeof window !== "undefined") {
+          try { sessionStorage.setItem(coordKey, JSON.stringify(apiData.coordinates)); } catch {}
+        }
+        return apiData.coordinates;
+      }
+    }
+  } catch (err) {
+    // Continue to external mirrors
+  }
+
   const coordString = coordinates.map(([lat, lng]) => `${lng},${lat}`).join(";");
   const endpoints = [
     `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`,
@@ -554,11 +571,9 @@ function LeafletTransitMap({
               completedPath = roadSnappedCoords;
               upcomingPath = [];
             } else {
-              // Split at bus position:
-              // Completed = road points up to splitIdx, then connect to current bus position
-              completedPath = [...roadSnappedCoords.slice(0, splitIdx + 1), activeBusPos];
-              // Upcoming = current bus position, then remaining road points to end
-              upcomingPath = [activeBusPos, ...roadSnappedCoords.slice(splitIdx + 1)];
+              // Strictly follow road geometry without injecting raw off-road bus GPS coordinate
+              completedPath = roadSnappedCoords.slice(0, splitIdx + 1);
+              upcomingPath = roadSnappedCoords.slice(splitIdx);
             }
           }
 

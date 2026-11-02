@@ -165,10 +165,47 @@ export function SettingsView() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Delete Account state
+  // Delete Account & Danger Zone state (Modern SaaS Standards)
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isExportingData, setIsExportingData] = useState(false);
   const [classesList, setClassesList] = useState<any[]>([]);
+
+  // GDPR Data Export (SaaS Best Practice before Account Deletion)
+  const handleExportData = () => {
+    setIsExportingData(true);
+    try {
+      const activeStudent = store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id);
+      const userBookings = store.getBookings().filter(b => b.studentId === activeStudent?.id || (b as any).userId === currentUser?.id);
+      const exportPayload = {
+        exportedAt: new Date().toISOString(),
+        institution: "CampusFleet Transit Network",
+        user: {
+          id: currentUser?.id,
+          name: currentUser?.fullName || (currentUser as any)?.name,
+          email: currentUser?.email,
+          role: currentUser?.role,
+        },
+        studentProfile: activeStudent || null,
+        recentBookings: userBookings,
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `campusfleet_transit_archive_${currentUser?.id || "user"}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      showToast("success", "Your transit data archive has been downloaded successfully.", "Data Exported");
+    } catch (err: any) {
+      showToast("error", err?.message || "Failed to export transit archive", "Export Error");
+    } finally {
+      setIsExportingData(false);
+    }
+  };
 
   const handleDeleteAccount = async () => {
     const confirmText = deleteConfirmation.trim().toUpperCase();
@@ -188,10 +225,19 @@ export function SettingsView() {
       if (!res.ok) throw new Error(data.error || "Failed to delete account");
       
       store.wipeAllData();
-      localStorage.removeItem("campusfleet_store");
-      showToast("success", "Your account has been deleted.", "Account Deleted");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (storageErr) {
+        console.warn("Storage cleanup error:", storageErr);
+      }
+
+      showToast("success", "Your account and all transit data have been permanently deleted.", "Account Deleted");
       
-      window.location.href = "/account-deleted";
+      // Short delay to let the user see the success feedback before redirecting
+      setTimeout(() => {
+        window.location.href = "/account-deleted";
+      }, 500);
     } catch (err: any) {
       console.error(err);
       showToast("error", err?.message || "An error occurred while deleting your account.", "Deletion Failed");
@@ -1951,48 +1997,186 @@ export function SettingsView() {
 
         <InstallAppModal isOpen={showInstallModal} onClose={() => setShowInstallModal(false)} />
 
-        {/* Danger Zone Card */}
-        <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-none mb-12">
-          <div className="flex items-center justify-between p-6 border-b border-red-200 dark:border-red-900/50">
-            <h2 className="text-lg font-medium text-red-700 dark:text-red-400">{t('dangerZone')}</h2>
-            <div className="p-2 border border-red-200 dark:border-red-900/50 rounded-none text-red-500">
-              <Trash className="w-5 h-5" />
-            </div>
-          </div>
-          
-          <div className="p-6 space-y-6">
-            <div>
-              <h3 className="text-sm font-medium text-red-800 dark:text-red-300 mb-1">{t('deleteAccount')}</h3>
-              <p className="text-sm text-red-600/80 dark:text-red-400/80 mb-4">
-                {t('deleteAccountDesc')}
-              </p>
-              
-              <div className="space-y-4 max-w-md">
+        {/* Dedicated Modern Confirmation Modal for Account Deletion (GitHub / Vercel Standards) */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div 
+              className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200"
+              role="dialog"
+              aria-modal="true"
+            >
+              {/* Modal Header */}
+              <div className="p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800/80 flex items-start justify-between gap-4 bg-gradient-to-b from-rose-50/60 to-transparent dark:from-rose-950/20">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 ring-4 ring-rose-50 dark:ring-rose-950/30 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Permanently Delete Account?</h3>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">This action cannot be undone.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isDeleting && setShowDeleteModal(false)}
+                  disabled={isDeleting}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 sm:p-6 space-y-5">
+                <div className="rounded-xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 p-4 space-y-2.5">
+                  <p className="text-xs font-semibold text-rose-900 dark:text-rose-300">
+                    The following records will be permanently erased:
+                  </p>
+                  <ul className="text-xs text-rose-700 dark:text-rose-400 space-y-1.5">
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      Student & staff identity, credentials, and guardian details
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      Active bus reservations, QR commuter passes & seat allocations
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      Boarding attendance logs, stop preferences & RFID card bindings
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      Immediate sign-out across all devices and sessions
+                    </li>
+                  </ul>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    To confirm, type <span className="font-bold text-red-600">DELETE</span> below:
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      To confirm, type <span className="font-bold text-rose-600 dark:text-rose-400">DELETE</span> below:
+                    </label>
+                    {deleteConfirmation.trim().toUpperCase() === "DELETE" && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        <Check className="w-3.5 h-3.5" /> Confirmed
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={deleteConfirmation}
                     onChange={(e) => setDeleteConfirmation(e.target.value)}
-                    placeholder="DELETE"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:border-red-500 rounded-none"
+                    placeholder="Type DELETE"
+                    disabled={isDeleting}
+                    autoFocus
+                    className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white dark:bg-zinc-900 transition-colors focus:outline-none ${
+                      deleteConfirmation.trim().toUpperCase() === "DELETE"
+                        ? "border-emerald-500 dark:border-emerald-500 ring-2 ring-emerald-500/20 text-zinc-900 dark:text-zinc-100"
+                        : "border-zinc-300 dark:border-zinc-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 text-zinc-900 dark:text-zinc-100"
+                    }`}
                   />
                 </div>
-                
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5">
                 <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={isDeleting}
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-medium rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
                   onClick={handleDeleteAccount}
                   disabled={isDeleting || deleteConfirmation.trim().toUpperCase() !== "DELETE"}
-                  className={`px-6 py-2 text-sm font-bold shadow-none transition-all mt-4 ${
+                  className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm ${
                     isDeleting || deleteConfirmation.trim().toUpperCase() !== "DELETE"
-                      ? "bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed"
-                      : "bg-red-600 hover:bg-red-700 text-white"
+                      ? "bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600 cursor-not-allowed"
+                      : "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20 active:scale-95"
                   }`}
                 >
-                  {isDeleting ? t('deleting') : t('permanentlyDelete')}
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{t('deleting')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash className="w-4 h-4" />
+                      <span>{t('permanentlyDelete')}</span>
+                    </>
+                  )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Danger Zone Card (Modern Vercel / Linear / Stripe Standard) */}
+        <div className="bg-white dark:bg-zinc-950 border border-rose-200/80 dark:border-rose-900/40 rounded-2xl shadow-sm overflow-hidden mb-12">
+          {/* Card Header */}
+          <div className="flex items-center justify-between p-5 sm:p-6 border-b border-rose-100 dark:border-rose-950/60 bg-gradient-to-r from-rose-50/60 via-transparent to-transparent dark:from-rose-950/20">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{t('dangerZone')}</h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Irreversible actions regarding your account and campus transit data</p>
+              </div>
+            </div>
+            <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100/80 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400">
+              High Impact
+            </span>
+          </div>
+
+          <div className="p-5 sm:p-6 space-y-6">
+            {/* Export Personal Data Option */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-0.5">Export Personal Transit Archive</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Download a JSON archive of your personal profile, active passes, and booking records before deletion.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportData}
+                disabled={isExportingData}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-medium border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300 transition-colors shadow-sm shrink-0"
+              >
+                {isExportingData ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                ) : (
+                  <Download className="w-4 h-4 text-zinc-500" />
+                )}
+                <span>Download Archive</span>
+              </button>
+            </div>
+
+            <div className="h-px bg-rose-100/70 dark:bg-rose-950/40" />
+
+            {/* Permanent Account Deletion Option */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-rose-600 dark:text-rose-400 mb-0.5">{t('deleteAccount')}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-lg">
+                  Permanently erase your identity, transit allocations, seat reservations, and boarding pass. There is no recovery once deleted.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmation("");
+                  setShowDeleteModal(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 rounded-xl transition-all shadow-sm active:scale-95 shrink-0"
+              >
+                <Trash className="w-4 h-4" />
+                <span>{t('deleteAccount')}...</span>
+              </button>
             </div>
           </div>
         </div>

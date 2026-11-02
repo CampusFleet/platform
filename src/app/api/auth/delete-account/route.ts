@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
-import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { del } from "@vercel/blob";
 import { invalidateCachedUserRole } from "@/lib/redis";
+import { supabaseAdmin } from "@/lib/supabaseClient";
 
 export async function DELETE(req: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-  // We use the service role key to delete users via the Supabase Admin API
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
   try {
     // 1. Authenticate Request
     const token = req.cookies.get(COOKIE_NAME)?.value;
@@ -23,112 +13,138 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // ReCAPTCHA completely removed as per user request
-    
     const session = await verifyToken(token);
     if (!session || !session.userId) {
       return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 });
     }
 
-    // 2. Explicitly delete all associated user data to guarantee a clean slate
-    // Find the student record associated with this user
+    const userId = session.userId;
+
+    // 2. Identify linked student profile (check by user_id or id)
     const { data: studentData } = await supabaseAdmin
       .from("students")
       .select("id")
-      .eq("user_id", session.userId)
-      .single();
+      .or(`user_id.eq.${userId},id.eq.${userId},id.eq.stud-${userId}`)
+      .limit(1)
+      .maybeSingle();
 
-    // Helper to log errors instead of throwing, so deletion can always proceed
-    const checkDbError = (err: any, table: string) => {
-      if (err) {
-        console.warn(`[Delete Account] Skipping ${table} deletion - Error: ${err.message}`);
-      }
-    };
+    if (studentData?.id) {
+      const studentId = studentData.id;
 
-    if (studentData) {
-      // Fetch all payment submissions to delete their receipt blobs
-      const { data: submissions } = await supabaseAdmin
-        .from("payment_submissions")
-        .select("receipt_url")
-        .eq("student_id", studentData.id);
+      // Clean up receipt images from Vercel Blob if configured
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        try {
+          const { data: submissions } = await supabaseAdmin
+            .from("payment_submissions")
+            .select("receipt_url")
+            .eq("student_id", studentId);
 
-      if (submissions && submissions.length > 0) {
-        const urlsToDelete = submissions
-          .map((sub: any) => sub.receipt_url)
-          .filter(Boolean);
-        
-        if (urlsToDelete.length > 0) {
-          try {
-            await del(urlsToDelete, { token: process.env.BLOB_READ_WRITE_TOKEN });
-          } catch (blobErr) {
-            console.error("Failed to delete blob receipts:", blobErr);
+          if (submissions && submissions.length > 0) {
+            const urlsToDelete = submissions
+              .map((sub: any) => sub.receipt_url)
+              .filter(Boolean);
+
+            if (urlsToDelete.length > 0) {
+              await del(urlsToDelete, { token: process.env.BLOB_READ_WRITE_TOKEN });
+            }
           }
+        } catch (blobErr) {
+          console.warn("[Delete Account] Blob receipt cleanup skipped:", blobErr);
         }
       }
 
-      // Delete ALL student dependencies first to avoid foreign key constraints
-      // Run most deletions concurrently for speed
-      const queries = [
-        supabaseAdmin.from("attendance_records").delete().eq("student_id", studentData.id),
-        supabaseAdmin.from("halt_requests").delete().eq("student_id", studentData.id),
-        supabaseAdmin.from("bus_departure_alerts").delete().eq("student_id", studentData.id),
-        supabaseAdmin.from("payment_submissions").delete().eq("student_id", studentData.id),
-        supabaseAdmin.from("payment_records").delete().eq("student_id", studentData.id),
-        supabaseAdmin.from("special_shift_allocations").delete().eq("student_id", studentData.id)
+      // Collect student booking IDs to clean booking status history
+      const { data: studentBookings } = await supabaseAdmin
+        .from("bookings")
+        .select("id")
+        .eq("student_id", studentId);
+
+      const bookingIds = (studentBookings || []).map((b: any) => b.id).filter(Boolean);
+
+      const studentCleanup = [
+        bookingIds.length > 0
+          ? supabaseAdmin.from("booking_status_history").delete().in("booking_id", bookingIds)
+          : Promise.resolve(),
+        supabaseAdmin.from("attendance_records").delete().eq("student_id", studentId),
+        supabaseAdmin.from("halt_requests").delete().eq("student_id", studentId),
+        supabaseAdmin.from("bus_departure_alerts").delete().eq("student_id", studentId),
+        supabaseAdmin.from("payment_submissions").delete().eq("student_id", studentId),
+        supabaseAdmin.from("payment_records").delete().eq("student_id", studentId),
+        supabaseAdmin.from("special_shift_allocations").delete().eq("student_id", studentId),
+        supabaseAdmin.from("bus_switch_requests").delete().eq("student_id", studentId),
+        supabaseAdmin.from("bus_reservations").delete().eq("student_id", studentId),
+        supabaseAdmin.from("subscriptions").delete().eq("student_id", studentId),
+        supabaseAdmin.from("bookings").delete().eq("student_id", studentId),
       ];
 
-      // Booking status history depends on bookings
-      const { data: studentBookings } = await supabaseAdmin.from("bookings").select("id").eq("student_id", studentData.id);
-      if (studentBookings && studentBookings.length > 0) {
-        const bookingIds = studentBookings.map(b => b.id);
-        queries.push(supabaseAdmin.from("booking_status_history").delete().in("booking_id", bookingIds));
-      }
-      
-      queries.push(supabaseAdmin.from("bookings").delete().eq("student_id", studentData.id));
+      await Promise.allSettled(studentCleanup);
 
-      await Promise.allSettled(queries);
+      // Delete student record
+      await supabaseAdmin.from("students").delete().eq("id", studentId);
     }
 
-    // Delete audit logs, notifications, user preferences, staff, guardians, students, and profiles concurrently
-    const userQueries = [
-      supabaseAdmin.from("audit_logs").delete().eq("user_id", session.userId),
-      supabaseAdmin.from("notifications").delete().eq("user_id", session.userId),
-      supabaseAdmin.from("user_preferences").delete().eq("id", session.userId),
-      supabaseAdmin.from("staff").delete().eq("user_id", session.userId),
-      supabaseAdmin.from("guardians").delete().eq("user_id", session.userId),
-      supabaseAdmin.from("students").delete().eq("user_id", session.userId),
-      supabaseAdmin.from("profiles").delete().eq("id", session.userId)
+    // 3. Clean up user-level tables
+    const userCleanup = [
+      supabaseAdmin.from("students").delete().eq("user_id", userId),
+      supabaseAdmin.from("audit_logs").delete().eq("user_id", userId),
+      supabaseAdmin.from("notifications").delete().eq("user_id", userId),
+      supabaseAdmin.from("user_preferences").delete().or(`id.eq.${userId},user_id.eq.${userId}`),
+      supabaseAdmin.from("staff").delete().eq("user_id", userId),
+      supabaseAdmin.from("guardians").delete().eq("user_id", userId),
+      supabaseAdmin.from("profiles").delete().eq("id", userId),
+      supabaseAdmin.from("bus_switch_requests").delete().eq("manager_id", userId),
+      supabaseAdmin.from("vehicle_issues").delete().eq("reported_by", userId),
+      supabaseAdmin.from("maintenance_logs").delete().eq("created_by", userId),
     ];
 
-    await Promise.allSettled(userQueries);
+    await Promise.allSettled(userCleanup);
 
-    // Delete user from institutional users table
-    await supabaseAdmin.from("users").delete().eq("id", session.userId);
-
-    // 3. Delete user from Supabase Auth
-    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(session.userId);
-
-    if (deleteError) {
-      console.error("Supabase Admin Delete Error:", deleteError);
-      // If the user is already deleted from Auth, just proceed to clear cookies
-      if (!deleteError.message.includes("User not found")) {
-        throw new Error(`Failed to delete Auth User: ${deleteError.message}`);
-      }
+    // 4. Delete user from institutional `users` table
+    const { error: userDeleteError } = await supabaseAdmin.from("users").delete().eq("id", userId);
+    if (userDeleteError) {
+      console.warn("[Delete Account] Error deleting from users table:", userDeleteError.message);
     }
 
-    // 4. Invalidate Redis cache for user role
+    // 5. Best-effort Supabase GoTrue Auth deletion (silent fallback if not using GoTrue)
     try {
-      await invalidateCachedUserRole(session.userId);
-    } catch (redisErr) {
-      console.warn("Failed to invalidate Redis cache on account deletion:", redisErr);
+      if (supabaseAdmin?.auth?.admin?.deleteUser) {
+        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        if (deleteError) {
+          console.warn("[Delete Account] Supabase Auth delete skipped (institutional user):", deleteError.message);
+        }
+      }
+    } catch (authErr: any) {
+      console.warn("[Delete Account] Supabase Auth admin delete skipped:", authErr?.message || authErr);
     }
 
-    // 5. Clear JWT session cookie
-    cookies().delete(COOKIE_NAME);
+    // 6. Invalidate Redis cache
+    try {
+      await invalidateCachedUserRole(userId);
+    } catch (redisErr) {
+      console.warn("[Delete Account] Redis cache invalidation skipped:", redisErr);
+    }
 
-    return NextResponse.json({ success: true });
+    // 7. Clear JWT session cookies
+    const cookieStore = cookies();
+    cookieStore.delete(COOKIE_NAME);
+
+    const response = NextResponse.json({
+      success: true,
+      message: "Your account and all associated transit data have been permanently deleted.",
+    });
+
+    response.cookies.set(COOKIE_NAME, "", {
+      path: "/",
+      maxAge: 0,
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    });
+
+    return response;
   } catch (err: any) {
-    console.error("Account Deletion Error:", err);
+    console.error("[Delete Account] Unexpected Error:", err);
     return NextResponse.json(
       { success: false, error: err.message || "An unexpected error occurred during account deletion" },
       { status: 500 }

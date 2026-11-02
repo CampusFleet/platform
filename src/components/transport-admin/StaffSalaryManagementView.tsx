@@ -214,6 +214,19 @@ export default function StaffSalaryManagementView() {
     return selectedStaffRecords.reduce((acc, s) => acc + s.netPayable, 0);
   }, [selectedStaffRecords]);
 
+  // Role defaults mapped by lowercase role key
+  const roleDefaultsMap = useMemo(() => {
+    return new Map(roleDefaults.map((rd) => [rd.role.toLowerCase(), rd]));
+  }, [roleDefaults]);
+
+  // Out of sync staff members whose current base salary differs from role benchmark
+  const outOfSyncStaffList = useMemo(() => {
+    return staffList.filter((s) => {
+      const rd = roleDefaultsMap.get(s.role.toLowerCase());
+      return rd && s.baseSalary !== rd.base_salary;
+    });
+  }, [staffList, roleDefaultsMap]);
+
   // Handle Multi-Select Toggles
   const handleToggleSelectAll = () => {
     if (selectedStaffIds.length === filteredStaff.length) {
@@ -420,8 +433,13 @@ export default function StaffSalaryManagementView() {
     }
   };
 
-  // Role Default Form updates
-  const handleUpdateRoleDefault = async (role: string, baseSalary: number, paymentFrequency: any) => {
+  // Role Default Form updates with optional automatic staff cascading
+  const handleUpdateRoleDefault = async (
+    role: string,
+    baseSalary: number,
+    paymentFrequency: any,
+    applyToExistingStaff = true
+  ) => {
     try {
       const res = await fetch("/api/staff/salary/admin/role-defaults", {
         method: "PUT",
@@ -430,15 +448,63 @@ export default function StaffSalaryManagementView() {
           role,
           baseSalary,
           paymentFrequency,
+          applyToExistingStaff,
         }),
       });
       const data = await res.json();
       if (data.success) {
         showToast(data.message);
-        fetchData();
+        await fetchData();
+      } else {
+        alert(data.error || "Failed to update benchmark");
       }
     } catch (err: any) {
       alert("Failed to update benchmark: " + err.message);
+    }
+  };
+
+  // Explicit Cascade Action for a Role (synchronizes all active staff to role benchmark)
+  const handleCascadeRoleBenchmark = async (role: string) => {
+    try {
+      const res = await fetch("/api/staff/salary/admin/role-defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, action: "CASCADE" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message);
+        await fetchData();
+      } else {
+        alert(data.error || "Failed to cascade benchmark");
+      }
+    } catch (err: any) {
+      alert("Failed to cascade benchmark: " + err.message);
+    }
+  };
+
+  // Synchronize targeted or bulk selected staff to their role benchmark
+  const handleSyncStaffToBenchmark = async (targetStaffIds: string[]) => {
+    if (!targetStaffIds || targetStaffIds.length === 0) return;
+    try {
+      const res = await fetch("/api/staff/salary/admin/staff-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SYNC_TO_BENCHMARK",
+          staffIds: targetStaffIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message);
+        setSelectedStaffIds([]);
+        await fetchData();
+      } else {
+        alert(data.error || "Failed to sync staff to benchmark");
+      }
+    } catch (err: any) {
+      alert("Error syncing to benchmark: " + err.message);
     }
   };
 
@@ -684,6 +750,36 @@ export default function StaffSalaryManagementView() {
       {/* ── TAB 1: STAFF COMPENSATION ROSTER ──────────────────────────────────── */}
       {activeTab === "ROSTER" && (
         <div className="space-y-4">
+          {/* Out of Sync Warning Banner */}
+          {outOfSyncStaffList.length > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-3 text-amber-900 dark:text-amber-200">
+                <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold flex items-center gap-2">
+                    <span>Role Compensation Out of Sync</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200/70 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 font-mono">
+                      {outOfSyncStaffList.length} Personnel Affected
+                    </span>
+                  </div>
+                  <p className="text-amber-800 dark:text-amber-300 mt-0.5 text-[11px]">
+                    {outOfSyncStaffList.length} active staff member(s) have base salaries that differ from current institutional role benchmarks.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSyncStaffToBenchmark(outOfSyncStaffList.map((s) => s.staffId))}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-2 shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Sync All {outOfSyncStaffList.length} to Benchmarks</span>
+              </button>
+            </div>
+          )}
+
           {/* Controls & Filter Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
             <div className="relative flex-1">
@@ -829,10 +925,23 @@ export default function StaffSalaryManagementView() {
                             </td>
 
                             <td
-                              className="py-3 px-3 text-right font-mono font-bold text-slate-900 dark:text-white"
+                              className="py-3 px-3 text-right"
                               onClick={() => setDrawerStaff(staff)}
                             >
-                              ₹{staff.baseSalary.toLocaleString("en-IN")}
+                              <div className="font-mono font-bold text-slate-900 dark:text-white">
+                                ₹{staff.baseSalary.toLocaleString("en-IN")}
+                              </div>
+                              {(() => {
+                                const rd = roleDefaultsMap.get(staff.role.toLowerCase());
+                                if (rd && staff.baseSalary < rd.base_salary) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60 mt-0.5">
+                                      Below ₹{rd.base_salary.toLocaleString("en-IN")}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </td>
 
                             <td className="py-3 px-3 text-center" onClick={() => setDrawerStaff(staff)}>
@@ -882,6 +991,27 @@ export default function StaffSalaryManagementView() {
 
                             <td className="py-3 px-4 text-right">
                               <div className="inline-flex items-center gap-1.5">
+                                {(() => {
+                                  const rd = roleDefaultsMap.get(staff.role.toLowerCase());
+                                  if (rd && staff.baseSalary !== rd.base_salary) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSyncStaffToBenchmark([staff.staffId]);
+                                        }}
+                                        className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-bold cursor-pointer transition-all flex items-center gap-1"
+                                        title={`Sync to Role Baseline (₹${rd.base_salary.toLocaleString("en-IN")})`}
+                                      >
+                                        <RefreshCw className="w-2.5 h-2.5" />
+                                        <span>Sync</span>
+                                      </button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1136,6 +1266,16 @@ export default function StaffSalaryManagementView() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => handleSyncStaffToBenchmark(selectedStaffIds)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 cursor-pointer transition-all flex items-center gap-1.5"
+                  title="Synchronize selected staff base salaries with role benchmarks"
+                >
+                  <RefreshCw className="w-3 h-3 text-blue-400" />
+                  <span>Sync to Baseline</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setIsBulkBonusOpen(true)}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 cursor-pointer transition-all flex items-center gap-1.5"
                 >
@@ -1168,76 +1308,47 @@ export default function StaffSalaryManagementView() {
 
       {/* ── TAB 2: ROLE BASE SALARY BENCHMARKS ─────────────────────────────────── */}
       {activeTab === "ROLE_DEFAULTS" && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">Institutional Role Salary Guidelines:</span>
-              <p className="mt-0.5 text-blue-700 dark:text-blue-400">
-                Setting a role base salary and payment frequency automatically establishes the compensation baseline for all staff members assigned to that role. You can customize individual salaries in the roster tab.
-              </p>
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="p-5 rounded-3xl bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-blue-50/80 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-blue-950/30 border border-blue-200/80 dark:border-blue-900/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+            <div className="flex items-start gap-3.5">
+              <div className="p-3 rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
+                <SlidersHorizontal className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>Institutional Compensation Baseline & Benchmarks</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                    Live Governance
+                  </span>
+                </h2>
+                <p className="mt-1 text-slate-600 dark:text-slate-400 leading-relaxed max-w-3xl">
+                  Configuring a role-based salary tier establishes the mandatory compensation standard for all fleet personnel in that job bracket. Enabling automated cascading propagates salary changes to active staff database records immediately.
+                </p>
+              </div>
             </div>
+
+            {outOfSyncStaffList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleSyncStaffToBenchmark(outOfSyncStaffList.map((s) => s.staffId))}
+                className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Cascade All ({outOfSyncStaffList.length} Out of Sync)</span>
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {roleDefaults.map((rd) => (
-              <div
+              <RoleBenchmarkCard
                 key={rd.role}
-                className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 font-black text-sm">
-                      {rd.role.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 dark:text-white capitalize">
-                        {rd.role.replace("_", " ")} Baseline
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        {rd.description || "Official role compensation standard"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    {rd.payment_frequency}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      Base Salary (₹)
-                    </label>
-                    <input
-                      type="number"
-                      defaultValue={rd.base_salary}
-                      onBlur={(e) =>
-                        handleUpdateRoleDefault(rd.role, Number(e.target.value), rd.payment_frequency)
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      Default Schedule
-                    </label>
-                    <select
-                      defaultValue={rd.payment_frequency}
-                      onChange={(e) =>
-                        handleUpdateRoleDefault(rd.role, rd.base_salary, e.target.value as any)
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300"
-                    >
-                      <option value="MONTHLY">Monthly</option>
-                      <option value="WEEKLY">Weekly</option>
-                      <option value="DAILY">Daily</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+                rd={rd}
+                staffList={staffList}
+                onSave={handleUpdateRoleDefault}
+                onCascade={handleCascadeRoleBenchmark}
+              />
             ))}
           </div>
         </div>
@@ -2229,6 +2340,229 @@ export default function StaffSalaryManagementView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Enterprise Role Benchmark Component
+ * Visualizes compensation baseline, active workforce count, total commitment, and out-of-sync alert.
+ * Allows instant cascading of updated benchmark to all existing personnel.
+ */
+function RoleBenchmarkCard({
+  rd,
+  staffList,
+  onSave,
+  onCascade,
+}: {
+  rd: RoleSalaryDefault;
+  staffList: StaffPayrollRecord[];
+  onSave: (role: string, baseSalary: number, paymentFrequency: string, applyToExistingStaff: boolean) => Promise<void>;
+  onCascade: (role: string) => Promise<void>;
+}) {
+  const [baseSalary, setBaseSalary] = useState<number>(rd.base_salary);
+  const [frequency, setFrequency] = useState<"DAILY" | "WEEKLY" | "MONTHLY">(rd.payment_frequency || "MONTHLY");
+  const [applyToExistingStaff, setApplyToExistingStaff] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isCascading, setIsCascading] = useState<boolean>(false);
+
+  useEffect(() => {
+    setBaseSalary(rd.base_salary);
+    setFrequency(rd.payment_frequency || "MONTHLY");
+  }, [rd.base_salary, rd.payment_frequency]);
+
+  const assignedStaff = useMemo(() => {
+    return staffList.filter((s) => s.role.toLowerCase() === rd.role.toLowerCase());
+  }, [staffList, rd.role]);
+
+  const outOfSyncStaff = useMemo(() => {
+    return assignedStaff.filter((s) => s.baseSalary !== rd.base_salary);
+  }, [assignedStaff, rd.base_salary]);
+
+  const totalMonthlyCommitment = useMemo(() => {
+    return assignedStaff.length * baseSalary;
+  }, [assignedStaff.length, baseSalary]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await onSave(rd.role, baseSalary, frequency, applyToExistingStaff);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCascade = async () => {
+    setIsCascading(true);
+    try {
+      await onCascade(rd.role);
+    } finally {
+      setIsCascading(false);
+    }
+  };
+
+  const getRoleIcon = (role: string) => {
+    if (role === "driver") return <Bus className="w-5 h-5 text-amber-500" />;
+    if (role === "conductor") return <Award className="w-5 h-5 text-indigo-500" />;
+    if (role === "transport_manager") return <Building2 className="w-5 h-5 text-purple-500" />;
+    return <Shield className="w-5 h-5 text-blue-500" />;
+  };
+
+  const getRoleBg = (role: string) => {
+    if (role === "driver") return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+    if (role === "conductor") return "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20";
+    if (role === "transport_manager") return "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20";
+    return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
+  };
+
+  return (
+    <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-5 flex flex-col justify-between">
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`p-3 rounded-2xl border ${getRoleBg(rd.role)}`}>
+              {getRoleIcon(rd.role)}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 dark:text-white capitalize text-base">
+                  {rd.role.replace("_", " ")} Baseline
+                </h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getRoleBg(rd.role)}`}>
+                  {rd.role.replace("_", " ")}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {rd.description || "Official institutional compensation baseline"}
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            {assignedStaff.length} Staff
+          </span>
+        </div>
+
+        {/* Commitment KPI Strip */}
+        <div className="grid grid-cols-2 gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+          <div>
+            <span className="text-[10px] font-bold uppercase text-slate-400">Active Workforce</span>
+            <div className="font-black text-slate-900 dark:text-white text-sm">
+              {assignedStaff.length} Personnel
+            </div>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase text-slate-400">Monthly Commitment</span>
+            <div className="font-mono font-black text-slate-900 dark:text-white text-sm">
+              ₹{totalMonthlyCommitment.toLocaleString("en-IN")}/mo
+            </div>
+          </div>
+        </div>
+
+        {/* Out-of-sync Warning / In-sync Status */}
+        {outOfSyncStaff.length > 0 ? (
+          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 space-y-2 text-xs">
+            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-bold">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{outOfSyncStaff.length} staff currently on legacy rate (₹{outOfSyncStaff[0].baseSalary.toLocaleString("en-IN")})</span>
+            </div>
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+              {outOfSyncStaff.length} staff member(s) have base salaries that do not match this updated benchmark.
+            </p>
+            <button
+              type="button"
+              disabled={isCascading}
+              onClick={handleCascade}
+              className="w-full mt-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCascading ? "animate-spin" : ""}`} />
+              <span>{isCascading ? "Synchronizing..." : `Cascade ₹${rd.base_salary.toLocaleString("en-IN")} to All ${assignedStaff.length} ${rd.role.replace("_", " ")}s`}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300 font-bold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>All {assignedStaff.length} {rd.role.replace("_", " ")}s synchronized with benchmark</span>
+          </div>
+        )}
+
+        {/* Edit Form */}
+        <form onSubmit={handleSave} className="space-y-4 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Base Salary (₹)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  min="1000"
+                  step="500"
+                  value={baseSalary}
+                  onChange={(e) => setBaseSalary(Number(e.target.value))}
+                  className="w-full pl-7 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  placeholder="20000"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Default Cycle
+              </label>
+              <select
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as any)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="MONTHLY">Monthly</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="DAILY">Daily</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Automatic Cascade Checkbox */}
+          <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={applyToExistingStaff}
+              onChange={(e) => setApplyToExistingStaff(e.target.checked)}
+              className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+            <div className="text-xs">
+              <span className="font-bold text-slate-900 dark:text-white">
+                Automatically update all {assignedStaff.length} active {rd.role.replace("_", " ")}s
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Applies ₹{baseSalary.toLocaleString("en-IN")} base pay to existing records in the database immediately upon saving.
+              </p>
+            </div>
+          </label>
+
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving & Updating Database...</span>
+              </>
+            ) : (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Save Benchmark {applyToExistingStaff ? `& Update ${assignedStaff.length} Staff` : ""}</span>
+              </>
+            )}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

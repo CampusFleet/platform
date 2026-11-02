@@ -5,11 +5,69 @@ export const dynamic = "force-dynamic";
 
 /**
  * PUT /api/staff/salary/admin/staff-config
- * Admin updates an individual staff member's base salary, payment frequency, or awards a bonus
+ * Admin updates an individual staff member's base salary, payment frequency, or awards a bonus.
+ * Also supports action: "SYNC_TO_BENCHMARK" for batch or single synchronization to role baseline.
  */
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // 0. Check if batch/single benchmark sync action
+    if (body.action === "SYNC_TO_BENCHMARK") {
+      const targetIds: string[] = Array.isArray(body.staffIds) && body.staffIds.length > 0
+        ? body.staffIds
+        : body.staffId ? [body.staffId] : [];
+
+      if (targetIds.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "staffIds array or staffId is required for benchmark synchronization." },
+          { status: 400 }
+        );
+      }
+
+      // Fetch current role benchmarks
+      const { data: defaults } = await supabaseAdmin
+        .from("role_salary_defaults")
+        .select("role, base_salary, payment_frequency");
+      const defaultsMap = new Map((defaults || []).map((d: any) => [d.role, d]));
+
+      // Fetch targets
+      const { data: staffList, error: staffErr } = await supabaseAdmin
+        .from("staff")
+        .select("id, user_id, full_name, role")
+        .in("id", targetIds);
+
+      if (staffErr || !staffList || staffList.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No matching staff members found." },
+          { status: 404 }
+        );
+      }
+
+      let syncedCount = 0;
+      for (const s of staffList) {
+        const d = defaultsMap.get(s.role);
+        if (d) {
+          const { error: updErr } = await supabaseAdmin
+            .from("staff_salary_configs")
+            .update({
+              base_salary: Number(d.base_salary),
+              payment_frequency: d.payment_frequency || "MONTHLY",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("staff_id", s.id);
+
+          if (!updErr) syncedCount++;
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `✓ Synchronized ${syncedCount} staff member(s) to institutional role benchmark.`,
+        syncedCount,
+      });
+    }
+
     const {
       staffId,
       baseSalary,

@@ -26,7 +26,8 @@ import {
   Settings2,
   Radio,
   Cpu,
-  Clock
+  Clock,
+  Banknote
 } from "lucide-react";
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
@@ -117,6 +118,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/transport-admin/esp32", label: "ESP32 Terminals", shortLabel: "ESP32", icon: Cpu },
         { href: "/transport-admin/academics/students", label: "Student List", shortLabel: "Students", icon: GraduationCap },
       ]
+    },
+    salary: {
+      title: "Staff Payroll & Salary Automation",
+      items: [
+        { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
+        { href: "/transport-admin/salary", label: "Staff Payroll", shortLabel: "Payroll", icon: Banknote },
+        { href: "/transport-admin/system/users", label: "User Accounts", shortLabel: "Users", icon: Users },
+      ]
     }
   };
 
@@ -124,7 +133,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   let currentNavLinks: any[] = [];
   let currentTitle = "Transport Admin Desk";
 
-  if (pathname.startsWith("/transport-admin/rfid") || pathname.startsWith("/transport-admin/esp32")) {
+  if (pathname.startsWith("/transport-admin/salary")) {
+    currentNavLinks = subPortals.salary.items;
+    currentTitle = subPortals.salary.title;
+  } else if (pathname.startsWith("/transport-admin/rfid") || pathname.startsWith("/transport-admin/esp32")) {
     currentNavLinks = subPortals.rfid.items;
     currentTitle = subPortals.rfid.title;
   } else if (pathname.startsWith("/transport-admin/buses")) {

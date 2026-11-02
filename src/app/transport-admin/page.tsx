@@ -10,7 +10,8 @@ import {
   Navigation,
   BookOpen,
   Building2,
-  Radio
+  Radio,
+  Banknote
 } from "lucide-react";
 import { Metadata } from "next";
 
@@ -19,6 +20,12 @@ export const metadata: Metadata = {
 };
 
 const staffModules: HubModule[] = [
+  {
+    title: "Staff Payroll & Salaries",
+    description: "Automate daily, weekly, or monthly salary payouts for staff via Razorpay. Configure base pay, bonuses, and banking/UPI credentials.",
+    icon: Banknote,
+    href: "/transport-admin/salary"
+  },
   {
     title: "Transport Manager Operations",
     description: "Switch to Transport Manager to manage driver allocations, live trips, demand, and bus combines.",

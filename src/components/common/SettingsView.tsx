@@ -18,6 +18,7 @@ import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { UserRole } from "@/lib/types";
 
 import { CustomDropdown } from "@/components/common/CustomDropdown";
+import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
 
 export function SettingsView() {
   const pathname = usePathname();
@@ -914,6 +915,8 @@ export function SettingsView() {
         </div>
 
       <div className="space-y-8">
+        {/* Staff Salary & Payout Banking Credentials Card (Drivers, Conductors, Managers, Admins) */}
+        <StaffPayoutCredentialsCard currentUser={currentUser} userRole={detectedRole} />
 
         {/* Profile Details Card */}
         <div className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-none">

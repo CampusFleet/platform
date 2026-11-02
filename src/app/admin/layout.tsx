@@ -15,6 +15,7 @@ import {
   Home,
   Compass,
   Building2,
+  Banknote,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -120,6 +121,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/users", label: "User Accounts", shortLabel: "Users", icon: Users },
         { href: "/admin/maintenance", label: "Workshop", shortLabel: "Workshop", icon: Wrench },
       ]
+    },
+    salary: {
+      title: "Staff Payroll & Automated Salaries",
+      items: [
+        { href: "/admin", label: "← Hub", shortLabel: "Hub", icon: Home },
+        { href: "/admin/salary", label: "Staff Payroll", shortLabel: "Payroll", icon: Banknote },
+        { href: "/admin/users", label: "Accounts & Roles", shortLabel: "Accounts", icon: Users },
+        { href: "/transport-admin", label: "Transport Admin Desk", shortLabel: "Admin Desk", icon: ShieldCheck },
+      ]
     }
   };
 
@@ -136,6 +146,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   } else if (pathname.startsWith("/admin/campuses")) {
     currentNavLinks = subPortals.campuses.items;
     currentTitle = subPortals.campuses.title;
+  } else if (pathname.startsWith("/admin/salary")) {
+    currentNavLinks = subPortals.salary.items;
+    currentTitle = subPortals.salary.title;
   }
 
   return (

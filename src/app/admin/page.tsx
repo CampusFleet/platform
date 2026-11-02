@@ -1,5 +1,5 @@
 import { HubDashboardView, HubModule } from "@/components/common/HubDashboardView";
-import { Wrench, Users, Building2, Compass } from "lucide-react";
+import { Wrench, Users, Building2, Compass, Banknote } from "lucide-react";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,6 +7,12 @@ export const metadata: Metadata = {
 };
 
 const adminModules: HubModule[] = [
+  {
+    title: "Staff Payroll & Salaries",
+    description: "Automate daily, weekly, or monthly salary payouts for staff via Razorpay. Configure base pay, bonuses, and banking/UPI credentials.",
+    icon: Banknote,
+    href: "/admin/salary"
+  },
   {
     title: "Maintenance Desk",
     description: "Review fleet service requests, manage mechanics, and track repair status.",

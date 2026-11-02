@@ -35,6 +35,7 @@ import {
   FileCheck2,
   Home,
   CheckCircle2,
+  Banknote,
 } from "lucide-react";
 
 export interface NavLinkItem {
@@ -562,16 +563,28 @@ export function UnifiedAppHeader({
                           </button>
                         )}
                         {(isActualAdmin || userAccountRole === "transport_admin") && (
-                          <button
-                            onClick={() => {
-                              setIsAppsOpen(false);
-                              router.push("/transport-admin");
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
-                          >
-                            <Building2 className="w-3.5 h-3.5 text-blue-500" />
-                            <span>Transport Admin Desk</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setIsAppsOpen(false);
+                                router.push("/admin/salary");
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                            >
+                              <Banknote className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>Staff Payroll & Salaries</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsAppsOpen(false);
+                                router.push("/transport-admin");
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                            >
+                              <Building2 className="w-3.5 h-3.5 text-blue-500" />
+                              <span>Transport Admin Desk</span>
+                            </button>
+                          </>
                         )}
                         {(isActualAdmin || userAccountRole === "transport_manager") && (
                           <button

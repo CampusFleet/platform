@@ -78,6 +78,7 @@ export interface ConductorLiveRadarViewProps {
   shiftDirection?: TripDirection;
   onTripUpdate?: (tripId: string, updates: Partial<Trip>) => Promise<void> | void;
   onClose?: () => void;
+  backLabel?: string;
 }
 
 export default function ConductorLiveRadarView({
@@ -96,6 +97,7 @@ export default function ConductorLiveRadarView({
   shiftDirection: propShiftDirection,
   onTripUpdate,
   onClose,
+  backLabel,
 }: ConductorLiveRadarViewProps) {
   // ── 1. ACTIVE TRIP, ROUTE & BUS RESOLUTION ────────────────────────────────
   const [activeTrip, setActiveTrip] = useState<Trip | null>(propActiveTrip);
@@ -452,7 +454,7 @@ export default function ConductorLiveRadarView({
               className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-white/95 dark:bg-black/90 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-              <span>Conductor Dashboard</span>
+              <span>{backLabel || "Conductor Dashboard"}</span>
             </button>
           ) : (
             <Link

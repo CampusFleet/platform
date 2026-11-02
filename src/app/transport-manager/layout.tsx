@@ -13,6 +13,7 @@ import {
   Home,
   Users,
   GitBranch,
+  Radio,
 } from "lucide-react";
 
 export default function TransportManagerLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,14 @@ export default function TransportManagerLayout({ children }: { children: React.R
 
   // 1. Define sub-portal link definitions for each Transport Manager card
   const subPortals = {
+    live: {
+      title: "Live Fleet Radar",
+      subtitle: "Multi-Bus God-View & Conductor Perspective Mirror",
+      items: [
+        { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
+        { href: "/transport-manager/live", label: "Live Fleet Radar", shortLabel: "Live", icon: Radio },
+      ],
+    },
     trips: {
       title: "Today's Trips",
       subtitle: "Corridor Flowchart & Stop Bus Allocation",
@@ -67,7 +76,11 @@ export default function TransportManagerLayout({ children }: { children: React.R
   let currentTitle = "Transport Manager Logistics";
   let currentSubtitle = "Fleet Logistics & Bus Operations";
 
-  if (pathname.startsWith("/transport-manager/trips") || pathname.startsWith("/transport-manager/flowchart")) {
+  if (pathname.startsWith("/transport-manager/live")) {
+    currentNavLinks = subPortals.live.items;
+    currentTitle = subPortals.live.title;
+    currentSubtitle = subPortals.live.subtitle;
+  } else if (pathname.startsWith("/transport-manager/trips") || pathname.startsWith("/transport-manager/flowchart")) {
     currentNavLinks = subPortals.trips.items;
     currentTitle = subPortals.trips.title;
     currentSubtitle = subPortals.trips.subtitle;

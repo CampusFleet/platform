@@ -16,10 +16,16 @@ export const metadata: Metadata = {
 
 const logisticsModules: HubModule[] = [
   {
+    title: "Live Fleet Radar",
+    description: "Multi-bus god-view GPS telematics, live vehicle cards, and remote conductor console mirroring.",
+    icon: Radio,
+    href: "/transport-manager/live",
+  },
+  {
     title: "Assign Drivers",
     description: "Assign drivers and conductors to specific buses and shifts for today's service.",
     icon: Users,
-    href: "/transport-manager/drivers"
+    href: "/transport-manager/drivers",
   },
   {
     title: "RFID Smart Cards",

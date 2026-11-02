@@ -29,11 +29,13 @@ import {
   ShieldAlert,
   Radio,
   Zap,
+  PhoneCall,
 } from "lucide-react";
 import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatGrid";
 import { generateSeatLayout, getTeacherStartingSeats } from "@/lib/utils";
 import { AttendanceLockCard } from "./AttendanceLockCard";
 import { telematicsService } from "@/lib/telematicsService";
+import { ContactCrewModal } from "./ContactCrewModal";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, TransportSettings, Staff } from "@/lib/types";
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -107,6 +109,7 @@ export default function SmartTransitCockpit({
 
   // Cancel confirmation modal (replaces browser confirm())
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
 
   // Toast notification (replaces browser alert())
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "warning" } | null>(null);
@@ -250,6 +253,28 @@ export default function SmartTransitCockpit({
     );
   }, [reservation, activeBooking, buses]);
 
+  // Resolved route entity for commuter context
+  const assignedRoute = useMemo(() => {
+    const routeId =
+      reservation?.route_id ||
+      (assignedBus as any)?.currentRouteId ||
+      (activeBooking as any)?.routeId ||
+      student?.primaryRouteId;
+    if (routeId) {
+      const match = routes.find((r) => r.id === routeId);
+      if (match) return match;
+    }
+    const tripId = reservation?.trip_id || activeBooking?.tripId;
+    if (tripId) {
+      const foundTrip = trips.find((t) => t.id === tripId);
+      if (foundTrip?.routeId) {
+        const match = routes.find((r) => r.id === foundTrip.routeId);
+        if (match) return match;
+      }
+    }
+    return routes[0] || null;
+  }, [reservation, assignedBus, activeBooking, student?.primaryRouteId, routes, trips]);
+
   // Resolved stop entity
   const assignedStop = useMemo(() => {
     const stopId =
@@ -313,6 +338,32 @@ export default function SmartTransitCockpit({
     return foundTrip?.status || (foundTrip as any)?.trip_status || null;
   }, [reservation, activeBooking, trips]);
   const isTripInProgress = assignedTripStatus === "IN_PROGRESS" || assignedTripStatus === "COMPLETED";
+
+  // Resolve assigned conductor and transport manager staff for contact modal
+  const assignedConductor = useMemo(() => {
+    if (!staff || staff.length === 0) return null;
+    const tripId = reservation?.trip_id || activeBooking?.tripId;
+    const foundTrip = tripId ? trips.find((t) => t.id === tripId) : null;
+    if (foundTrip?.conductorId) {
+      const match = staff.find(
+        (s) => s.id === foundTrip.conductorId || s.userId === foundTrip.conductorId
+      );
+      if (match) return match;
+    }
+    return staff.find((s) => s.role === "conductor" || s.category === "CONDUCTORS") || null;
+  }, [staff, trips, reservation?.trip_id, activeBooking?.tripId]);
+
+  const transportManagerStaff = useMemo(() => {
+    if (!staff || staff.length === 0) return null;
+    return (
+      staff.find(
+        (s) =>
+          s.role === "transport_manager" ||
+          s.role === "transport_admin" ||
+          s.category === "TRANSPORT_OPS"
+      ) || null
+    );
+  }, [staff]);
 
   const assignedShiftName =
     assignedShift?.name ||
@@ -557,13 +608,25 @@ export default function SmartTransitCockpit({
               </div>
             </div>
 
-            <Link
-              href={`/portal/radar?busId=${assignedBus.id}`}
-              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-zinc-900 hover:bg-black text-white dark:bg-white dark:hover:bg-zinc-100 dark:text-black font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 shrink-0 group cursor-pointer"
-            >
-              <Navigation className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-              <span>Open Live Radar Fullscreen →</span>
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsContactCrewOpen(true)}
+                className="w-full sm:w-auto px-4 py-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                title="Call Bus Conductor & Transport Helpline"
+              >
+                <PhoneCall className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Call Crew / Desk</span>
+              </button>
+
+              <Link
+                href={`/portal/radar?busId=${assignedBus.id}`}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-zinc-900 hover:bg-black text-white dark:bg-white dark:hover:bg-zinc-100 dark:text-black font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 group cursor-pointer"
+              >
+                <Navigation className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                <span>Open Live Radar →</span>
+              </Link>
+            </div>
           </div>
 
           {/* Quick Proximity Unlock / Status Strip if seat is locked */}
@@ -1585,6 +1648,31 @@ export default function SmartTransitCockpit({
             </div>
             <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
           </Link>
+
+          {/* Contact Bus Conductor & Transport Helpline Action */}
+          <button
+            type="button"
+            onClick={() => setIsContactCrewOpen(true)}
+            className="flex items-center justify-between p-4 md:p-5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 transition-all text-left group active:scale-[0.99] shadow-sm cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/60 flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm">
+                <PhoneCall className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="text-sm md:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Contact Bus Crew & Helpline</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-black uppercase">
+                    Call
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Direct call to assigned bus conductor & university transport manager
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
+          </button>
         </div>
 
         {/* Footer Link to Settings */}
@@ -1648,6 +1736,18 @@ export default function SmartTransitCockpit({
           </div>
         </div>
       )}
+
+      {/* ─── CONTACT CREW & TRANSPORT HELPLINE MODAL ─── */}
+      <ContactCrewModal
+        isOpen={isContactCrewOpen}
+        onClose={() => setIsContactCrewOpen(false)}
+        bus={assignedBus}
+        shift={assignedShift}
+        route={assignedRoute}
+        conductor={assignedConductor}
+        transportManager={transportManagerStaff}
+        stopName={assignedStop?.name}
+      />
 
       {/* ─── TOAST NOTIFICATION (replaces browser alert()) ─── */}
       {renderToastNotification()}

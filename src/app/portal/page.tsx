@@ -60,6 +60,7 @@ export default async function StudentPortalPage() {
           { data: dbTrips },
           { data: dbRouteStops },
           { data: dbCampuses },
+          { data: dbStaff },
         ] = await Promise.all([
           supabaseAdmin.from("buses").select("*"),
           supabaseAdmin.from("routes").select("*"),
@@ -68,8 +69,9 @@ export default async function StudentPortalPage() {
           supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false }).limit(60),
           supabaseAdmin.from("route_stops").select("*").order("stop_order", { ascending: true }),
           supabaseAdmin.from("campuses").select("*"),
+          supabaseAdmin.from("staff").select("*"),
         ]);
-        return { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses };
+        return { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses, dbStaff };
       },
     }),
     // Per-student queries — MUST stay dynamic (user-specific)
@@ -109,7 +111,7 @@ export default async function StudentPortalPage() {
       : Promise.resolve({ data: null }),
   ]);
 
-  const { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses } = sharedData;
+  const { dbBuses, dbRoutes, dbStops, dbShifts, dbTrips, dbRouteStops, dbCampuses, dbStaff = [] } = sharedData;
   const { data: dbBookings } = perStudentResults[0];
   const { data: dbAllocations } = perStudentResults[1];
   const { data: dbReservations } = perStudentResults[2];
@@ -117,8 +119,6 @@ export default async function StudentPortalPage() {
 
   const campusNameMap = new Map((dbCampuses || []).map((c: any) => [c.id, c.name]));
   const stopMap = new Map((dbStops || []).map((s: any) => [s.id, s]));
-
-  const dbStaff: any[] = [];
 
   const students: Student[] = (dbStudents || []).map((s: any) => ({
     id: s.id,

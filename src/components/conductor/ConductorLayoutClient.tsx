@@ -14,18 +14,38 @@ import {
   LayoutGrid,
   ShieldCheck,
   Home,
+  Navigation,
 } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { CrewBusSelectorModal } from "@/components/common/CrewBusSelectorModal";
+import ConductorLiveRadarView from "./ConductorLiveRadarView";
+import { store } from "@/lib/store";
 import { useConductorContext } from "./ConductorContext";
 
 export default function ConductorLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useTranslation();
-  const { currentUser, activeTrip, bus, route, trips, setSelectedTripId, showToast } = useConductorContext();
+  const {
+    currentUser,
+    activeTrip,
+    bus,
+    route,
+    shift,
+    trips,
+    buses,
+    routes,
+    stops,
+    bookings,
+    students,
+    tripBookings,
+    setSelectedTripId,
+    showToast,
+    refreshLiveState,
+  } = useConductorContext();
   const [isCrewSelectorOpen, setIsCrewSelectorOpen] = useState(false);
   const [selectorTab, setSelectorTab] = useState<"CARDS" | "SCANNER">("CARDS");
+  const [isRadarOpen, setIsRadarOpen] = useState(false);
 
   const isAuthorizedConductor = currentUser?.role === "conductor" || currentUser?.role === "driver";
   if (currentUser && !isAuthorizedConductor) {
@@ -180,6 +200,52 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
           showToast("✓ Conductor duty active! Bus claimed and attendance recorded.");
         }}
       />
+
+      {/* ── FLOATING LIVE MAP RADAR TRIGGER BUTTON (CONDUCTOR CONSOLE) ──── */}
+      <div className="fixed bottom-6 right-4 sm:right-6 z-40">
+        <button
+          type="button"
+          onClick={() => setIsRadarOpen(true)}
+          className="px-4 sm:px-5 py-3 sm:py-3.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2.5 shadow-2xl shadow-blue-600/40 border-2 border-white dark:border-slate-900 transition-all cursor-pointer group"
+          title="Open Live Radar Navigation Map"
+          aria-label="Open Live Radar Navigation Map"
+        >
+          <div className="relative flex items-center justify-center">
+            <Navigation className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white/20 transition-transform group-hover:rotate-45 duration-300" />
+            <span className="absolute -top-1 -right-1 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+          </div>
+          <span className="tracking-tight">Live Map Radar</span>
+        </button>
+      </div>
+
+      {/* ── FULLSCREEN LIVE RADAR NAVIGATION MODAL OVERLAY (CONDUCTOR MODE) ── */}
+      {isRadarOpen && (
+        <div className="fixed inset-0 z-50 bg-black animate-in fade-in duration-200 flex flex-col">
+          <ConductorLiveRadarView
+            initialUser={currentUser}
+            activeTrip={activeTrip || null}
+            route={route || null}
+            bus={bus || null}
+            shift={shift || null}
+            allTrips={trips}
+            allBuses={buses}
+            allRoutes={routes}
+            allStops={stops}
+            bookings={bookings}
+            students={students}
+            tripBookings={tripBookings}
+            shiftDirection={shift?.direction}
+            onClose={() => setIsRadarOpen(false)}
+            onTripUpdate={async (tripId, updates) => {
+              await store.updateTrip(tripId, updates);
+              if (refreshLiveState) await refreshLiveState();
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

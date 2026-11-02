@@ -80,6 +80,7 @@ interface CampusFleetMapProps {
   campuses?: Campus[];
   primaryCampus?: Campus | null;
   routeCoordinates?: [number, number][];
+  walkingCoordinates?: [number, number][];
   activeStopIndex?: number;
   shortestPathStopIds?: string[];
   selectedStopId?: string;
@@ -208,6 +209,7 @@ function LeafletTransitMap({
   campuses = [],
   primaryCampus,
   routeCoordinates = [],
+  walkingCoordinates = [],
   activeStopIndex = 0,
   shortestPathStopIds = [],
   selectedStopId,
@@ -239,6 +241,7 @@ function LeafletTransitMap({
   const polylineCompletedCoreRef = useRef<any>(null);
 
   const shortestPathPolylineRef = useRef<any>(null);
+  const walkingPolylineRef = useRef<any>(null);
   const markersGroupRef = useRef<any>(null);
   const campusMarkerGroupRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
@@ -702,6 +705,22 @@ function LeafletTransitMap({
             }
           }
         }
+      }
+
+      // Render First-Mile Pedestrian Walking Path Layer
+      if (walkingPolylineRef.current) {
+        map.removeLayer(walkingPolylineRef.current);
+        walkingPolylineRef.current = null;
+      }
+      if (walkingCoordinates && walkingCoordinates.length >= 2) {
+        walkingPolylineRef.current = L.polyline(walkingCoordinates, {
+          color: "#10B981", // Emerald 500
+          weight: 5,
+          opacity: 0.95,
+          dashArray: "6, 8",
+          lineJoin: "round",
+          lineCap: "round",
+        }).addTo(map);
       }
 
       // Render Stop Station Markers

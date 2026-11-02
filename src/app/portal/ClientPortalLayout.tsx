@@ -25,10 +25,12 @@ import {
   Zap,
   User,
   LayoutDashboard,
-  Clock,
   Radio,
+  Clock,
+  PhoneCall,
 } from "lucide-react";
 import BusDepartureAlertModal from "@/components/portal/BusDepartureAlertModal";
+import { ContactCrewModal } from "@/components/portal/ContactCrewModal";
 
 export default function ClientPortalLayout({
   children,
@@ -54,6 +56,7 @@ export default function ClientPortalLayout({
     trip: any;
     bus: any;
   } | null>(null);
+  const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
 
   // ── Sticky Subscription Guard ──────────────────────────────────────
   // Once we confirm subscription is active, we NEVER downgrade it to
@@ -263,6 +266,17 @@ export default function ClientPortalLayout({
         userPhotoUrl={initialPhotoUrl}
         showSOS={true}
         onOpenSOS={() => setIsSOSOpen(true)}
+        customActions={
+          <button
+            type="button"
+            onClick={() => setIsContactCrewOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="Contact Assigned Bus Conductor & Transport Helpline"
+          >
+            <PhoneCall className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="hidden sm:inline">Call Crew</span>
+          </button>
+        }
         mobilePrimaryAction={
           isSubscriptionActive
               ? {
@@ -380,6 +394,29 @@ export default function ClientPortalLayout({
           }}
         />
       )}
+      {/* Contact Bus Conductor & Transport Helpline Modal */}
+      <ContactCrewModal
+        isOpen={isContactCrewOpen}
+        onClose={() => setIsContactCrewOpen(false)}
+        bus={(() => {
+          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
+          return t ? store.getBuses().find(b => b.id === t.busId) : null;
+        })()}
+        shift={(() => {
+          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
+          return t ? store.getShifts().find(s => s.id === t.shiftId) : null;
+        })()}
+        route={(() => {
+          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
+          return t ? store.getRoutes().find(r => r.id === t.routeId) : null;
+        })()}
+        conductor={(() => {
+          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
+          return store.getStaff().find(s => (t && s.id === t.conductorId) || s.role === "conductor") || null;
+        })()}
+        transportManager={store.getStaff().find(s => s.role === "transport_manager" || s.role === "transport_admin") || null}
+        stopName={activeStudent?.primaryStopId ? store.getStops().find(st => st.id === activeStudent.primaryStopId)?.name : undefined}
+      />
     </div>
   );
 

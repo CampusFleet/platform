@@ -40,13 +40,16 @@ import {
   SlidersHorizontal,
   Maximize2,
   Minimize2,
+  BellRing,
+  GraduationCap,
+  UserCheck,
 } from "lucide-react";
 import { useTheme } from "@/components/common/ThemeProvider";
 import CampusFleetMap from "@/components/maps/CampusFleetMap";
 import { telematicsService } from "@/lib/telematicsService";
 import { store } from "@/lib/store";
 import { calculateDistanceKm, calculateExactDistanceMeters, formatTime } from "@/lib/utils";
-import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation } from "@/lib/types";
+import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation, Shift, Student, TripDirection } from "@/lib/types";
 
 export type DriverNavigationStage =
   | "HEADING_TO_START"   // Deadhead: Navigating from bus/driver GPS to Route Origin (Stop 0)
@@ -55,17 +58,39 @@ export type DriverNavigationStage =
   | "ARRIVING_CAMPUS"    // Approaching Institutional Campus Terminal (Final Stop)
   | "COMPLETED";         // Trip completed & parked at depot
 
+export interface StopPassengerInfo {
+  stopId: string;
+  stopName: string;
+  total: number;
+  studentsCount: number;
+  teachersCount: number;
+  passengers: Array<{
+    id: string;
+    fullName: string;
+    role: "student" | "faculty";
+    seatCode: string;
+    phone: string | null;
+    isBoarded?: boolean;
+    photoUrl?: string;
+  }>;
+}
+
 interface DriverLiveRadarViewProps {
   initialUser?: any;
   initialDriverStaffId?: string | null;
   activeTrip: Trip | null;
   route: Route | null;
   bus: BusType | null;
+  shift?: Shift | null;
   allTrips: Trip[];
   allBuses: BusType[];
   allRoutes: Route[];
   allStops: Stop[];
   bookings?: Booking[];
+  students?: Student[];
+  tripBookings?: any[];
+  userRole?: "driver" | "conductor";
+  shiftDirection?: TripDirection;
   onTripUpdate?: (tripId: string, updates: Partial<Trip>) => Promise<void> | void;
   onSwitchBus?: (newBusId: number) => Promise<void> | void;
   onSwitchTrip?: (tripId: string) => void;
@@ -86,11 +111,16 @@ export default function DriverLiveRadarView({
   activeTrip: propActiveTrip,
   route: propRoute,
   bus: propBus,
+  shift: propShift,
   allTrips,
   allBuses,
   allRoutes,
   allStops,
   bookings = [],
+  students = [],
+  tripBookings = [],
+  userRole = "driver",
+  shiftDirection: propShiftDirection,
   onTripUpdate,
   onSwitchBus,
   onSwitchTrip,
@@ -109,6 +139,8 @@ export default function DriverLiveRadarView({
   const [showSosModal, setShowSosModal] = useState(false);
   const [sosSent, setSosSent] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedRosterStop, setSelectedRosterStop] = useState<StopPassengerInfo | null>(null);
+  const [dismissedStopHaltId, setDismissedStopHaltId] = useState<string | null>(null);
 
   // Sync prop changes
   useEffect(() => {
@@ -507,18 +539,130 @@ export default function DriverLiveRadarView({
     }
   };
 
-  // ── 8. PASSENGER DEMAND FOR NEXT STOP ─────────────────────────────────────
-  const targetStopPassengers = useMemo(() => {
-    if (!currentTargetStop || !bookings) return 0;
-    return bookings.filter(
-      (b) => b.boardingStopId === currentTargetStop.id && b.status !== "CANCELLED"
-    ).length;
-  }, [currentTargetStop, bookings]);
+  // ── 8. SHIFT DIRECTION & PASSENGER DEMAND ENGINE (PICKUP vs DROP-OFF) ────
+  const effectiveShiftDirection = useMemo(() => {
+    if (propShiftDirection) return propShiftDirection;
+    if (propShift?.direction) return propShift.direction;
+    if (route?.direction) return route.direction;
+    if (propShift?.shiftType === "EVENING" || (propShift?.name && propShift.name.toLowerCase().includes("drop"))) {
+      return "CAMPUS_TO_HOME";
+    }
+    return "HOME_TO_CAMPUS";
+  }, [propShiftDirection, propShift, route]);
+
+  const isIncomingShift = effectiveShiftDirection === "HOME_TO_CAMPUS" || effectiveShiftDirection === "CIRCULAR";
+  const isOutgoingShift = effectiveShiftDirection === "CAMPUS_TO_HOME";
+
+  // Comprehensive stop passenger roster calculation (distinguishing students vs faculty)
+  const stopPassengerRosterMap = useMemo(() => {
+    const map = new Map<string, StopPassengerInfo>();
+    const studentMap = new Map<string, Student>();
+    (students || []).forEach((s) => {
+      if (s.id) studentMap.set(s.id, s);
+      if (s.userId) studentMap.set(s.userId, s);
+    });
+
+    const candidateList =
+      tripBookings && tripBookings.length > 0
+        ? tripBookings
+        : bookings.filter((b) => !activeTrip?.id || b.tripId === activeTrip.id);
+
+    routeStops.forEach((rs) => {
+      const sId = rs.stop.id;
+      const matching: Array<{
+        id: string;
+        fullName: string;
+        role: "student" | "faculty";
+        seatCode: string;
+        phone: string | null;
+        isBoarded?: boolean;
+        photoUrl?: string;
+      }> = [];
+
+      candidateList.forEach((item: any) => {
+        if (item.status === "CANCELLED") return;
+        const stud = studentMap.get(item.studentId);
+        const isFaculty = Boolean(
+          stud?.department?.toLowerCase().includes("faculty") ||
+          (stud as any)?.role === "faculty" ||
+          (stud as any)?.role === "teacher" ||
+          (item as any)?.passengerRole === "teacher" ||
+          (stud as any)?.userRole === "faculty" ||
+          (item as any)?.userRole === "teacher"
+        );
+
+        let isAtThisStop = false;
+        if (isIncomingShift) {
+          // Incoming trip: pickup point for boarding
+          isAtThisStop = item.boardingStopId === sId || stud?.primaryStopId === sId;
+        } else {
+          // Outgoing trip: drop-off (pickdown) point for alighting
+          isAtThisStop = item.boardingStopId === sId || stud?.primaryStopId === sId;
+        }
+
+        if (isAtThisStop) {
+          matching.push({
+            id: item.id || item.studentId,
+            fullName: item.fullName || stud?.fullName || "Commuter",
+            role: isFaculty ? "faculty" : "student",
+            seatCode: item.seatCode || item.seatNumber || (item as any)?.seat_number || "Seat",
+            phone: item.phone || stud?.phone || null,
+            isBoarded: item.isBoarded ?? item.status === "BOARDED",
+            photoUrl: item.photoUrl || stud?.photoUrl,
+          });
+        }
+      });
+
+      const studentsCount = matching.filter((p) => p.role === "student").length;
+      const teachersCount = matching.filter((p) => p.role === "faculty").length;
+
+      map.set(sId, {
+        stopId: sId,
+        stopName: rs.stop.name,
+        total: matching.length,
+        studentsCount,
+        teachersCount,
+        passengers: matching,
+      });
+    });
+
+    return map;
+  }, [routeStops, tripBookings, bookings, activeTrip?.id, students, isIncomingShift]);
+
+  // Current target stop demand & roster
+  const currentStopDemand = useMemo(() => {
+    if (!currentTargetStop) return null;
+    return stopPassengerRosterMap.get(currentTargetStop.id) || null;
+  }, [currentTargetStop, stopPassengerRosterMap]);
+
+  const targetStopPassengers = currentStopDemand ? currentStopDemand.total : 0;
 
   const totalTripBookings = useMemo(() => {
+    if (tripBookings && tripBookings.length > 0) return tripBookings.filter((b) => b.status !== "CANCELLED").length;
     if (!activeTrip?.id || !bookings) return 0;
     return bookings.filter((b) => b.tripId === activeTrip.id && b.status !== "CANCELLED").length;
-  }, [activeTrip?.id, bookings]);
+  }, [tripBookings, activeTrip?.id, bookings]);
+
+  // Automated voice guidance & attention chime for conductor when approaching a stop with passengers
+  const lastAnnouncedStopIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (userRole !== "conductor") return;
+    if (!currentTargetStop) return;
+    if (lastAnnouncedStopIdRef.current === currentTargetStop.id) return;
+    if (!currentStopDemand || currentStopDemand.total === 0) return;
+
+    lastAnnouncedStopIdRef.current = currentTargetStop.id;
+    playChime(784, 0.3);
+
+    const actionWord = isIncomingShift ? "pickup" : "drop-off";
+    const facultyPart =
+      currentStopDemand.teachersCount > 0
+        ? `, including ${currentStopDemand.teachersCount} faculty`
+        : "";
+    const phrase = `Stop bus for ${actionWord}. ${currentStopDemand.total} passengers at ${currentTargetStop.name}${facultyPart}.`;
+    speakGuidance(phrase);
+  }, [userRole, currentTargetStop?.id, currentStopDemand, isIncomingShift, playChime, speakGuidance]);
 
   // ── 9. ROUTE WAYPOINTS FOR MAP CANVAS ─────────────────────────────────────
   const mapRouteCoordinates: [number, number][] = useMemo(() => {
@@ -640,10 +784,10 @@ export default function DriverLiveRadarView({
               type="button"
               onClick={onClose}
               className="px-3.5 py-2 rounded-2xl bg-white/95 dark:bg-black/95 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-black transition-all hover:border-zinc-400 dark:hover:border-zinc-600 active:scale-95 cursor-pointer"
-              title="Close Map and Return to Cockpit Dashboard"
+              title={userRole === "conductor" ? "Close Map and Return to Conductor Dashboard" : "Close Map and Return to Cockpit Dashboard"}
             >
               <ArrowLeft className="w-4 h-4 text-blue-500" />
-              <span>Cockpit Dashboard</span>
+              <span>{userRole === "conductor" ? "Conductor Dashboard" : "Cockpit Dashboard"}</span>
             </button>
           </div>
         )}
@@ -719,10 +863,23 @@ export default function DriverLiveRadarView({
                     </span>
 
                     {targetStopPassengers > 0 && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-600 text-emerald-800 dark:text-emerald-300">
+                      <button
+                        type="button"
+                        onClick={() => currentStopDemand && setSelectedRosterStop(currentStopDemand)}
+                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer active:scale-95 transition-transform ${
+                          isIncomingShift
+                            ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-600 text-emerald-800 dark:text-emerald-300"
+                            : "bg-amber-50 dark:bg-amber-950/80 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-300"
+                        }`}
+                        title="Click to view passengers scheduled at this stop"
+                      >
                         <Users className="w-3 h-3" />
-                        <span>{targetStopPassengers} boarding</span>
-                      </span>
+                        <span>
+                          {isIncomingShift
+                            ? `${targetStopPassengers} to pickup`
+                            : `${targetStopPassengers} to drop-off`}
+                        </span>
+                      </button>
                     )}
                   </div>
 
@@ -786,6 +943,105 @@ export default function DriverLiveRadarView({
                   <ChevronUp className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CONDUCTOR TRANSIT STOP ALERT: PICKUP vs DROP-OFF ── */}
+        {userRole === "conductor" && currentTargetStop && currentStopDemand && currentStopDemand.total > 0 && dismissedStopHaltId !== currentTargetStop.id && (
+          <div className="pointer-events-auto bg-black/95 text-white border-2 border-emerald-500/80 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-xl animate-in slide-in-from-top-4 duration-300 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                  isIncomingShift ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
+                }`}>
+                  <BellRing className="w-6 h-6 animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                      isIncomingShift ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    }`}>
+                      {isIncomingShift ? "🛑 STOP BUS FOR PICKUP" : "🛑 STOP BUS FOR DROP-OFF"}
+                    </span>
+                    <span className="text-xs font-mono font-bold text-zinc-400">
+                      Corridor Stop #{currentStopIndex + 1}
+                    </span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-black text-white mt-1">
+                    {isIncomingShift
+                      ? `Halt bus at ${currentTargetStop.name} to pickup ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`
+                      : `Halt bus at ${currentTargetStop.name} to drop-off ${currentStopDemand.total} passenger${currentStopDemand.total > 1 ? "s" : ""}`}
+                  </h2>
+                  <div className="flex items-center gap-2 text-xs font-mono text-zinc-300 mt-1">
+                    <span className="px-2 py-0.5 rounded bg-zinc-800 text-blue-300 font-bold">
+                      🎓 {currentStopDemand.studentsCount} Students
+                    </span>
+                    {currentStopDemand.teachersCount > 0 && (
+                      <span className="px-2 py-0.5 rounded bg-zinc-800 text-amber-300 font-bold">
+                        👨‍🏫 {currentStopDemand.teachersCount} Faculty
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedRosterStop(currentStopDemand)}
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Roster</span>
+              </button>
+            </div>
+
+            {/* Passenger previews chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
+              {currentStopDemand.passengers.slice(0, 5).map((p) => (
+                <div
+                  key={p.id}
+                  className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] flex items-center gap-1.5 shrink-0"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${p.role === "faculty" ? "bg-amber-400" : "bg-blue-400"}`} />
+                  <span className="font-bold truncate max-w-[120px]">{p.fullName}</span>
+                  <span className="text-[9px] font-mono text-zinc-500">({p.seatCode})</span>
+                </div>
+              ))}
+              {currentStopDemand.passengers.length > 5 && (
+                <span className="text-[10px] text-zinc-400 font-mono px-2">
+                  +{currentStopDemand.passengers.length - 5} more
+                </span>
+              )}
+            </div>
+
+            {/* Tactical Action Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedStopHaltId(currentTargetStop.id);
+                  playChime(659.25, 0.25);
+                  speakGuidance(`${isIncomingShift ? "Pickup" : "Drop-off"} confirmed for ${currentTargetStop.name}. Resuming run.`);
+                  setToastMessage(`✓ ${isIncomingShift ? "Pickup" : "Drop-off"} confirmed for ${currentTargetStop.name}`);
+                  setTimeout(() => setToastMessage(null), 3000);
+                }}
+                className={`h-12 rounded-xl text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
+                  isIncomingShift ? "bg-emerald-600 hover:bg-emerald-500" : "bg-amber-600 hover:bg-amber-500"
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4 text-white" />
+                <span>{isIncomingShift ? "✓ ALL PASSENGERS BOARDED" : "✓ PASSENGERS SAFELY ALIGHTED"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedRosterStop(currentStopDemand)}
+                className="h-12 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Users className="w-4 h-4 text-blue-400" />
+                <span>CHECK PASSENGER LIST ({currentStopDemand.total})</span>
+              </button>
             </div>
           </div>
         )}
@@ -983,6 +1239,31 @@ export default function DriverLiveRadarView({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
+                          {(() => {
+                            const demand = stopPassengerRosterMap.get(rs.stop.id);
+                            if (!demand || demand.total === 0) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRosterStop(demand)}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-transform active:scale-95 ${
+                                  isIncomingShift
+                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                }`}
+                                title={
+                                  isIncomingShift
+                                    ? `${demand.total} to board: ${demand.studentsCount} students, ${demand.teachersCount} faculty`
+                                    : `${demand.total} to drop off: ${demand.studentsCount} students, ${demand.teachersCount} faculty`
+                                }
+                              >
+                                <Users className="w-3 h-3" />
+                                <span>
+                                  {isIncomingShift ? `+${demand.total} Pickups` : `-${demand.total} Drop-offs`}
+                                </span>
+                              </button>
+                            );
+                          })()}
                           {isCurrent && (
                             <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-black uppercase">
                               Active
@@ -1206,6 +1487,104 @@ export default function DriverLiveRadarView({
                     </button>
                   );
                 })}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── PASSENGER ROSTER SHEET FOR SELECTED STOP ── */}
+      {selectedRosterStop && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setSelectedRosterStop(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-black border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 text-zinc-900 dark:text-white shadow-2xl space-y-4 animate-in slide-in-from-bottom-6 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-zinc-100 dark:border-zinc-900 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    isIncomingShift ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
+                  }`}>
+                    {isIncomingShift ? "Boarding Stop" : "Drop-off Stop"}
+                  </span>
+                  <span className="text-xs font-mono text-zinc-400 font-bold">
+                    {selectedRosterStop.total} Total
+                  </span>
+                </div>
+                <h3 className="text-base font-black text-zinc-900 dark:text-white mt-1">
+                  {selectedRosterStop.stopName}
+                </h3>
+                <div className="text-xs text-zinc-500 flex items-center gap-2 mt-0.5 font-mono">
+                  <span>🎓 {selectedRosterStop.studentsCount} Students</span>
+                  <span>•</span>
+                  <span>👨‍🏫 {selectedRosterStop.teachersCount} Faculty</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedRosterStop(null)}
+                className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-500 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Passengers List */}
+            <div className="space-y-2">
+              {selectedRosterStop.passengers.length === 0 ? (
+                <div className="p-4 text-center text-xs text-zinc-500">
+                  No passengers scheduled at this stop.
+                </div>
+              ) : (
+                selectedRosterStop.passengers.map((p) => (
+                  <div
+                    key={p.id}
+                    className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                        p.role === "faculty"
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                      }`}>
+                        {p.role === "faculty" ? "F" : "S"}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-zinc-900 dark:text-white truncate">
+                            {p.fullName}
+                          </span>
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
+                            p.role === "faculty"
+                              ? "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"
+                              : "bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                          }`}>
+                            {p.role === "faculty" ? "Faculty" : "Student"}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400">
+                          Seat: <span className="font-bold text-zinc-800 dark:text-zinc-200">{p.seatCode}</span>
+                          {p.isBoarded && <span className="text-emerald-500 ml-2">✓ Boarded</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {p.phone && (
+                      <a
+                        href={`tel:${p.phone}`}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shrink-0"
+                        title={`Call ${p.fullName}`}
+                      >
+                        <PhoneCall className="w-3 h-3" />
+                        <span className="hidden sm:inline">Call</span>
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

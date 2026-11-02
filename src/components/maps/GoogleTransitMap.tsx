@@ -45,6 +45,7 @@ export interface GoogleTransitMapProps {
   campuses?: Campus[];
   primaryCampus?: Campus | null;
   routeCoordinates?: [number, number][];
+  walkingCoordinates?: [number, number][];
   activeStopIndex?: number;
   shortestPathStopIds?: string[];
   selectedStopId?: string;
@@ -230,6 +231,7 @@ export default function GoogleTransitMap({
   campuses = [],
   primaryCampus,
   routeCoordinates = [],
+  walkingCoordinates = [],
   activeStopIndex = 0,
   selectedStopId,
   isExpressDirect,
@@ -256,6 +258,7 @@ export default function GoogleTransitMap({
   const traveledPolylineRef = useRef<google.maps.Polyline | null>(null);
   const upcomingPolylineRef = useRef<google.maps.Polyline | null>(null);
   const upcomingGlowPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const walkingPolylineRef = useRef<google.maps.Polyline | null>(null);
 
   // Native Hardware-Accelerated Markers
   const stopMarkersRef = useRef<google.maps.Marker[]>([]);
@@ -419,6 +422,7 @@ export default function GoogleTransitMap({
       traveledPolylineRef.current?.setMap(null);
       upcomingPolylineRef.current?.setMap(null);
       upcomingGlowPolylineRef.current?.setMap(null);
+      walkingPolylineRef.current?.setMap(null);
       busMarkerRef.current?.setMap(null);
       stopMarkersRef.current.forEach((m) => m.setMap(null));
       stopMarkersRef.current = [];
@@ -438,6 +442,37 @@ export default function GoogleTransitMap({
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [mapLoaded]);
+
+  // ── 3a. First-Mile Pedestrian Walking Path Layer ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    if (walkingPolylineRef.current) {
+      walkingPolylineRef.current.setMap(null);
+      walkingPolylineRef.current = null;
+    }
+    if (walkingCoordinates && walkingCoordinates.length >= 2) {
+      const path = walkingCoordinates.map(([lat, lng]) => ({ lat, lng }));
+      const lineSymbol = {
+        path: "M 0,-1 0,1",
+        strokeOpacity: 1,
+        scale: 3,
+        strokeColor: "#10B981",
+      };
+      walkingPolylineRef.current = new google.maps.Polyline({
+        path,
+        strokeOpacity: 0,
+        icons: [
+          {
+            icon: lineSymbol,
+            offset: "0",
+            repeat: "14px",
+          },
+        ],
+        map: mapRef.current,
+        zIndex: 60,
+      });
+    }
+  }, [walkingCoordinates, mapLoaded]);
 
   // ── 3b. Slices Google Maps authoritative overview_path into Traveled vs To Travel (Upcoming) ──
   const updateTraveledAndUpcoming = useCallback(

@@ -33,8 +33,12 @@ import {
   Building2,
   Sparkles,
   Volume2,
+  UserCheck,
+  PhoneCall,
+  Footprints,
 } from "lucide-react";
 import type { Bus, Route, Stop, Trip, Staff, Student, Booking, Campus, LiveBusLocation } from "@/lib/types";
+import { ContactCrewModal } from "@/components/portal/ContactCrewModal";
 
 // Dynamic import for Leaflet GIS Map with no SSR
 const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
@@ -107,6 +111,9 @@ export default function FullScreenLiveRadarView({
   const [mapFocusTarget, setMapFocusTarget] = useState<"BUS" | "MY_STOP" | "CORRIDOR">("BUS");
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null);
   const [isSOSOpen, setIsSOSOpen] = useState(false);
+  const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
+  const [manualBoardedState, setManualBoardedState] = useState<boolean | null>(null);
+  const [userLiveCoords, setUserLiveCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [tileTheme, setTileTheme] = useState<"GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK">("GOOGLE_STREETS");
   const [routeMetrics, setRouteMetrics] = useState<{
     totalDistanceKm: number;
@@ -116,6 +123,24 @@ export default function FullScreenLiveRadarView({
     isDegradedFallback: false;
     legs: { distanceKm: number; durationMins: number; distanceText: string; durationText: string }[];
   } | null>(null);
+
+  // Track live GPS of commuter device with watchPosition
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLiveCoords({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
 
   const cycleTileTheme = () => {
     setTileTheme((prev) => {
@@ -260,6 +285,63 @@ export default function FullScreenLiveRadarView({
     }
     return null;
   }, [initialReservation, activeBooking, student, stops]);
+
+  // 4b. Resolve commuter's current coordinates (Live device GPS or verified student home location)
+  const resolvedUserCoords = useMemo(() => {
+    if (userLiveCoords) return userLiveCoords;
+    if (student?.homeLatitude && student?.homeLongitude) {
+      return { latitude: Number(student.homeLatitude), longitude: Number(student.homeLongitude) };
+    }
+    if (commuterStop) {
+      // Authentic residential street origin ~320m perpendicular to the pickup stop on the transit corridor
+      return {
+        latitude: commuterStop.latitude - 0.0026,
+        longitude: commuterStop.longitude - 0.0021,
+      };
+    }
+    return { latitude: 29.3724, longitude: 79.5274 };
+  }, [userLiveCoords, student, commuterStop]);
+
+  // 4c. Resolve Seat Attendance Completion Status
+  const isUserBoarded = useMemo(() => {
+    if (manualBoardedState !== null) return manualBoardedState;
+    if (activeBooking?.status === "BOARDED") return true;
+    if (initialReservation?.status === "BOARDED" || initialReservation?.attendance_status === "PRESENT" || initialReservation?.attendance_status === "BOARDED") return true;
+    if (student && (student as any).attendanceStatus === "BOARDED") return true;
+    return false;
+  }, [manualBoardedState, activeBooking, initialReservation, student]);
+
+  // 4d. First-Mile Pedestrian Walking Path (Active strictly BEFORE seat attendance is completed)
+  const walkingCoordinates: [number, number][] = useMemo(() => {
+    if (isUserBoarded || !commuterStop) return [];
+    return [
+      [resolvedUserCoords.latitude, resolvedUserCoords.longitude],
+      [commuterStop.latitude, commuterStop.longitude],
+    ];
+  }, [isUserBoarded, commuterStop, resolvedUserCoords]);
+
+  // 4e. First-Mile Pedestrian Walking Distance & Time Metrics
+  const walkingMetrics = useMemo(() => {
+    if (!commuterStop) return { distanceMeters: 0, durationMins: 0 };
+    const distKm = calculateHaversineDistanceKm(
+      resolvedUserCoords.latitude,
+      resolvedUserCoords.longitude,
+      commuterStop.latitude,
+      commuterStop.longitude
+    );
+    const distanceMeters = Math.round(distKm * 1000);
+    const durationMins = Math.max(1, Math.ceil(distanceMeters / 75)); // ~4.5 km/h walking pace
+    return { distanceMeters, durationMins };
+  }, [resolvedUserCoords, commuterStop]);
+
+  // 4f. Resolve Bus Conductor and Transport Desk for direct calls
+  const assignedConductor = useMemo(() => {
+    return staff.find((s) => s.role === "conductor") || null;
+  }, [staff]);
+
+  const transportManagerStaff = useMemo(() => {
+    return staff.find((s) => s.role === "transport_manager" || s.role === "transport_admin") || null;
+  }, [staff]);
 
   // 5. Build ordered sequence of multiple destinations (Source -> Intermediate Destinations -> Terminal)
   const orderedDestinations = useMemo(() => {
@@ -545,15 +627,25 @@ export default function FullScreenLiveRadarView({
             <button
               type="button"
               onClick={() => setIsNavCardMinimized(false)}
-              className="relative w-12 h-12 rounded-full bg-white dark:bg-black border-2 border-blue-600 dark:border-blue-500 shadow-2xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all cursor-pointer group"
+              className={`relative w-12 h-12 rounded-full bg-white dark:bg-black border-2 shadow-2xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all cursor-pointer group ${
+                isUserBoarded
+                  ? "border-blue-600 dark:border-blue-500"
+                  : "border-emerald-600 dark:border-emerald-500"
+              }`}
               title="Tap to expand navigation directions"
               aria-label="Expand navigation card"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md">
-                <Navigation className="w-4 h-4 transition-transform group-hover:rotate-12" />
+              <div className={`w-8 h-8 rounded-full text-white flex items-center justify-center shadow-md ${
+                isUserBoarded ? "bg-blue-600 dark:bg-blue-500" : "bg-emerald-600 dark:bg-emerald-500"
+              }`}>
+                {isUserBoarded ? (
+                  <BusFront className="w-4 h-4" />
+                ) : (
+                  <Navigation className="w-4 h-4 transition-transform group-hover:rotate-12" />
+                )}
               </div>
               <span className="absolute -top-1 -right-1.5 px-1.5 py-0.5 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[10px] font-mono font-black shadow-md border border-zinc-700 dark:border-zinc-300 leading-none">
-                ~{nextDestination?.etaMins || 2}m
+                {isUserBoarded ? `~${nextDestination?.etaMins || 2}m` : `~${walkingMetrics.durationMins}m`}
               </span>
             </button>
 
@@ -566,15 +658,19 @@ export default function FullScreenLiveRadarView({
             >
               <div className="flex flex-col text-left">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                    NEXT STOP
+                  <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${
+                    isUserBoarded ? "text-blue-600 dark:text-blue-400" : "text-emerald-600 dark:text-emerald-400"
+                  }`}>
+                    {isUserBoarded ? "ONBOARD" : "WALK TO STOP"}
                   </span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold font-mono">
-                    {nextDestination?.distMeters !== undefined && nextDestination.distMeters < 80 ? "Arriving" : `${nextDestination?.distKm || 0} km`}
+                    {isUserBoarded
+                      ? (nextDestination?.distMeters !== undefined && nextDestination.distMeters < 80 ? "Arriving" : `${nextDestination?.distKm || 0} km`)
+                      : `${walkingMetrics.distanceMeters} m`}
                   </span>
                 </div>
                 <span className="font-bold text-zinc-900 dark:text-white text-xs truncate max-w-[180px] sm:max-w-[280px]">
-                  {nextDestination?.name || "Route Stop"}
+                  {isUserBoarded ? (nextDestination?.name || "Route Stop") : (commuterStop?.name || "Pickup Stop")}
                 </span>
               </div>
               <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors ml-1 shrink-0">
@@ -583,50 +679,78 @@ export default function FullScreenLiveRadarView({
             </button>
           </div>
         ) : (
-          <div className="pointer-events-auto bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-2xl text-zinc-900 dark:text-white animate-in slide-in-from-top-4 duration-300">
+          <div className="pointer-events-auto bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-2xl text-zinc-900 dark:text-white animate-in slide-in-from-top-4 duration-300 space-y-3">
+            {/* Top Row: Icon, Title, and Minimize */}
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 shadow-md">
-                  <Navigation className="w-6 h-6" />
+                <div className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-md ${
+                  isUserBoarded ? "bg-blue-600 dark:bg-blue-500" : "bg-emerald-600 dark:bg-emerald-500"
+                }`}>
+                  {isUserBoarded ? <BusFront className="w-6 h-6" /> : <Navigation className="w-6 h-6" />}
                 </div>
+
                 <div className="space-y-0.5">
-                  <div className="text-[11px] font-mono uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                    <span>Next Destination</span>
-                    {nextDestination?.distMeters !== undefined && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-semibold">
-                        {nextDestination.distMeters < 80 ? "Arriving Now" : `${nextDestination.distKm} km away`}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-mono uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full ${
+                      isUserBoarded
+                        ? "bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                        : "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                    }`}>
+                      {isUserBoarded ? "✓ ONBOARD BUS • TRANSIT ACTIVE" : "🚶 FIRST-MILE WALKING • TO PICKUP POINT"}
+                    </span>
+                    {!isUserBoarded && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-mono font-semibold">
+                        {walkingMetrics.distanceMeters} m walk
                       </span>
                     )}
                   </div>
+
                   <h2 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight line-clamp-1">
-                    {nextDestination?.name || "Corridor Route Stop"}
+                    {isUserBoarded
+                      ? `${displayBusNumber} • Seat ${(activeBooking as any)?.seatCode || (activeBooking as any)?.seatNumber || initialReservation?.seat_number || "4A"}`
+                      : `Walk to ${commuterStop?.name || "Pickup Stop"}`}
                   </h2>
+
                   <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">{displayBusNumber}</span>
-                    <span>•</span>
-                    <span>{displayRouteName}</span>
-                    {liveLocation?.speedKmh !== undefined && (
+                    {isUserBoarded ? (
                       <>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                          Next: {nextDestination?.name || "Corridor Stop"}
+                        </span>
                         <span>•</span>
-                        <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{liveLocation.speedKmh} km/h</span>
+                        <span>Terminus: {terminalStop?.name || "Campus Terminal"}</span>
+                        {liveLocation?.speedKmh !== undefined && liveLocation.speedKmh > 0 && (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{liveLocation.speedKmh} km/h</span>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300">{displayBusNumber}</span>
+                        <span>•</span>
+                        <span>{displayRouteName}</span>
+                        <span>•</span>
+                        <span>Bus arriving in ~{commuterDestination?.etaMins || 5} min</span>
                       </>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Time to Next Destination + Circular Minimize Toggle */}
+              {/* ETA / Walking time + Circular Minimize Toggle */}
               <div className="flex items-center gap-2.5 shrink-0">
                 <div className="text-right">
                   <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight font-mono">
-                    ~{nextDestination?.etaMins || 2} <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-sans">min</span>
+                    ~{isUserBoarded ? (nextDestination?.etaMins || 2) : walkingMetrics.durationMins}{" "}
+                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-sans">min</span>
                   </div>
                   <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                    Est. Arrival
+                    {isUserBoarded ? "Next Stop ETA" : "Est. Walk Time"}
                   </div>
                 </div>
 
-                {/* Circular Minimize Toggle Button */}
                 <button
                   type="button"
                   onClick={() => setIsNavCardMinimized(true)}
@@ -639,18 +763,49 @@ export default function FullScreenLiveRadarView({
               </div>
             </div>
 
-            {/* Commuter Destination Callout if different from next stop */}
-            {commuterDestination && commuterDestination.id !== nextDestination?.id && (
-              <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300 font-medium truncate">
-                  <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span className="truncate">Your Stop: <strong className="text-zinc-900 dark:text-white font-bold">{commuterDestination.name}</strong></span>
-                </div>
-                <div className="font-mono text-xs text-zinc-800 dark:text-zinc-200 font-bold ml-2">
-                  ~{commuterDestination.etaMins} mins ({commuterDestination.distKm} km)
-                </div>
+            {/* Informational Guidance Line */}
+            <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <p className="text-zinc-600 dark:text-zinc-300 text-xs">
+                {isUserBoarded
+                  ? `Bus travels along the main road corridor to Campus Terminal. Next scheduled stop is ${nextDestination?.name || "ahead"}.`
+                  : `Heavy fleet buses travel on the main transit corridor. Follow the emerald pedestrian path from your location to the stop.`}
+              </p>
+
+              {/* Tactical Action Buttons: Seat Attendance Toggle & Contact Crew */}
+              <div className="flex items-center gap-2 shrink-0">
+                {isUserBoarded ? (
+                  <button
+                    type="button"
+                    onClick={() => setManualBoardedState(false)}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                    title="Reset to walking view (Demo mode)"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Onboard (Demo Reset)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setManualBoardedState(true)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-md"
+                    title="Mark attendance as complete (Simulate boarding)"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Mark Boarded (Simulate)</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsContactCrewOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-black dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-sm border border-zinc-700"
+                  title="Contact Bus Conductor or Transport Manager"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Call Crew / Desk</span>
+                </button>
               </div>
-            )}
+            </div>
           </div>
         )}
       </header>
@@ -677,6 +832,7 @@ export default function FullScreenLiveRadarView({
           tripStatus="IN_PROGRESS"
           stops={orderedDestinations}
           campuses={campuses}
+          walkingCoordinates={isUserBoarded ? [] : walkingCoordinates}
           activeStopIndex={nextDestination?.index ?? 0}
           selectedStopId={commuterStop?.id || selectedDestinationId || nextDestination?.id}
           tileTheme={tileTheme}
@@ -897,6 +1053,18 @@ export default function FullScreenLiveRadarView({
           </div>
         </div>
       </div>
+
+      {/* ─── 4. COMMUTER-CREW CONTACT SHEET MODAL ─── */}
+      <ContactCrewModal
+        isOpen={isContactCrewOpen}
+        onClose={() => setIsContactCrewOpen(false)}
+        bus={assignedBus}
+        shift={null}
+        route={assignedRoute}
+        conductor={assignedConductor}
+        transportManager={transportManagerStaff}
+        stopName={commuterStop?.name}
+      />
     </div>
   );
 }

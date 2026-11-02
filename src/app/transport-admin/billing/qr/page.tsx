@@ -1,10 +1,11 @@
-import { getStaffServerData } from "@/lib/transport-admin-data";
-import StaffPaymentQRView from "@/components/transport-admin/StaffPaymentQRView";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function StaffBillingQRPage() {
-  const data = await getStaffServerData("/transport-admin/billing/qr");
-
-  return <StaffPaymentQRView initialUser={data.session} />;
+/**
+ * Legacy UPI QR upload route — deprecated in favor of Razorpay automated payment gateway.
+ * Automatically redirects to the Payment Approvals & Reconciliation desk.
+ */
+export default function StaffBillingQRPage() {
+  redirect("/transport-admin/billing/approvals");
 }

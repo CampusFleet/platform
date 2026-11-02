@@ -40,9 +40,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       title: "Bus Fees",
       items: [
         { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
-        { href: "/transport-admin/billing/approvals", label: "Approve Payments", shortLabel: "Approvals", icon: ShieldCheck },
-        { href: "/transport-admin/billing", label: "Payment History", shortLabel: "History", icon: CreditCard },
-        { href: "/transport-admin/billing/qr", label: "UPI QR Code", shortLabel: "UPI QR", icon: QrCode },
+        { href: "/transport-admin/billing/approvals", label: "Payment Approvals & Reconciliation", shortLabel: "Approvals", icon: ShieldCheck },
+        { href: "/transport-admin/billing", label: "Fee Ledger & History", shortLabel: "Ledger", icon: CreditCard },
       ]
     },
     academics: {

@@ -57,14 +57,14 @@ const staffModules: HubModule[] = [
     href: "/transport-admin/trips"
   },
   {
-    title: "Bus Fees",
-    description: "Approve student payment receipts, view payment history, and manage UPI QR.",
+    title: "Bus Fees & Reconciliation",
+    description: "Reconcile Razorpay automated payments, verify student fee clearances, and manage the transport pass ledger.",
     icon: CreditCard,
     href: "/transport-admin/billing/approvals"
   },
   {
     title: "Students & Passes",
-    description: "Search student photo directory, view daily bookings, and manage student transport.",
+    description: "Search student photo directory, view bus seat reservations, and manage student transport passes.",
     icon: GraduationCap,
     href: "/transport-admin/academics/students"
   },

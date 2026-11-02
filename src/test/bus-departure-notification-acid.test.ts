@@ -24,6 +24,7 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
     bus_departure_alerts: any[];
     audit_logs: any[];
     bookings: any[];
+    bus_reservations: any[];
     notifications: any[];
     trips: any[];
     buses: any[];

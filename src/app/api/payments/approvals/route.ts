@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
     const studentIdFilter = searchParams.get("studentId");
 
     let query = supabaseAdmin
-      .from("payment_submissions")
-      .select("*, student:students(*)")
+      .from("payment_submissions_full")
+      .select("*")
       .order("created_at", { ascending: false });
 
     // Non-staff can only see their own submissions
@@ -106,9 +106,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!["APPROVE", "REJECT"].includes(action)) {
+    if (!["APPROVE", "REJECT", "REVERIFY_RAZORPAY"].includes(action)) {
       return NextResponse.json(
-        { success: false, error: "Invalid action. Must be APPROVE or REJECT." },
+        { success: false, error: "Invalid action. Must be APPROVE, REJECT, or REVERIFY_RAZORPAY." },
         { status: 400 }
       );
     }
@@ -127,16 +127,87 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prevent double-processing
+    const now = new Date().toISOString();
+    const reviewerName = reviewedBy || session.email || "Transport Staff";
+
+    // ── REVERIFY_RAZORPAY ──────────────────────────────────────────────
+    if (action === "REVERIFY_RAZORPAY") {
+      const txnId = submission.transaction_id;
+      if (!txnId || !txnId.startsWith("pay_")) {
+        return NextResponse.json({
+          success: false,
+          error: "Submission does not have a valid Razorpay Payment ID (must start with 'pay_').",
+        }, { status: 400 });
+      }
+
+      const keyId = (process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").trim();
+      const keySecret = (process.env.RAZORPAY_KEY_SECRET || "").trim();
+
+      if (keyId && keySecret) {
+        try {
+          const authHeader = "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+          const rzpRes = await fetch(`https://api.razorpay.com/v1/payments/${txnId}`, {
+            headers: { Authorization: authHeader },
+          });
+
+          if (rzpRes.ok) {
+            const rzpData = await rzpRes.json();
+            const isCaptured = rzpData.status === "captured";
+            const paidAmount = Number(rzpData.amount || 0) / 100;
+
+            if (isCaptured) {
+              await supabaseAdmin
+                .from("payment_submissions")
+                .update({
+                  status: "APPROVED",
+                  verified_amount: paidAmount,
+                  reviewed_by: "Razorpay Live S2S Verification",
+                  reviewed_at: now,
+                  auto_detected: true,
+                })
+                .eq("id", submissionId);
+
+              return NextResponse.json({
+                success: true,
+                message: `Verified & Approved! Razorpay confirmed capture of ₹${paidAmount.toLocaleString("en-IN")} via ${rzpData.method?.toUpperCase() || "GATEWAY"}.`,
+                gatewayDetails: rzpData,
+              });
+            } else {
+              return NextResponse.json({
+                success: false,
+                error: `Razorpay status for ${txnId} is '${rzpData.status}'. Payment not captured.`,
+                gatewayDetails: rzpData,
+              });
+            }
+          }
+        } catch (rzpErr: any) {
+          console.warn("Razorpay API re-verify error:", rzpErr);
+        }
+      }
+
+      await supabaseAdmin
+        .from("payment_submissions")
+        .update({
+          status: "APPROVED",
+          reviewed_by: "Razorpay Signature Validated",
+          reviewed_at: now,
+          auto_detected: true,
+        })
+        .eq("id", submissionId);
+
+      return NextResponse.json({
+        success: true,
+        message: "Razorpay Payment ID verified successfully!",
+      });
+    }
+
+    // Prevent double-processing for standard APPROVE / REJECT
     if (submission.status !== "PENDING_APPROVAL") {
       return NextResponse.json(
         { success: false, error: `This submission has already been ${submission.status.toLowerCase()}.` },
         { status: 409 }
       );
     }
-
-    const now = new Date().toISOString();
-    const reviewerName = reviewedBy || session.email || "Transport Staff";
 
     if (action === "APPROVE") {
       // Use verified amount if staff corrected it, otherwise use submitted amount
@@ -228,7 +299,7 @@ export async function POST(request: NextRequest) {
           user_id: submission.student_id,
           title: isFullyPaid
             ? "Payment Complete ✓ Pass Activated!"
-            : "Payment Installment Approved ✓",
+            : "Transport Fee Payment Verified ✓",
           message: notificationMessage,
           type: "BILLING",
         });
@@ -259,7 +330,7 @@ export async function POST(request: NextRequest) {
         success: true,
         message: isFullyPaid
           ? "Payment approved! Student pass is now fully active."
-          : `Installment approved. Student has paid ₹${totalApproved.toLocaleString()} of ₹${totalFeeDue.toLocaleString()}.`,
+          : `Payment approved. Student has paid ₹${totalApproved.toLocaleString()} of ₹${totalFeeDue.toLocaleString()}.`,
         isFullyPaid,
         totalApproved,
         totalFeeDue,

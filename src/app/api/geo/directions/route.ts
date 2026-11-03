@@ -121,10 +121,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const referer =
+    let referer =
       req.headers.get("referer") ||
       req.headers.get("origin") ||
       "https://campusfleet.vercel.app/";
+
+    // Ensure referer conforms to Google Cloud Console HTTP Referer whitelist (*campusfleet.vercel.app*)
+    if (!referer.includes("campusfleet.vercel.app")) {
+      referer = "https://campusfleet.vercel.app/";
+    }
 
     // Google Routes API limits intermediate stops to 25
     const maxIntermediates = 25;

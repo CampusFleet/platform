@@ -6,6 +6,7 @@ import { AllocateBusModal } from './AllocateBusModal';
 import TransitStudioMap from "@/components/maps/TransitStudioMap";
 import Link from "next/link";
 import React, { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { store } from "@/lib/store";
 import dynamic from "next/dynamic";
 import { Route, Stop, Bus, Campus, Student } from "@/lib/types";
@@ -71,14 +72,25 @@ import { useRoutesContext } from "@/components/transport-admin/routes/RoutesCont
 export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "create" }) {
   const { routes, stops, buses, trips, campuses, students = [], restZones = [], selectedRouteId, setSelectedRouteId, showToast } = useRoutesContext();
 
-  // Studio Mode vs. Corridors Grid Directory Mode
-  const [viewMode, setViewMode] = useState<"STUDIO" | "DIRECTORY">("STUDIO");
+  const searchParams = useSearchParams();
+  const queryRouteId = searchParams?.get("routeId") || searchParams?.get("corridor") || "";
 
   // Selected Active Campus for Transit Studio (Fixed Anchor 1) sourced directly from database
   const [selectedCampusId, setSelectedCampusId] = useState<string>(() => {
     const primary = (campuses || []).find(c => c.isPrimary);
     return primary?.id || campuses?.[0]?.id || "";
   });
+
+  // Sync route selection and its campus from URL query param (?routeId=...)
+  useEffect(() => {
+    if (queryRouteId && queryRouteId !== selectedRouteId) {
+      setSelectedRouteId(queryRouteId);
+      const targetRoute = routes.find(r => r.id === queryRouteId);
+      if (targetRoute && (targetRoute.campusId || targetRoute.originCampusId)) {
+        setSelectedCampusId(targetRoute.campusId || targetRoute.originCampusId!);
+      }
+    }
+  }, [queryRouteId, routes]);
 
   // Keep selectedCampusId in sync with database campuses table
   useEffect(() => {
@@ -876,46 +888,25 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
 
   return (
     <div className="space-y-6 animate-in fade-in pb-12">
-      {/* Main Tabs */}
+      {/* Main Studio Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-800 pb-3">
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <button
-            onClick={() => setViewMode("STUDIO")}
-            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
-              viewMode === "STUDIO"
-                ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700"
-            }`}
-          >
+          <div className="px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 bg-blue-600 text-white shadow-lg shadow-blue-600/25">
             <MapIcon className="w-4 h-4" />
-            <span>Transit Studio (GIS Map)</span>
-          </button>
+            <span>Transit Studio Google Map</span>
+          </div>
 
           <button
-            onClick={() => setViewMode("DIRECTORY")}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-              viewMode === "DIRECTORY"
-                ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700"
+            onClick={handleToggleEmergencyOverride}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+              isOverrideActive
+                ? "bg-red-600 text-white animate-pulse"
+                : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
             }`}
           >
-            <LayoutGrid className="w-4 h-4" />
-            <span>Corridors Directory ({routes.length})</span>
+            <ShieldAlert className="w-3.5 h-3.5" />
+            {isOverrideActive ? "Override Active" : "Emergency Override"}
           </button>
-
-          {true && (
-            <button
-              onClick={handleToggleEmergencyOverride}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                isOverrideActive
-                  ? "bg-red-600 text-white animate-pulse"
-                  : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              {isOverrideActive ? "Override Active" : "Emergency Override"}
-            </button>
-          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -970,7 +961,6 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
                 key={c.id}
                 onClick={() => {
                   setSelectedCampusId(c.id);
-                  setViewMode("STUDIO");
                 }}
                 className={`group p-5 rounded-3xl border transition-all duration-200 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                   isSelected
@@ -1086,115 +1076,43 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
           builderOrderedStopIds={builderOrderedStopIds}
           builderMetrics={builderMetrics}
         />
-      ) : viewMode === "STUDIO" ? (
-        selectedCampus ? (
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <h3 className="text-sm font-black text-gray-900 dark:text-white">
-                  Transit Studio Google Map — {selectedCampus.name}
-                </h3>
-              </div>
-              <p className="text-[11px] text-gray-500 font-mono">
-                Road-snapped corridors with student demand walkability layer &amp; fare zone assignment
-              </p>
+      ) : selectedCampus ? (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white">
+                Transit Studio Google Map — {selectedCampus.name}
+              </h3>
             </div>
-
-            <TransitStudioMap
-              campus={selectedCampus}
-              campuses={campuses}
-              stops={stops}
-              students={students}
-              availableRestZones={restZones}
-              onSelectCampus={(c) => setSelectedCampusId(c.id)}
-              onSaveCorridor={handleSaveCorridorFromStudio}
-            />
-          </div>
-        ) : (
-          <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800 space-y-3">
-            <Building2 className="w-10 h-10 text-gray-300 mx-auto" />
-            <h3 className="font-bold text-gray-900 dark:text-white">No Campuses Found in Database</h3>
-            <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Please register or wait for campuses to sync from the PostgreSQL database table.
+            <p className="text-[11px] text-gray-500 font-mono">
+              Road-snapped corridors with student demand walkability layer &amp; fare zone assignment
             </p>
           </div>
-        )
+
+          <TransitStudioMap
+            campus={selectedCampus}
+            campuses={campuses}
+            routes={routes}
+            selectedRouteId={selectedRouteId}
+            onSelectRoute={(id) => setSelectedRouteId(id || "")}
+            stops={stops}
+            students={students}
+            availableRestZones={restZones}
+            onSelectCampus={(c) => setSelectedCampusId(c.id)}
+            onSaveCorridor={handleSaveCorridorFromStudio}
+          />
+        </div>
       ) : (
-        <div className="space-y-6 pt-2">
-          {routes.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {routes.map(r => (
-                <Link
-                  href={`/transport-admin/routes/corridors/${r.id}`}
-                  key={r.id}
-                  className="group"
-                >
-                  <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 relative overflow-hidden flex flex-col h-full hover:border-blue-300 dark:hover:border-blue-700/50">
-
-                    {/* Decorative Top Gradient Line based on Route Color */}
-                    <div
-                      className="absolute top-0 left-0 right-0 h-1.5 w-full opacity-80 group-hover:opacity-100 transition-opacity"
-                      style={{ backgroundColor: r.color }}
-                    />
-
-                    {/* Header */}
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <span className="font-mono text-[10px] uppercase font-bold text-gray-400 block mb-1">
-                          {r.code} • {r.direction === "HOME_TO_CAMPUS" ? "Inbound" : "Outbound"}
-                        </span>
-                        <h3 className="font-black text-gray-900 dark:text-white text-lg leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                          {r.name}
-                        </h3>
-                      </div>
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm shrink-0"
-                        style={{ color: r.color }}
-                      >
-                        <RouteIcon className="w-4 h-4" />
-                      </div>
-                    </div>
-
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 gap-3 mb-6 mt-auto">
-                      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-3 border border-gray-100 dark:border-gray-800">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Distance</span>
-                        <span className="font-black text-gray-900 dark:text-white text-sm">{r.totalDistanceKm} <span className="text-gray-400 font-normal">km</span></span>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-3 border border-gray-100 dark:border-gray-800">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase block mb-0.5">Duration</span>
-                        <span className="font-black text-gray-900 dark:text-white text-sm">~{r.estimatedDurationMins || Math.round(r.totalDistanceKm * 2.8)} <span className="text-gray-400 font-normal">min</span></span>
-                      </div>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-800 mt-auto">
-                      <div className="flex items-center gap-1.5">
-                        <span className="flex h-5 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/30 px-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 font-mono border border-blue-100 dark:border-blue-800/50">
-                          {r.stops.length} Stops
-                        </span>
-                      </div>
-                      <div className="text-[11px] font-bold text-blue-600 flex items-center gap-1 group-hover:gap-2 transition-all">
-                        View Map & Flowchart <ArrowRight className="w-3.5 h-3.5" />
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800 space-y-3">
-              <RouteIcon className="w-10 h-10 text-gray-300 mx-auto" />
-              <h3 className="font-bold text-gray-900 dark:text-white">No Transit Corridors Defined</h3>
-              <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                Click the "Create Route" button in the header to start building your first transit network corridor.
-              </p>
-            </div>
-          )}
+        <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800 space-y-3">
+          <Building2 className="w-10 h-10 text-gray-300 mx-auto" />
+          <h3 className="font-bold text-gray-900 dark:text-white">No Campuses Found in Database</h3>
+          <p className="text-xs text-gray-500 max-w-sm mx-auto">
+            Please register or wait for campuses to sync from the PostgreSQL database table.
+          </p>
         </div>
       )}
 

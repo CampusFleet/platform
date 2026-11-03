@@ -623,41 +623,69 @@ export class TransitStudioMapController extends BaseMapController {
       stopover: true,
     }));
 
+    const coordsParam = points.map(p => `${p.lat},${p.lng}`).join(";");
+
+    // 1. Primary: High-precision road snapper using official Google Routes API via /api/geo/directions
     try {
-      this.directionsService.route(
-        {
-          origin: new this.googleMaps.maps.LatLng(origin.lat, origin.lng),
-          destination: new this.googleMaps.maps.LatLng(destination.lat, destination.lng),
-          waypoints: waypoints.slice(0, 23), // Google Directions API allows up to 25 total waypoints
-          travelMode: this.googleMaps.maps.TravelMode.DRIVING,
-        },
-        (result: any, status: any) => {
-          if (status === "OK" && result?.routes?.[0]?.overview_path) {
-            this.renderOverviewPath(result.routes[0].overview_path);
-
-            // Compute total road distance & duration
-            let totalMeters = 0;
-            let totalSecs = 0;
-            result.routes[0].legs?.forEach((leg: any) => {
-              totalMeters += leg.distance?.value || 0;
-              totalSecs += leg.duration?.value || 0;
-            });
-
-            const distanceKm = parseFloat((totalMeters / 1000).toFixed(1));
-            const durationMins = Math.round(totalSecs / 60) + (this.studioStops.length * 2);
-
-            if (this.config.onRouteMetricsCalculated) {
-              this.config.onRouteMetricsCalculated({ distanceKm, durationMins });
-            }
-          } else {
-            // Fallback straight geodesic polyline
-            this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
+      const res = await fetch(`/api/geo/directions?mode=drive&coords=${encodeURIComponent(coordsParam)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.coordinates) && data.coordinates.length >= 2 && data.provider !== "fallback_waypoints") {
+          const roadLatLngs = data.coordinates.map((c: [number, number]) => new this.googleMaps.maps.LatLng(c[0], c[1]));
+          this.renderOverviewPath(roadLatLngs);
+          if (this.config.onRouteMetricsCalculated && data.distanceMeters) {
+            const distanceKm = parseFloat((data.distanceMeters / 1000).toFixed(1));
+            const durationMins = Math.round((data.durationSeconds || 1800) / 60) + (this.studioStops.length * 2);
+            this.config.onRouteMetricsCalculated({ distanceKm, durationMins });
           }
+          return;
         }
-      );
-    } catch {
-      this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
+      }
+    } catch (err) {
+      console.warn("[TransitStudioMapController] Server road geometry error:", err);
     }
+
+    // 2. Secondary: Client-side DirectionsService fallback
+    if (this.directionsService) {
+      try {
+        this.directionsService.route(
+          {
+            origin: new this.googleMaps.maps.LatLng(origin.lat, origin.lng),
+            destination: new this.googleMaps.maps.LatLng(destination.lat, destination.lng),
+            waypoints: waypoints.slice(0, 23), // Google Directions API allows up to 25 total waypoints
+            travelMode: this.googleMaps.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: any) => {
+            if (status === "OK" && result?.routes?.[0]?.overview_path) {
+              this.renderOverviewPath(result.routes[0].overview_path);
+
+              // Compute total road distance & duration
+              let totalMeters = 0;
+              let totalSecs = 0;
+              result.routes[0].legs?.forEach((leg: any) => {
+                totalMeters += leg.distance?.value || 0;
+                totalSecs += leg.duration?.value || 0;
+              });
+
+              const distanceKm = parseFloat((totalMeters / 1000).toFixed(1));
+              const durationMins = Math.round(totalSecs / 60) + (this.studioStops.length * 2);
+
+              if (this.config.onRouteMetricsCalculated) {
+                this.config.onRouteMetricsCalculated({ distanceKm, durationMins });
+              }
+            } else {
+              this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
+            }
+          }
+        );
+        return;
+      } catch (err) {
+        console.warn("[TransitStudioMapController] Client directions error:", err);
+      }
+    }
+
+    // 3. Last-resort fallback to points
+    this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
   }
 
   private renderOverviewPath(path: any[]): void {

@@ -196,35 +196,10 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
     );
   }
 
-  // Open Edit Mode pre-populated with activeRoute
+  // Open Edit Mode pre-populated with activeRoute in Transit Studio Map
   const handleOpenEditRoute = () => {
-    const rawStops = activeRoute.stops || [];
-    const startId = rawStops[0]?.stopId || (rawStops[0] as any)?.stop_id || "";
-    const endId = rawStops.length > 1 ? (rawStops[rawStops.length - 1]?.stopId || (rawStops[rawStops.length - 1] as any)?.stop_id) : "";
-    const intermediates = rawStops.slice(1, -1).map((s: any) => s.stopId || s.stop_id);
-
-    const firstStopObj = rawStops[0]?.stop;
-    const lastStopObj = rawStops[rawStops.length - 1]?.stop;
-
-    const resolvedOriginCampusId = activeRoute.originCampusId || campuses.find(c => c.id === startId || firstStopObj?.campusId === c.id || firstStopObj?.code === c.code)?.id || (activeRoute.direction === "CAMPUS_TO_HOME" || activeRoute.direction === "CAMPUS_TO_CAMPUS" ? activeRoute.campusId : undefined);
-    const resolvedDestCampusId = activeRoute.destinationCampusId || campuses.find(c => c.id === endId || lastStopObj?.campusId === c.id || lastStopObj?.code === c.code)?.id || (activeRoute.direction === "HOME_TO_CAMPUS" || activeRoute.direction === "CAMPUS_TO_CAMPUS" ? activeRoute.campusId : undefined);
-
-    setRouteBuilderData({
-      name: activeRoute.name || "",
-      code: activeRoute.code || "",
-      description: activeRoute.description || "",
-      direction: activeRoute.direction || "HOME_TO_CAMPUS",
-      color: activeRoute.color || "#2563EB",
-      startStopId: (activeRoute.direction === "CAMPUS_TO_HOME" || activeRoute.direction === "CAMPUS_TO_CAMPUS") ? (resolvedOriginCampusId || startId) : startId,
-      endStopId: (activeRoute.direction === "HOME_TO_CAMPUS" || activeRoute.direction === "CAMPUS_TO_CAMPUS") ? (resolvedDestCampusId || endId) : endId,
-      originCampusId: resolvedOriginCampusId,
-      destinationCampusId: resolvedDestCampusId,
-      intermediateStopIds: intermediates,
-    });
-    setInsertingAtGapIndex(null);
-    setStopPickerSearch("");
-    setActivePickerTarget(null);
-    setIsRouteBuilderOpen(true);
+    if (!activeRoute) return;
+    router.push(`/transport-admin/routes?routeId=${encodeURIComponent(activeRoute.id)}`);
   };
 
   // Route Builder Intermediate Stop Operations

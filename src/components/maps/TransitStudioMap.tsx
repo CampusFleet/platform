@@ -8,16 +8,20 @@ import {
   StudioRestZoneAnchor,
   StudioStop,
 } from "@/lib/maps/TransitStudioMapController";
-import { Campus, Stop, Student } from "@/lib/types";
+import { Campus, Stop, Student, Route } from "@/lib/types";
 import {
   MapPin, Plus, Trash2, ArrowUp, ArrowDown, Users, Check, X,
   Maximize2, Minimize2, Building2, Truck, Navigation, Sliders,
-  RotateCcw, Sparkles, Layers, ShieldCheck, HelpCircle, Eye, EyeOff
+  RotateCcw, Sparkles, Layers, ShieldCheck, HelpCircle, Eye, EyeOff,
+  Route as RouteIcon, ChevronDown
 } from "lucide-react";
 
 export interface TransitStudioMapProps {
   campus: Campus;
   campuses: Campus[];
+  routes?: Route[];
+  selectedRouteId?: string | null;
+  onSelectRoute?: (routeId: string | null) => void;
   onSelectCampus?: (campus: Campus) => void;
   stops: Stop[];
   students: Student[];
@@ -116,6 +120,9 @@ export function deriveRestZonesFromDatabase(
 export default function TransitStudioMap({
   campus,
   campuses = [],
+  routes = [],
+  selectedRouteId = null,
+  onSelectRoute,
   onSelectCampus,
   stops = [],
   students = [],
@@ -134,6 +141,9 @@ export default function TransitStudioMap({
   const [studioMode, setStudioMode] = useState<"ADD_STOP" | "INSPECT" | "VIEW">("VIEW");
   const [isDemandVisible, setIsDemandVisible] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Active Route ID selected from the dropdown
+  const [activeRouteId, setActiveRouteId] = useState<string | null>(selectedRouteId || null);
 
   // Corridor Attributes
   const [name, setName] = useState(routeName);
@@ -504,6 +514,122 @@ export default function TransitStudioMap({
     setStudioStops(prev => prev.map(s => (s.id === updated.id ? updated : s)));
   };
 
+  // Load an existing corridor route from database into the studio map
+  const loadRouteIntoStudio = (routeId: string) => {
+    const foundRoute = routes.find(r => r.id === routeId);
+    if (!foundRoute) return;
+
+    setName(foundRoute.name);
+    setCode(foundRoute.code);
+
+    // If route belongs to another campus, switch the campus hub
+    if (foundRoute.campusId || foundRoute.originCampusId) {
+      const targetCampusId = foundRoute.campusId || foundRoute.originCampusId;
+      const matchedCampus = campuses.find(c => c.id === targetCampusId);
+      if (matchedCampus && matchedCampus.id !== campus.id && onSelectCampus) {
+        onSelectCampus(matchedCampus);
+      }
+    }
+
+    if (foundRoute.stops && foundRoute.stops.length > 0) {
+      // Map stops to StudioStop format
+      const mapped = foundRoute.stops.map((rs: any, idx: number) => {
+        const stopObj = rs.stop || stops.find(s => s.id === rs.stopId) || {
+          id: rs.stopId,
+          name: `Stop ${idx + 1}`,
+          code: `ST-${idx + 1}`,
+          latitude: rs.latitude || 29.28,
+          longitude: rs.longitude || 79.50,
+          landmark: "Corridor Station",
+          zoneCode: "ZONE_A",
+        };
+        return {
+          id: stopObj.id,
+          name: stopObj.name,
+          code: stopObj.code,
+          latitude: stopObj.latitude,
+          longitude: stopObj.longitude,
+          landmark: stopObj.landmark || "Corridor Station",
+          zoneCode: stopObj.zoneCode || "ZONE_A",
+          dwellMinutes: 2,
+          order: idx + 1,
+        };
+      });
+
+      // Filter terminal/depot anchors if already in anchor positions
+      let intermediates = mapped;
+      if (intermediates.length > 1 && (
+        intermediates[0].id === campus.id ||
+        intermediates[0].name.toLowerCase().includes("terminal") ||
+        intermediates[0].name.toLowerCase().includes(campus.name.toLowerCase().slice(0, 4))
+      )) {
+        intermediates = intermediates.slice(1);
+      }
+
+      const lastCandidate = intermediates[intermediates.length - 1];
+      if (lastCandidate) {
+        const matchingDepot = depotList.find(d =>
+          d.id === lastCandidate.id ||
+          (Math.abs(d.latitude - lastCandidate.latitude) < 0.005 && Math.abs(d.longitude - lastCandidate.longitude) < 0.005)
+        );
+        if (matchingDepot) {
+          setSelectedRestZone(matchingDepot);
+          if (intermediates.length > 1) {
+            intermediates = intermediates.slice(0, -1);
+          }
+        }
+      }
+
+      const reordered = intermediates.map((s, i) => ({ ...s, order: i + 1 }));
+      setStudioStops(reordered);
+      setInspectedStop(reordered[0] || null);
+
+      if (controllerRef.current) {
+        controllerRef.current.setStops(reordered);
+        controllerRef.current.fitRouteBounds();
+      }
+    }
+  };
+
+  // Synchronize when external selectedRouteId prop changes
+  useEffect(() => {
+    if (selectedRouteId && selectedRouteId !== activeRouteId) {
+      setActiveRouteId(selectedRouteId);
+      loadRouteIntoStudio(selectedRouteId);
+    }
+  }, [selectedRouteId]);
+
+  // Route selector dropdown handler
+  const handleSelectRoute = (val: string) => {
+    if (val === "__NEW__") {
+      setActiveRouteId(null);
+      if (onSelectRoute) onSelectRoute(null);
+      setName(`New Corridor ${routes.length + 1}`);
+      setCode(`CR-${100 + routes.length + 1}`);
+      const draft = stops.slice(0, 2).map((s, idx) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        landmark: s.landmark,
+        zoneCode: s.zoneCode || "ZONE_A",
+        dwellMinutes: 2,
+        order: idx + 1,
+      }));
+      setStudioStops(draft);
+      setStudioMode("ADD_STOP");
+      if (controllerRef.current) {
+        controllerRef.current.setStops(draft);
+        controllerRef.current.fitRouteBounds();
+      }
+    } else {
+      setActiveRouteId(val);
+      if (onSelectRoute) onSelectRoute(val);
+      loadRouteIntoStudio(val);
+    }
+  };
+
   // Reverse Route
   const handleReverseRoute = () => {
     const reversed = [...studioStops].reverse().map((s, idx) => ({
@@ -704,8 +830,55 @@ export default function TransitStudioMap({
       {/* ── Main Map Canvas (Underneath) ── */}
       <div ref={containerRef} className="w-full h-full relative isolate" />
 
+      {/* ── Route Selector Dropdown & Pipeline Toggle Widget ── */}
+      <div className="absolute top-20 left-4 z-30 flex items-center gap-2 max-w-[calc(100vw-2rem)] flex-wrap pointer-events-auto">
+        <div className="bg-gray-900/95 backdrop-blur-md rounded-2xl border border-gray-700/80 shadow-2xl p-2 flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/40 shrink-0">
+            <RouteIcon className="w-4 h-4" />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-mono font-bold uppercase text-gray-400 tracking-wider">
+                Corridor Route
+              </span>
+              <span className="text-[9px] font-bold text-blue-400 font-mono">
+                ({routes.length} Available)
+              </span>
+            </div>
+            <select
+              value={activeRouteId || "__NEW__"}
+              onChange={(e) => handleSelectRoute(e.target.value)}
+              className="bg-transparent text-xs font-black text-white outline-none cursor-pointer max-w-[200px] sm:max-w-[270px] truncate"
+            >
+              <option value="__NEW__" className="bg-gray-900 text-blue-400 font-bold">
+                + [ Build New Corridor ]
+              </option>
+              {routes.map(r => (
+                <option key={r.id} value={r.id} className="bg-gray-900 text-white">
+                  {r.name} ({r.code}) {r.totalDistanceKm ? `• ${r.totalDistanceKm}km` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Stations Pipeline Drawer Toggle Button */}
+        <button
+          onClick={() => setIsSidebarOpen(prev => !prev)}
+          className={`px-3.5 py-2.5 backdrop-blur-md rounded-2xl border text-xs font-bold flex items-center gap-2 shadow-2xl transition-all ${
+            isSidebarOpen
+              ? "bg-blue-600 text-white border-blue-500 shadow-blue-600/30"
+              : "bg-gray-900/95 text-gray-300 hover:text-white border-gray-700/80 hover:bg-gray-800"
+          }`}
+          title={isSidebarOpen ? "Collapse Stations Pipeline Drawer" : "Show Stations Pipeline Drawer"}
+        >
+          <Navigation className="w-4 h-4 text-blue-400" />
+          <span>Stations Pipeline ({studioStops.length})</span>
+        </button>
+      </div>
+
       {/* ── Left Station Progression Flowchart Drawer ── */}
-      <div className={`absolute top-20 bottom-4 left-4 z-20 w-80 sm:w-96 bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${
+      <div className={`absolute top-36 bottom-4 left-4 z-20 w-80 sm:w-96 bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${
         isSidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+24px)]"
       }`}>
         {/* Drawer Header */}
@@ -861,16 +1034,6 @@ export default function TransitStudioMap({
         </div>
       </div>
 
-      {/* Button to reopen drawer if closed */}
-      {!isSidebarOpen && (
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="absolute top-20 left-4 z-20 px-3.5 py-2 bg-gray-900/90 hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-700/80 text-xs font-bold text-white flex items-center gap-2 shadow-xl"
-        >
-          <Navigation className="w-4 h-4 text-blue-400" />
-          <span>Show Stations Pipeline ({studioStops.length})</span>
-        </button>
-      )}
 
       {/* ── Floating Stop Inspector Card (When Stop is Clicked) ── */}
       {inspectedStop && (

@@ -293,6 +293,8 @@ export default function ClientPortalLayout({
       <main className={`flex-1 w-full mx-auto ${
         isRadarPage 
           ? "p-0 max-w-none h-[calc(100dvh-4rem)] relative overflow-hidden"
+          : isOnboardingPage
+          ? "p-0 sm:p-6 lg:p-8 max-w-5xl"
           : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6"
       }`}>
         {isAccessBlocked ? (

@@ -12,6 +12,9 @@ import {
   Footprints,
   Route as RouteIcon,
   Maximize2,
+  Minimize2,
+  Check,
+  X,
 } from "lucide-react";
 import { OnboardingPinController } from "@/lib/maps/OnboardingPinController";
 
@@ -38,7 +41,7 @@ export default function OnboardingPinMap({
   allStops = [],
   walkingDistanceMeters,
   walkingTimeMins,
-  height = "360px",
+  height = "430px",
   className = "",
   zoom = 15,
 }: OnboardingPinMapProps) {
@@ -47,6 +50,7 @@ export default function OnboardingPinMap({
 
   const [mapReady, setMapReady] = useState(false);
   const [isLocatingGps, setIsLocatingGps] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const onLocationChangeRef = useRef(onLocationChange);
   onLocationChangeRef.current = onLocationChange;
@@ -106,6 +110,34 @@ export default function OnboardingPinMap({
     controllerRef.current.setPickupStop(assignedStop, walkingDistanceMeters, walkingTimeMins);
   }, [assignedStop, walkingDistanceMeters, walkingTimeMins, mapReady]);
 
+  // Fullscreen toggle handler with instant Leaflet reflow
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => {
+      const next = !prev;
+      setTimeout(() => {
+        if (controllerRef.current) {
+          controllerRef.current.invalidateSize();
+          controllerRef.current.recenterOnHome();
+        }
+      }, 120);
+      return next;
+    });
+  }, []);
+
+  // Exit fullscreen on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+        setTimeout(() => {
+          controllerRef.current?.invalidateSize();
+        }, 120);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
+
   // Trigger Device GPS Locate
   const handleLocateMe = useCallback(async () => {
     if (!controllerRef.current || isLocatingGps) return;
@@ -133,15 +165,40 @@ export default function OnboardingPinMap({
 
   return (
     <div
-      className={`relative w-full rounded-2xl overflow-hidden border border-gray-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 shadow-inner select-none ${className}`}
-      style={{ height }}
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-[9999] w-screen h-screen bg-zinc-950 flex flex-col select-none animate-in fade-in duration-200"
+          : `relative w-full rounded-none sm:rounded-2xl overflow-hidden border-y sm:border border-gray-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 shadow-inner select-none ${className}`
+      }
+      style={{ height: isFullscreen ? "100dvh" : height }}
     >
       {/* Map DOM Element */}
       <div ref={containerRef} className="w-full h-full z-0" />
 
+      {/* Fullscreen Floating Header (Only in Fullscreen Mode) */}
+      {isFullscreen && (
+        <div className="absolute top-0 inset-x-0 z-20 bg-zinc-900/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2 text-white">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div>
+              <p className="text-xs font-bold leading-tight">Interactive Doorstep Pin Drop</p>
+              <p className="text-[10px] text-zinc-400">Tap anywhere on map or drag the pin to set doorstep</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Done</span>
+          </button>
+        </div>
+      )}
+
       {/* Floating UI Overlays */}
       {/* 1. Instruction Badge & Assigned Route Callout */}
-      <div className="absolute top-3 left-3 z-10 pointer-events-none flex flex-col gap-1.5 max-w-[70%] sm:max-w-md">
+      <div className={`absolute left-3 z-10 pointer-events-none flex flex-col gap-1.5 max-w-[calc(100%-80px)] sm:max-w-md ${isFullscreen ? "top-16" : "top-3"}`}>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 dark:bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold shadow-lg border border-white/10 w-fit">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           <span className="truncate">Drag pin or tap map to set doorstep</span>
@@ -155,24 +212,37 @@ export default function OnboardingPinMap({
         )}
       </div>
 
-      {/* 2. Map Control Actions (Recenter, Locate Me, Fit Walk, Zoom) */}
-      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5 shadow-md">
+      {/* 2. Map Control Actions (Recenter, Fullscreen, Locate Me, Zoom) */}
+      <div className={`absolute right-3 z-10 flex flex-col gap-1.5 shadow-md ${isFullscreen ? "top-16" : "top-3"}`}>
         <button
           type="button"
           onClick={handleRecenter}
           title="Recenter on Home Pin"
-          className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
         >
           <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
         </button>
 
         <button
           type="button"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit Fullscreen" : "Expand Fullscreen Map"}
+          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          )}
+        </button>
+
+        <button
+          type="button"
           onClick={handleFitWalkView}
           title="Fit Walking Path in View"
-          className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
         >
-          <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <Footprints className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
         </button>
 
         <button
@@ -180,7 +250,7 @@ export default function OnboardingPinMap({
           onClick={handleLocateMe}
           disabled={isLocatingGps}
           title="Locate Current Device"
-          className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
         >
           {isLocatingGps ? (
             <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
@@ -189,12 +259,12 @@ export default function OnboardingPinMap({
           )}
         </button>
 
-        <div className="flex flex-col bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden mt-1">
+        <div className="flex flex-col bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden mt-0.5">
           <button
             type="button"
             onClick={() => controllerRef.current?.zoomIn()}
             title="Zoom In"
-            className="w-8 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs border-b border-gray-200 dark:border-zinc-700 cursor-pointer"
+            className="w-9 h-8 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs border-b border-gray-200 dark:border-zinc-700 cursor-pointer"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -202,7 +272,7 @@ export default function OnboardingPinMap({
             type="button"
             onClick={() => controllerRef.current?.zoomOut()}
             title="Zoom Out"
-            className="w-8 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
+            className="w-9 h-8 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -233,6 +303,20 @@ export default function OnboardingPinMap({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Fullscreen Bottom Set Pin Button */}
+      {isFullscreen && (
+        <div className="absolute bottom-5 inset-x-4 z-20 flex justify-center pointer-events-none">
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="pointer-events-auto px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-2xl flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
+          >
+            <Check className="w-4 h-4" />
+            <span>Confirm Doorstep Pin</span>
+          </button>
         </div>
       )}
 

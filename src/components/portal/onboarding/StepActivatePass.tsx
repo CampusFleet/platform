@@ -22,7 +22,7 @@ export function StepActivatePass({
   onBack,
 }: StepActivatePassProps) {
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
+    <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl p-4 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
       <div className="flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-5">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">

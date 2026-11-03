@@ -71,8 +71,9 @@ export function StepHomeAndRoute({
   onContinue,
 }: StepHomeAndRouteProps) {
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
-      <div className="flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-5">
+    <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl shadow-sm space-y-4 sm:space-y-6 animate-in fade-in duration-200 overflow-hidden">
+      {/* Header with Title and Pin Icon */}
+      <div className="px-4 sm:px-8 pt-5 sm:pt-8 flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4 sm:pb-5">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             Home Location & Interactive Pin Drop
@@ -87,7 +88,7 @@ export function StepHomeAndRoute({
       </div>
 
       {/* Google Maps-Standard Address Search with Autocomplete & Fuzzy Fallback */}
-      <div className="space-y-3 relative">
+      <div className="px-4 sm:px-8 space-y-3 relative">
         <label className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center justify-between">
           <span>Search Home Address or Area</span>
           {isResolvingAddress && (
@@ -243,17 +244,18 @@ export function StepHomeAndRoute({
 
       {/* Interactive CampusFleet Map with Tactile Pin Drop (Zero Route Data Leak) */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+        <div className="px-4 sm:px-8 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <span className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-            <Crosshair className="w-3.5 h-3.5 text-emerald-600" />
-            Tap anywhere on map or drag pin to your exact building entrance
+            <Crosshair className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="truncate">Tap map or drag pin to your exact building entrance</span>
           </span>
-          <span className="font-mono text-[11px] bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
-            Pin Locked
+          <span className="font-mono text-[10px] sm:text-[11px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full shrink-0">
+            GPS Active
           </span>
         </div>
 
-        <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-zinc-800 shadow-sm relative z-0">
+        {/* Full-width Map Container on Mobile with Zero Margin Clipping */}
+        <div className="w-full rounded-none sm:rounded-2xl overflow-hidden border-y sm:border border-gray-200 dark:border-zinc-800 shadow-sm relative z-0">
           <OnboardingPinMap
             latitude={homeLat}
             longitude={homeLng}
@@ -263,14 +265,15 @@ export function StepHomeAndRoute({
             allStops={allStops}
             walkingDistanceMeters={walkingDistanceMeters}
             walkingTimeMins={walkingTimeMins}
-            height="340px"
+            height="430px"
             zoom={15}
           />
         </div>
       </div>
 
       {/* Automated Transit Match Summary Card */}
-      <div className="p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-4">
+      <div className="px-4 sm:px-8">
+        <div className="p-4 sm:p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -390,13 +393,14 @@ export function StepHomeAndRoute({
           )}
         </div>
       </div>
+    </div>
 
       {/* Navigation Buttons */}
-      <div className="pt-4 flex justify-end">
+      <div className="px-4 sm:px-8 pb-5 sm:pb-8 flex justify-end">
         <button
           type="button"
           onClick={onContinue}
-          className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full sm:w-auto px-8 py-3.5 sm:py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
         >
           <span>Continue to Profile & Photo</span>
           <ArrowRight className="w-4 h-4" />

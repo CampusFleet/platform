@@ -113,6 +113,15 @@ export class OnboardingPinController extends BaseMapController {
   }
 
   /**
+   * Reflows map dimensions when container or fullscreen mode changes
+   */
+  public invalidateSize(): void {
+    if (this.mapInstance && typeof this.mapInstance.invalidateSize === "function") {
+      this.mapInstance.invalidateSize();
+    }
+  }
+
+  /**
    * Sets the matched pickup stop and connects it to the home pin with a pedestrian walking line
    */
   public setPickupStop(stop?: Stop | null, distMeters?: number, walkMins?: number): void {

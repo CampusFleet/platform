@@ -52,10 +52,16 @@ export function detectCommuterZoneAndStop(
 
   if (isDehradun || isBhimtal) {
     const campusFilteredStops = stops.filter((s) => {
-      const sCampusId = String(s.campusId || "").toLowerCase();
+      const sCampusId = String((s as any).campusId || (s as any).campus_id || "").toLowerCase();
       if (sCampusId && (sCampusId === campusId || (isDehradun && sCampusId.includes("dehradun")) || (isBhimtal && sCampusId.includes("bhimtal")))) {
         return true;
       }
+      // Geographic corridor coordinate bounding
+      const isStopInBhimtalHaldwani = s.latitude < 29.8 && s.longitude > 79.0;
+      const isStopInDehradun = s.latitude > 30.0 && s.longitude < 78.5;
+      if (isBhimtal && isStopInBhimtalHaldwani) return true;
+      if (isDehradun && isStopInDehradun) return true;
+
       const sName = (s.name || "").toLowerCase();
       if (isDehradun && (sName.includes("dehradun") || sName.includes("clement") || sName.includes("bell road") || sName.includes("subhash nagar"))) return true;
       if (isBhimtal && (sName.includes("bhimtal") || sName.includes("haldwani") || sName.includes("nainital") || sName.includes("kathgodam") || sName.includes("mukhani") || sName.includes("lamachaur") || sName.includes("lalkuan") || sName.includes("tallital"))) return true;
@@ -67,13 +73,13 @@ export function detectCommuterZoneAndStop(
     }
 
     const campusFilteredRoutes = routes.filter((r) => {
-      const rCampusId = String(r.campusId || "").toLowerCase();
+      const rCampusId = String((r as any).campusId || (r as any).campus_id || "").toLowerCase();
       if (rCampusId && (rCampusId === campusId || (isDehradun && rCampusId.includes("dehradun")) || (isBhimtal && rCampusId.includes("bhimtal")))) {
         return true;
       }
       const rName = (r.name || "").toLowerCase();
       if (isDehradun && (rName.includes("dehradun") || rName.includes("geu") || rName.includes("clement"))) return true;
-      if (isBhimtal && (rName.includes("bhimtal") || rName.includes("haldwani") || rName.includes("lamachaur") || rName.includes("lalkuan") || rName.includes("kathgodam"))) return true;
+      if (isBhimtal && (rName.includes("bhimtal") || rName.includes("haldwani") || rName.includes("lamachaur") || rName.includes("lalkuan") || rName.includes("kathgodam") || rName.includes("jadge") || rName.includes("bhakda") || rName.includes("gaulapar"))) return true;
       return false;
     });
 

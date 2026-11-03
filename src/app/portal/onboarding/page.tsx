@@ -282,7 +282,7 @@ export default function StudentOnboardingPage() {
         setSemesterFee(result.semesterFee);
       }
       setAutoAssignedStopId(result.nearestStop.id);
-      setPrimaryStopId(prev => prev || result.nearestStop.id);
+      setPrimaryStopId(result.nearestStop.id);
       setWalkingDistanceMeters(result.walkingDistanceMeters);
       setWalkingTimeMins(result.walkingTimeMins);
       setIsOutOfServiceArea(Boolean(result.isOutOfServiceArea));
@@ -778,9 +778,35 @@ export default function StudentOnboardingPage() {
     }
   }, [dataLoaded, activeStudent, currentUser, academicData.classes, stops]);
 
+  // Initial smart auto-stop detection as soon as stops & routes are available
+  useEffect(() => {
+    if (stops.length > 0 && homeLat && homeLng && !autoAssignedStopId) {
+      runAutoStopAndZoneDetection(homeLat, homeLng);
+    }
+  }, [stops.length, homeLat, homeLng, autoAssignedStopId]);
+
   const assignedStop = useMemo(() => {
-    return stops.find(s => s.id === primaryStopId) || stops.find(s => s.id === autoAssignedStopId) || stops[0];
+    return (
+      stops.find(s => s.id === primaryStopId) ||
+      stops.find(s => s.id === autoAssignedStopId) ||
+      undefined
+    );
   }, [stops, primaryStopId, autoAssignedStopId]);
+
+  const assignedRoute = useMemo(() => {
+    if (assignedRouteId) {
+      const found = routes.find(r => r.id === assignedRouteId);
+      if (found) return found;
+    }
+    if (assignedStop) {
+      return (
+        routes.find(r =>
+          r.stops?.some((rs: any) => (rs.stopId || (rs as any).stop_id) === assignedStop.id)
+        ) || null
+      );
+    }
+    return null;
+  }, [routes, assignedRouteId, assignedStop]);
 
   // Regional Landmark Shortcuts for Zero-Friction 1-Tap Search
   const regionalLandmarks = useMemo(() => {
@@ -820,10 +846,15 @@ export default function StudentOnboardingPage() {
     const isBhimtal = campusName.includes("bhimtal") || campusName.includes("haldwani") || cId.includes("bhimtal");
 
     return stops.filter(s => {
-      const sCampusId = String(s.campusId || "").toLowerCase();
+      const sCampusId = String((s as any).campusId || (s as any).campus_id || "").toLowerCase();
       if (sCampusId && (sCampusId === cId || (isDehradun && sCampusId.includes("dehradun")) || (isBhimtal && sCampusId.includes("bhimtal")))) {
         return true;
       }
+      const isStopInBhimtalHaldwani = s.latitude < 29.8 && s.longitude > 79.0;
+      const isStopInDehradun = s.latitude > 30.0 && s.longitude < 78.5;
+      if (isBhimtal && isStopInBhimtalHaldwani) return true;
+      if (isDehradun && isStopInDehradun) return true;
+
       const sName = (s.name || "").toLowerCase();
       if (isDehradun && (sName.includes("dehradun") || sName.includes("clement") || sName.includes("bell road") || sName.includes("subhash nagar"))) return true;
       if (isBhimtal && (sName.includes("bhimtal") || sName.includes("haldwani") || sName.includes("nainital") || sName.includes("kathgodam") || sName.includes("mukhani") || sName.includes("lamachaur") || sName.includes("lalkuan") || sName.includes("tallital"))) return true;
@@ -898,6 +929,8 @@ export default function StudentOnboardingPage() {
             homeLng={homeLng}
             stopsForMap={stopsForMap}
             assignedStop={assignedStop}
+            assignedRoute={assignedRoute}
+            allStops={stops}
             primaryStopId={primaryStopId}
             selectedZoneCode={selectedZoneCode}
             assignedRouteName={assignedRouteName}

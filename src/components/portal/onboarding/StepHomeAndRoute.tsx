@@ -46,6 +46,8 @@ export function StepHomeAndRoute({
   homeLng,
   stopsForMap,
   assignedStop,
+  assignedRoute,
+  allStops,
   primaryStopId,
   selectedZoneCode,
   assignedRouteName,
@@ -257,6 +259,8 @@ export function StepHomeAndRoute({
             longitude={homeLng}
             onLocationChange={onMapLocationSelect}
             assignedStop={assignedStop}
+            assignedRoute={assignedRoute}
+            allStops={allStops}
             walkingDistanceMeters={walkingDistanceMeters}
             walkingTimeMins={walkingTimeMins}
             height="340px"

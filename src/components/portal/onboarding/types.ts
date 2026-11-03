@@ -46,6 +46,8 @@ export interface StepHomeAndRouteProps {
   homeLng: number;
   stopsForMap: Stop[];
   assignedStop: Stop | undefined;
+  assignedRoute?: Route | null;
+  allStops?: Stop[];
   primaryStopId: string;
   selectedZoneCode: string;
   assignedRouteName: string;

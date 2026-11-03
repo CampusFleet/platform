@@ -1,7 +1,11 @@
 // @ts-nocheck
 
 import React, { useState, useMemo } from 'react';
-import { GitBranch, MapPin, Building2, Search, ArrowUp, ArrowDown, X, RotateCcw, Route as RouteIcon, Info, ChevronRight, BusFront, Calendar as CalendarIcon, Hash, Map as MapIcon, Users, Sliders, Check } from 'lucide-react';
+import {
+  GitBranch, MapPin, Building2, Search, ArrowUp, ArrowDown, X, RotateCcw,
+  Route as RouteIcon, Info, ChevronRight, BusFront, Calendar as CalendarIcon,
+  Hash, Map as MapIcon, Users, Sliders, Check, Plus, Trash2
+} from 'lucide-react';
 import { Route, Stop, Campus } from '@/lib/types';
 import dynamic from 'next/dynamic';
 import { CustomDropdown } from '@/components/common/CustomDropdown';
@@ -35,10 +39,14 @@ export function RouteBuilderModal({
   handleShiftIntermediateDown,
   handleRemoveIntermediateStop,
   handleSaveRoute,
+  handleSaveRouteFromBuilder,
   builderStops,
   builderOrderedStopIds,
-  builderMetrics
+  builderMetrics,
+  asModal = false,
 }: any) {
+  const saveAction = handleSaveRouteFromBuilder || handleSaveRoute;
+
   const filteredAvailableStops = stops.filter(
     (s: any) =>
       !routeBuilderData.intermediateStopIds.includes(s.id) &&
@@ -47,48 +55,50 @@ export function RouteBuilderModal({
       s.name.toLowerCase().includes(stopPickerSearch.toLowerCase())
   );
 
-  return (
-    <>
-      {/* ============================================================= */}
-      {/* MODAL 2: INTERACTIVE FLOWCHART ROUTE BUILDER                 */}
-      {/* ============================================================= */}
-      {isRouteBuilderOpen && (
-        <div className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-5 sm:p-6 flex flex-col justify-between text-gray-900 dark:text-white shadow-sm overflow-hidden animate-in fade-in" style={{ height: "calc(100vh - 120px)" }}>
-          {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
-                <GitBranch className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-black text-lg text-gray-900 dark:text-white">
-                  {editingRouteId ? `Edit Corridor: ${routeBuilderData.name}` : "Interactive Route Flowchart Builder"}
-                </h3>
-                <p className="text-xs text-gray-400">
-                  Connect origin and destination anchors, insert intermediate stops via flowchart nodes, and verify road geometry
-                </p>
-              </div>
-            </div>
+  if (!isRouteBuilderOpen) return null;
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleReverseRoute}
-                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl flex items-center gap-1.5"
-                title="Invert origin and destination"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-                <span>Reverse Direction</span>
-              </button>
-
-              <button
-                onClick={() => setIsRouteBuilderOpen(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-xl"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+  const content = (
+    <div
+      className={`w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-5 sm:p-6 flex flex-col justify-between text-gray-900 dark:text-white shadow-2xl overflow-hidden animate-in fade-in ${
+        asModal ? "max-h-[92vh]" : ""
+      }`}
+      style={{ height: asModal ? "min(92vh, 880px)" : "calc(100vh - 120px)" }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+            <GitBranch className="w-5 h-5" />
           </div>
+          <div>
+            <h3 className="font-black text-lg text-gray-900 dark:text-white">
+              {editingRouteId ? `Edit Corridor: ${routeBuilderData.name || "Transit Route"}` : "Interactive Route Flowchart Builder"}
+            </h3>
+            <p className="text-xs text-gray-400">
+              Connect origin and destination anchors, insert intermediate stops via flowchart nodes, and verify road geometry
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleReverseRoute}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+            title="Invert origin and destination"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+            <span>Reverse Direction</span>
+          </button>
+
+          <button
+            onClick={() => setIsRouteBuilderOpen(false)}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-xl transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
 
           {/* Middle Grid: Left side Flowchart, Right side Realtime Map Preview */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 my-4 flex-1 overflow-hidden min-h-0">
@@ -586,14 +596,14 @@ export function RouteBuilderModal({
               <button
                 type="button"
                 onClick={() => setIsRouteBuilderOpen(false)}
-                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl"
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl transition-colors"
               >
                 Cancel
               </button>
 
               <button
                 type="button"
-                onClick={handleSaveRouteFromBuilder}
+                onClick={saveAction}
                 disabled={builderStops.length < 2}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all hover:scale-102"
               >
@@ -602,10 +612,18 @@ export function RouteBuilderModal({
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-
-    </>
+    </div>
   );
+
+  if (asModal) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in overflow-y-auto">
+        <div className="w-full max-w-7xl">
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return content;
 }

@@ -33,12 +33,15 @@ import {
   ExternalLink,
   Footprints,
   Route as RouteIcon,
+  Users,
+  HeartHandshake,
 } from "lucide-react";
 import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatGrid";
 import { generateSeatLayout, getTeacherStartingSeats } from "@/lib/utils";
 import { AttendanceLockCard } from "./AttendanceLockCard";
 import { telematicsService } from "@/lib/telematicsService";
 import { ContactCrewModal } from "./ContactCrewModal";
+import { SeatPartnerModal } from "./SeatPartnerModal";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, TransportSettings, Staff } from "@/lib/types";
 
 // Dynamic import for CampusFleetMap with fallback
@@ -126,6 +129,26 @@ export default function SmartTransitCockpit({
   // Cancel confirmation modal (replaces browser confirm())
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
+
+  // Seat Preferences & Partner State
+  const [isSeatPartnerModalOpen, setIsSeatPartnerModalOpen] = useState(false);
+  const [seatPartnerData, setSeatPartnerData] = useState<{
+    activePartnership: any | null;
+    incomingRequests: any[];
+    outgoingRequests: any[];
+    rowPreference: string;
+    positionPreference: string;
+    partnerSeat: string | null;
+    partnerName: string | null;
+  }>({
+    activePartnership: null,
+    incomingRequests: [],
+    outgoingRequests: [],
+    rowPreference: "NO_PREFERENCE",
+    positionPreference: "NO_PREFERENCE",
+    partnerSeat: null,
+    partnerName: null,
+  });
 
   // Toast notification (replaces browser alert())
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "warning" } | null>(null);
@@ -354,6 +377,78 @@ export default function SmartTransitCockpit({
     return foundTrip?.status || (foundTrip as any)?.trip_status || null;
   }, [reservation, activeBooking, trips]);
   const isTripInProgress = assignedTripStatus === "IN_PROGRESS" || assignedTripStatus === "COMPLETED";
+
+  const fetchSeatPartnerData = async () => {
+    if (!studentId) return;
+    try {
+      const bId = assignedBus?.id || reservation?.bus_id;
+      const busIdParam = bId ? `&busId=${encodeURIComponent(bId)}` : "";
+      const sId = assignedShift?.id || reservation?.shift_id;
+      const shiftIdParam = sId ? `&shiftId=${encodeURIComponent(sId)}` : "";
+      const res = await fetch(`/api/students/seat-partner-requests?studentId=${encodeURIComponent(studentId)}${busIdParam}${shiftIdParam}`);
+      const data = await res.json();
+      if (data.success) {
+        const active = data.activePartnership;
+        let pSeat: string | null = null;
+        let pName: string | null = null;
+        if (active) {
+          const isSender = active.sender_id === studentId;
+          pName = isSender ? active.receiver_name : active.sender_name;
+          if (active.allocated_pair) {
+            pSeat = isSender ? active.allocated_pair.receiverSeat : active.allocated_pair.senderSeat;
+          }
+        }
+        setSeatPartnerData((prev) => ({
+          ...prev,
+          activePartnership: active,
+          incomingRequests: data.incomingRequests || [],
+          outgoingRequests: data.outgoingRequests || [],
+          partnerSeat: pSeat,
+          partnerName: pName,
+        }));
+      }
+
+      // Fetch preferences
+      const prefRes = await fetch(`/api/students/seat-preferences?studentId=${encodeURIComponent(studentId)}`);
+      const prefData = await prefRes.json();
+      if (prefData.success && prefData.preferences) {
+        setSeatPartnerData((prev) => ({
+          ...prev,
+          rowPreference: prefData.preferences.rowPreference || "NO_PREFERENCE",
+          positionPreference: prefData.preferences.positionPreference || "NO_PREFERENCE",
+        }));
+      }
+    } catch {
+      // silent
+    }
+  };
+
+  const handleQuickAcceptPartner = async (requestId: string) => {
+    try {
+      const res = await fetch("/api/students/seat-partner-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ACCEPT_REQUEST",
+          requestId,
+          studentId,
+          busId: assignedBus?.id || reservation?.bus_id,
+          shiftId: assignedShift?.id || reservation?.shift_id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to accept partner request");
+      showToast(data.message || "Seat partner request accepted! Adjacent seats allocated.", "success");
+      fetchSeatPartnerData();
+      fetchReservation(true);
+    } catch (err: any) {
+      showToast(err.message || "Failed to accept partner request", "error");
+    }
+  };
+
+  useEffect(() => {
+    fetchSeatPartnerData();
+  }, [studentId, assignedBus?.id, reservation?.bus_id]);
 
   // Resolve assigned conductor and transport manager staff for contact modal
   const assignedConductor = useMemo(() => {
@@ -1535,18 +1630,98 @@ export default function SmartTransitCockpit({
                 </p>
               </div>
 
-              {isChangingSeat && reservation?.chosen_seat && (
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => {
-                    setIsChangingSeat(false);
-                    setTentativeSeat(reservation.chosen_seat);
-                  }}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white self-start sm:self-auto"
+                  type="button"
+                  onClick={() => setIsSeatPartnerModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
                 >
-                  Cancel Change
+                  <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Seat Partner & Preferences</span>
+                  {seatPartnerData.incomingRequests.length > 0 && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-4 ring-rose-500/20 animate-pulse" />
+                  )}
                 </button>
-              )}
+
+                {isChangingSeat && reservation?.chosen_seat && (
+                  <button
+                    onClick={() => {
+                      setIsChangingSeat(false);
+                      setTentativeSeat(reservation.chosen_seat);
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white self-start sm:self-auto"
+                  >
+                    Cancel Change
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Incoming Seat Partner Request Alert */}
+            {seatPartnerData.incomingRequests.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in slide-in-from-top-1 shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                    <HeartHandshake className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-amber-950 dark:text-amber-200">
+                      Seat Partner Request from {seatPartnerData.incomingRequests[0].sender_name}!
+                    </div>
+                    <div className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                      Rides on Bus {assignedBus?.busNumber} with you. Accept to automatically sit together side-by-side.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <button
+                    onClick={() => handleQuickAcceptPartner(seatPartnerData.incomingRequests[0].id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                  >
+                    Accept & Pair
+                  </button>
+                  <button
+                    onClick={() => setIsSeatPartnerModalOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-white/90 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs hover:bg-white transition-all cursor-pointer"
+                  >
+                    Review
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Active Partner or Auto-Assigned Preferences Status Chip */}
+            {(seatPartnerData.activePartnership || seatPartnerData.rowPreference !== "NO_PREFERENCE" || seatPartnerData.positionPreference !== "NO_PREFERENCE") && (
+              <div className="p-2.5 px-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {seatPartnerData.activePartnership ? (
+                    <span className="inline-flex items-center gap-1.5 font-bold text-indigo-700 dark:text-indigo-300">
+                      <HeartHandshake className="w-3.5 h-3.5 text-indigo-500" />
+                      Paired with {seatPartnerData.partnerName} {seatPartnerData.partnerSeat ? `(Seat ${seatPartnerData.partnerSeat})` : ""}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-slate-600 dark:text-slate-300">
+                      Auto-Assignment Active
+                    </span>
+                  )}
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Row: <strong className="text-slate-700 dark:text-slate-200 capitalize">{seatPartnerData.rowPreference.toLowerCase()}</strong>
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Position: <strong className="text-slate-700 dark:text-slate-200 capitalize">{seatPartnerData.positionPreference.toLowerCase()}</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSeatPartnerModalOpen(true)}
+                  className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+            )}
 
             {/* Verified Attendance Banner (Above Seat Grid when unlocked) */}
             {isLockCleared && (
@@ -1581,6 +1756,9 @@ export default function SmartTransitCockpit({
                   }
                   occupiedSeats={occupiedSeats}
                   selectedSeat={tentativeSeat}
+                  partnerSeat={seatPartnerData.partnerSeat}
+                  partnerName={seatPartnerData.partnerName}
+                  autoAssignedSeat={reservation?.auto_assigned_seat || tentativeSeat}
                   onSelectSeat={(seatNum) => {
                     if (!isLockCleared) {
                       setIsPeekingSeats(false);
@@ -1986,6 +2164,24 @@ export default function SmartTransitCockpit({
         transportManager={transportManagerStaff}
         stopName={assignedStop?.name}
       />
+
+      {/* ─── SEAT PARTNER & PREFERENCES MODAL ─── */}
+      {assignedBus && (
+        <SeatPartnerModal
+          isOpen={isSeatPartnerModalOpen}
+          onClose={() => setIsSeatPartnerModalOpen(false)}
+          studentId={studentId}
+          busId={assignedBus.id}
+          busNumber={assignedBus.busNumber}
+          shiftId={assignedShift?.id}
+          currentSeat={tentativeSeat || reservation?.chosen_seat}
+          onPairUpdated={() => {
+            fetchSeatPartnerData();
+            fetchReservation(true);
+          }}
+          showToast={showToast}
+        />
+      )}
 
       {/* ─── TOAST NOTIFICATION (replaces browser alert()) ─── */}
       {renderToastNotification()}

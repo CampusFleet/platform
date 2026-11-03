@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import { Bus, Booking } from "@/lib/types";
 import { generateSeatLayout, parseSeatLayout, isStartingSeat, getTeacherStartingSeats } from "@/lib/utils";
-import { Check, User, Info, Disc, GraduationCap } from "lucide-react";
+import { Check, User, Info, Disc, GraduationCap, Users, Sparkles } from "lucide-react";
 
 interface InteractiveBusSeatGridProps {
   bus: Bus;
@@ -15,6 +15,9 @@ interface InteractiveBusSeatGridProps {
   userRole?: string;
   teacherCount?: number;
   occupiedSeats?: string[];
+  partnerSeat?: string | null;
+  partnerName?: string | null;
+  autoAssignedSeat?: string | null;
 }
 
 export function InteractiveBusSeatGrid({
@@ -27,6 +30,9 @@ export function InteractiveBusSeatGrid({
   userRole,
   teacherCount,
   occupiedSeats: externalOccupiedSeats = [],
+  partnerSeat,
+  partnerName,
+  autoAssignedSeat,
 }: InteractiveBusSeatGridProps) {
   if (!bus) {
     return (
@@ -137,6 +143,8 @@ export function InteractiveBusSeatGrid({
     const isOccupied = !isSelected && occupiedSeats.includes(seatNum);
     const isFrontStartingSeat = teacherReservedSeatSet.has(seatNum);
     const isRestrictedFacultySeat = isFrontStartingSeat && !isFacultyUser;
+    const isPartnerSeat = partnerSeat && partnerSeat.toUpperCase() === seatNum.toUpperCase();
+    const isAutoAssigned = autoAssignedSeat && autoAssignedSeat.toUpperCase() === seatNum.toUpperCase();
 
     return (
       <button
@@ -145,16 +153,22 @@ export function InteractiveBusSeatGrid({
         disabled={isOccupied || disabled || isRestrictedFacultySeat}
         onClick={() => onSelectSeat(seatNum)}
         title={
-          isOccupied
+          isPartnerSeat
+            ? `Seat ${seatNum} is occupied by your Seat Partner (${partnerName || "Companion"})`
+            : isOccupied
             ? `Seat ${seatNum} is already occupied`
             : isRestrictedFacultySeat
             ? `Seat ${seatNum} is one of ${effectiveTeacherCount} starting seats reserved exclusively for Faculty & Teachers`
             : isFrontStartingSeat
             ? `Seat ${seatNum} (Faculty Priority Starting Seat)`
+            : isAutoAssigned
+            ? `Seat ${seatNum} (Auto-Assigned based on your preference & partner)`
             : `Select Seat ${seatNum} (${seatTypeDescription})`
         }
         className={`relative w-10 h-11 sm:w-11 sm:h-12 rounded-xl flex flex-col items-center justify-center font-mono font-bold text-xs transition-all ${
-          isOccupied
+          isPartnerSeat
+            ? "bg-pink-100 dark:bg-pink-950/60 border-2 border-pink-500 text-pink-700 dark:text-pink-300 font-black shadow-md cursor-not-allowed"
+            : isOccupied
             ? "bg-gray-200 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/40 text-gray-400 dark:text-gray-600 cursor-not-allowed"
             : isRestrictedFacultySeat
             ? "bg-indigo-50/80 dark:bg-indigo-950/40 border-2 border-indigo-300/80 dark:border-indigo-700/60 text-indigo-700 dark:text-indigo-300 cursor-not-allowed shadow-none"
@@ -162,6 +176,8 @@ export function InteractiveBusSeatGrid({
             ? isFrontStartingSeat
               ? "bg-indigo-600 text-white font-black shadow-lg shadow-indigo-600/30 scale-105 ring-2 ring-indigo-400"
               : "bg-green-500 text-gray-950 font-black shadow-lg shadow-green-500/30 scale-105 ring-2 ring-green-400"
+            : isAutoAssigned
+            ? "bg-emerald-50 dark:bg-emerald-950/50 border-2 border-dashed border-emerald-500 text-emerald-800 dark:text-emerald-200 hover:scale-105 active:scale-95 shadow-sm ring-1 ring-emerald-400"
             : isFrontStartingSeat
             ? "bg-white dark:bg-gray-800 border-2 border-indigo-500/80 text-indigo-700 dark:text-indigo-300 hover:border-indigo-600 hover:scale-105 active:scale-95 shadow-sm"
             : "bg-white dark:bg-gray-800 border-2 border-green-500/70 text-gray-900 dark:text-gray-100 hover:border-blue-500 hover:scale-105 active:scale-95 shadow-sm"
@@ -172,6 +188,8 @@ export function InteractiveBusSeatGrid({
           className={`absolute top-1 inset-x-1.5 sm:inset-x-2 h-1 rounded-full ${
             isSelected
               ? "bg-gray-950/20"
+              : isPartnerSeat
+              ? "bg-pink-400"
               : isOccupied
               ? "bg-gray-300 dark:bg-gray-700"
               : isFrontStartingSeat
@@ -185,9 +203,15 @@ export function InteractiveBusSeatGrid({
             <GraduationCap className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 mb-0.5" />
             <span className="text-[9px] font-black leading-none">{seatNum}</span>
           </div>
+        ) : isPartnerSeat ? (
+          <div className="flex flex-col items-center justify-center mt-1">
+            <Users className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400 mb-0.5" />
+            <span className="text-[9px] font-black leading-none">{seatNum}</span>
+          </div>
         ) : (
           <span className="mt-1 text-[11px] font-bold flex items-center gap-0.5">
             {isFrontStartingSeat && <GraduationCap className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />}
+            {isAutoAssigned && !isSelected && <Sparkles className="w-2.5 h-2.5 text-emerald-600" />}
             {seatNum}
           </span>
         )}

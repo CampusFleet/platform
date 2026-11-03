@@ -241,6 +241,42 @@ export interface Student {
   /** Official Institutional Student ID (e.g. 230111075) */
   studentIdCode?: string;
   rfidCardId?: string;
+  /** Railway-inspired intelligent seat preferences */
+  seatRowPreference?: "FRONT" | "MIDDLE" | "BACK" | "NO_PREFERENCE";
+  seatPositionPreference?: "WINDOW" | "AISLE" | "NO_PREFERENCE";
+  preferredPartnerStudentId?: string | null;
+  preferredPartnerName?: string | null;
+}
+
+export type SeatRowPreference = "FRONT" | "MIDDLE" | "BACK" | "NO_PREFERENCE";
+export type SeatPositionPreference = "WINDOW" | "AISLE" | "NO_PREFERENCE";
+
+export interface CommuterSeatPreferences {
+  rowPreference: SeatRowPreference;
+  positionPreference: SeatPositionPreference;
+  partnerStudentId?: string | null;
+  partnerName?: string | null;
+}
+
+export interface SeatPartnerRequest {
+  id: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  receiverName: string;
+  busId: string;
+  tripId?: string;
+  shiftId?: string;
+  reservationDate: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "UNLINKED" | "EXPIRED";
+  preferredRowZone?: SeatRowPreference;
+  allocatedPair?: {
+    senderSeat: string;
+    receiverSeat: string;
+    relation: string;
+  } | null;
+  createdAt: string;
+  respondedAt?: string | null;
 }
 
 export interface Guardian {

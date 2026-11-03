@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { isStartingSeat, getTeacherStartingSeats, generateSeatLayout, calculateDistanceKm } from "@/lib/utils";
+import { allocateSeatWithPreferences } from "@/lib/seat-allocation-engine";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
 import { createTripId, createBookingId, createAttendanceId } from "@/lib/id";
@@ -428,6 +429,67 @@ export async function GET(req: NextRequest) {
         .not("chosen_seat", "is", null);
 
       occupiedSeats = (tripRes || []).map((r: any) => r.chosen_seat).filter(Boolean);
+    }
+
+    // ── Algorithmic Auto-Seat Allocation with Railway-Style Preferences ──
+    if (activeReservation && !activeReservation.chosen_seat && enriched?.bus) {
+      try {
+        const { data: studPref } = await supabaseAdmin
+          .from("students")
+          .select("seat_row_preference, seat_position_preference, preferred_partner_student_id, preferred_partner_name")
+          .eq("id", resolvedStudentId)
+          .maybeSingle();
+
+        const { data: allTripRes } = await supabaseAdmin
+          .from("bus_reservations")
+          .select("student_id, chosen_seat, status")
+          .eq("bus_id", activeReservation.bus_id)
+          .neq("id", activeReservation.id)
+          .neq("status", "CANCELLED");
+
+        const alloc = allocateSeatWithPreferences({
+          bus: enriched.bus,
+          student: {
+            id: resolvedStudentId,
+            seatRowPreference: studPref?.seat_row_preference,
+            seatPositionPreference: studPref?.seat_position_preference,
+            preferredPartnerStudentId: studPref?.preferred_partner_student_id,
+            preferredPartnerName: studPref?.preferred_partner_name,
+          },
+          occupiedSeats,
+          allTripReservations: allTripRes || [],
+        });
+
+        if (alloc?.allocatedSeat) {
+          activeReservation.chosen_seat = alloc.allocatedSeat;
+          activeReservation.auto_assigned_seat = alloc.allocatedSeat;
+          activeReservation.seat_allocation_meta = {
+            reasons: alloc.matchReasons,
+            rowZone: alloc.seatRowZone,
+            position: alloc.seatPosition,
+            isAdjacentToPartner: alloc.isAdjacentToPartner,
+            partnerSeat: alloc.partnerSeat,
+            partnerName: alloc.partnerName,
+          };
+          if (enriched) {
+            enriched.chosen_seat = alloc.allocatedSeat;
+            enriched.auto_assigned_seat = alloc.allocatedSeat;
+            enriched.seat_allocation_meta = activeReservation.seat_allocation_meta;
+          }
+
+          // Persist auto-assigned seat
+          await supabaseAdmin
+            .from("bus_reservations")
+            .update({
+              chosen_seat: alloc.allocatedSeat,
+              auto_assigned_seat: alloc.allocatedSeat,
+              seat_preference_applied: true,
+            })
+            .eq("id", activeReservation.id);
+        }
+      } catch (allocErr) {
+        console.warn("[attendance/reservations] Seat auto-allocation warning:", allocErr);
+      }
     }
 
     // Check if student was verified via RFID tap today or unlocked via attendance lock

@@ -133,6 +133,14 @@ export default function StudentOnboardingPage() {
   const [homeAddress, setHomeAddress] = useState("Mukhani, Haldwani, Uttarakhand, 263141");
   const [addressSearchQuery, setAddressSearchQuery] = useState("");
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
+  const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
+  const [showSuggestionsDropdown, setShowSuggestionsDropdown] = useState(false);
+  const [fuzzySuggestions, setFuzzySuggestions] = useState<any[]>([]);
+  const [fuzzyNotice, setFuzzyNotice] = useState<string | null>(null);
+  const [isOutOfServiceArea, setIsOutOfServiceArea] = useState(false);
+  const [serviceAreaWarning, setServiceAreaWarning] = useState<string | null>(null);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [homeLat, setHomeLat] = useState<number>(29.220936);
   const [homeLng, setHomeLng] = useState<number>(79.514496);
   const [autoAssignedStopId, setAutoAssignedStopId] = useState<string | null>(null);
@@ -278,6 +286,8 @@ export default function StudentOnboardingPage() {
       setPrimaryStopId(prev => prev || result.nearestStop.id);
       setWalkingDistanceMeters(result.walkingDistanceMeters);
       setWalkingTimeMins(result.walkingTimeMins);
+      setIsOutOfServiceArea(Boolean(result.isOutOfServiceArea));
+      setServiceAreaWarning(result.serviceAreaWarning || null);
       if (result.assignedRoute) {
         setAssignedRouteId(result.assignedRoute.id);
         setAssignedRouteName(result.assignedRoute.name);
@@ -293,6 +303,7 @@ export default function StudentOnboardingPage() {
       const data = await res.json();
       if (data.success && data.address) {
         setHomeAddress(data.address);
+        setAddressSearchQuery(data.address);
       }
     } catch (err) {
       console.warn("Could not reverse geocode coordinates:", err);
@@ -309,9 +320,71 @@ export default function StudentOnboardingPage() {
     runAutoStopAndZoneDetection(lat, lng);
   };
 
-  // Forward Geocode Address Search Handler
+  // Live debounced autocomplete as user types (Google Maps Standard)
+  const handleAddressInputChange = (val: string) => {
+    setAddressSearchQuery(val);
+    setHomeAddress(val);
+    setFuzzyNotice(null);
+    setFuzzySuggestions([]);
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    const trimmed = val.trim();
+    if (trimmed.length < 3) {
+      setSearchSuggestions([]);
+      setShowSuggestionsDropdown(false);
+      setIsSearchingSuggestions(false);
+      return;
+    }
+
+    setIsSearchingSuggestions(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geo/geocode?address=${encodeURIComponent(trimmed)}`);
+        const data = await res.json();
+        if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+          setSearchSuggestions(data.results);
+          setShowSuggestionsDropdown(true);
+          setFuzzySuggestions([]);
+          setFuzzyNotice(null);
+        } else if (data.isFuzzy && data.suggestions && data.suggestions.length > 0) {
+          setSearchSuggestions([]);
+          setShowSuggestionsDropdown(false);
+          setFuzzySuggestions(data.suggestions);
+          setFuzzyNotice(data.message || `No exact match for "${trimmed}". Did you mean one of these nearby areas?`);
+        } else {
+          setSearchSuggestions([]);
+          setShowSuggestionsDropdown(false);
+        }
+      } catch (err) {
+        console.warn("Autocomplete fetch failed:", err);
+      } finally {
+        setIsSearchingSuggestions(false);
+      }
+    }, 320);
+  };
+
+  // Handle Autocomplete or Fuzzy Suggestion Pick
+  const handleSelectSuggestion = (item: any) => {
+    const lat = Number(item.latitude);
+    const lng = Number(item.longitude);
+    setHomeLat(lat);
+    setHomeLng(lng);
+    setHomeAddress(item.formattedAddress);
+    setAddressSearchQuery(item.mainText || item.formattedAddress);
+    setShowSuggestionsDropdown(false);
+    setFuzzySuggestions([]);
+    setFuzzyNotice(null);
+    runAutoStopAndZoneDetection(lat, lng);
+    showToast("success", `Centered map on "${item.mainText || item.formattedAddress}"`, "Location Locked");
+  };
+
+  // Forward Geocode Address Search Handler (Google Maps Direct & Fuzzy Fallback)
   const handleSearchAddress = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setShowSuggestionsDropdown(false);
     const query = (addressSearchQuery || homeAddress).trim();
     if (!query) {
       showToast("warning", "Please type your street, colony, or landmark name.", "Address Required");
@@ -319,6 +392,9 @@ export default function StudentOnboardingPage() {
     }
 
     setIsGeocodingAddress(true);
+    setFuzzyNotice(null);
+    setFuzzySuggestions([]);
+
     try {
       const res = await fetch(`/api/geo/geocode?address=${encodeURIComponent(query)}`);
       const data = await res.json();
@@ -333,6 +409,10 @@ export default function StudentOnboardingPage() {
         }
         runAutoStopAndZoneDetection(lat, lng);
         showToast("success", `Centered map on "${data.formattedAddress || query}"`, "Location Found");
+      } else if (data.isFuzzy && data.suggestions && data.suggestions.length > 0) {
+        setFuzzySuggestions(data.suggestions);
+        setFuzzyNotice(data.message || `No exact match found for "${query}". Did you mean one of these nearby areas?`);
+        showToast("info", "No exact match found. See suggestions below.", "Fuzzy Match");
       } else {
         showToast("error", data.message || "Could not locate address. Try with city name.", "Search Not Found");
       }
@@ -689,6 +769,56 @@ export default function StudentOnboardingPage() {
     return stops.find(s => s.id === primaryStopId) || stops.find(s => s.id === autoAssignedStopId) || stops[0];
   }, [stops, primaryStopId, autoAssignedStopId]);
 
+  // Regional Landmark Shortcuts for Zero-Friction 1-Tap Search
+  const regionalLandmarks = useMemo(() => {
+    const isDehradunCampus = (campus || "").toLowerCase().includes("dehradun") || (campusId || "").toLowerCase().includes("geu");
+    if (isDehradunCampus) {
+      return [
+        { name: "Clement Town", query: "Clement Town, Dehradun", lat: 30.2687, lng: 77.9954 },
+        { name: "ISBT Dehradun", query: "ISBT Dehradun", lat: 30.2882, lng: 78.0081 },
+        { name: "Clock Tower", query: "Clock Tower, Dehradun", lat: 30.3244, lng: 78.0427 },
+        { name: "Ballupur Chowk", query: "Ballupur, Dehradun", lat: 30.3391, lng: 78.0163 },
+        { name: "Rispana Bridge", query: "Rispana Bridge, Dehradun", lat: 30.2987, lng: 78.0583 },
+      ];
+    }
+    return [
+      { name: "Mukhani Chauraha", query: "Mukhani, Haldwani", lat: 29.2185, lng: 79.5126 },
+      { name: "Haldwani Bus Stand", query: "Haldwani Bus Station", lat: 29.2155, lng: 79.5255 },
+      { name: "Kathgodam Stn", query: "Kathgodam Railway Station", lat: 29.2718, lng: 79.5441 },
+      { name: "Pili Kothi", query: "Pili Kothi, Haldwani", lat: 29.2320, lng: 79.5160 },
+      { name: "Lal Kuan", query: "Lal Kuan, Uttarakhand", lat: 29.0760, lng: 79.5120 },
+      { name: "Tallital Nainital", query: "Tallital, Nainital", lat: 29.3833, lng: 79.4667 },
+    ];
+  }, [campus, campusId]);
+
+  // DATA LEAK SECURITY GUARD:
+  // In student pin-drop mode, ONLY pass the assigned stop to the map.
+  // This prevents route polylines or multi-campus stop clusters from leaking across towns.
+  const stopsForMap = useMemo(() => {
+    if (assignedStop) return [assignedStop];
+    return [];
+  }, [assignedStop]);
+
+  // Filter alternative stop catalog strictly to student's campus corridor
+  const availableStopsForCampus = useMemo(() => {
+    const campusObj = campuses.find(c => c.id === campusId) || store.getPrimaryCampus();
+    const campusName = (campusObj?.name || campus || "").toLowerCase();
+    const cId = String(campusObj?.id || campusId || "").toLowerCase();
+    const isDehradun = campusName.includes("dehradun") || cId.includes("dehradun") || cId.includes("geu");
+    const isBhimtal = campusName.includes("bhimtal") || campusName.includes("haldwani") || cId.includes("bhimtal");
+
+    return stops.filter(s => {
+      const sCampusId = String(s.campusId || "").toLowerCase();
+      if (sCampusId && (sCampusId === cId || (isDehradun && sCampusId.includes("dehradun")) || (isBhimtal && sCampusId.includes("bhimtal")))) {
+        return true;
+      }
+      const sName = (s.name || "").toLowerCase();
+      if (isDehradun && (sName.includes("dehradun") || sName.includes("clement") || sName.includes("bell road") || sName.includes("subhash nagar"))) return true;
+      if (isBhimtal && (sName.includes("bhimtal") || sName.includes("haldwani") || sName.includes("nainital") || sName.includes("kathgodam") || sName.includes("mukhani") || sName.includes("lamachaur") || sName.includes("lalkuan") || sName.includes("tallital"))) return true;
+      return !isDehradun && !isBhimtal;
+    });
+  }, [stops, campus, campusId, campuses]);
+
   if (!dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black text-emerald-600">
@@ -699,40 +829,41 @@ export default function StudentOnboardingPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/80 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-20">
-      {/* Modern High-End Transit Header */}
+      {/* Modern High-End Transit Header (Overflow & Truncation Protected) */}
       <div className="w-full bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-b border-gray-200/80 dark:border-zinc-800 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => router.back()}
-              className="p-2 -ml-2 rounded-xl text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors"
+              className="p-1.5 sm:p-2 -ml-1 sm:-ml-2 rounded-xl text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors shrink-0"
               title="Go Back"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400">
+            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 shrink-0">
               <BusFront className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white leading-tight">
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 dark:text-white leading-tight truncate sm:whitespace-normal">
                 Transit Pass Onboarding & Activation
               </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 truncate">
                 Zero friction • Automated route & stop allocation
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1.5">
-              <Lock className="w-3 h-3" /> 256-bit Encrypted
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] sm:text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1 rounded-full flex items-center gap-1 sm:gap-1.5">
+              <Lock className="w-3 h-3" />
+              <span className="hidden xs:inline">256-bit </span>Encrypted
             </span>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 w-full max-w-4xl mx-auto py-6 sm:py-8 px-4 sm:px-6 space-y-6 animate-in fade-in duration-300">
+      <div className="flex-1 w-full max-w-4xl mx-auto py-5 sm:py-8 px-3.5 sm:px-6 space-y-5 sm:space-y-6 animate-in fade-in duration-300">
         {/* Floating Toast Notification */}
         {toast && (
           <div className="fixed top-5 right-5 z-[9999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] animate-in slide-in-from-top-4 fade-in duration-300">
@@ -766,45 +897,48 @@ export default function StudentOnboardingPage() {
           </div>
         )}
 
-        {/* ─── Modern Step Navigation Tabs ─── */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 p-1.5 rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xs">
+        {/* ─── Modern Responsive Step Navigation Tabs (Zero Truncation) ─── */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3 p-1.5 rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xs">
           <button
             type="button"
             onClick={() => setActiveStep(1)}
-            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
               activeStep === 1
                 ? "bg-emerald-600 text-white shadow-sm"
                 : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800"
             }`}
           >
-            <MapPin className="w-4 h-4 shrink-0" />
-            <span className="truncate">1. Home & Route</span>
+            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="hidden sm:inline">1. Home & Route</span>
+            <span className="sm:hidden">1. Home</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveStep(2)}
-            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
               activeStep === 2
                 ? "bg-emerald-600 text-white shadow-sm"
                 : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800"
             }`}
           >
-            <User className="w-4 h-4 shrink-0" />
-            <span className="truncate">2. Profile & ID</span>
+            <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="hidden sm:inline">2. Profile & ID</span>
+            <span className="sm:hidden">2. Profile</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveStep(3)}
-            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
               activeStep === 3
                 ? "bg-emerald-600 text-white shadow-sm"
                 : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800"
             }`}
           >
-            <CreditCard className="w-4 h-4 shrink-0" />
-            <span className="truncate">3. Activate Pass</span>
+            <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="hidden sm:inline">3. Activate Pass</span>
+            <span className="sm:hidden">3. Pass</span>
           </button>
         </div>
 
@@ -812,7 +946,7 @@ export default function StudentOnboardingPage() {
         {/* STEP 1: HOME LOCATION, ADDRESS SEARCH & INTERACTIVE PIN-DROP     */}
         {/* ═════════════════════════════════════════════════════════════════ */}
         {activeStep === 1 && (
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
             <div className="flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-5">
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
@@ -827,66 +961,174 @@ export default function StudentOnboardingPage() {
               </div>
             </div>
 
-            {/* Modern Address Search Bar (Google Maps / Citymapper Standard) */}
-            <div className="space-y-3">
+            {/* Google Maps-Standard Address Search with Autocomplete & Fuzzy Fallback */}
+            <div className="space-y-3 relative">
               <label className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center justify-between">
                 <span>Search Home Address or Area</span>
                 {isResolvingAddress && (
                   <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-pulse">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Resolving address...
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Resolving pin address...
                   </span>
                 )}
               </label>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <Search className="w-4 h-4" />
+              <div className="relative">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                      {isSearchingSuggestions ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={addressSearchQuery || homeAddress}
+                      onChange={e => handleAddressInputChange(e.target.value)}
+                      onFocus={() => {
+                        if (searchSuggestions.length > 0) setShowSuggestionsDropdown(true);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSearchAddress();
+                        }
+                      }}
+                      placeholder="e.g. Mukhani Chauraha, Haldwani"
+                      className="w-full pl-10 pr-9 py-3 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                    />
+                    {(addressSearchQuery || homeAddress) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddressSearchQuery("");
+                          setHomeAddress("");
+                          setSearchSuggestions([]);
+                          setShowSuggestionsDropdown(false);
+                          setFuzzySuggestions([]);
+                          setFuzzyNotice(null);
+                        }}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                        title="Clear input"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                  <input
-                    type="text"
-                    value={addressSearchQuery || homeAddress}
-                    onChange={e => {
-                      setAddressSearchQuery(e.target.value);
-                      setHomeAddress(e.target.value);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleSearchAddress();
-                      }
-                    }}
-                    placeholder="e.g. Mukhani Chauraha, Haldwani"
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
-                  />
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSearchAddress()}
+                      disabled={isGeocodingAddress}
+                      className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isGeocodingAddress ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      <span>Locate</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDetectGPS}
+                      disabled={isDetectingGPS}
+                      className="px-4 py-3 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-800 dark:text-gray-200 font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                      title="Detect Current GPS Location"
+                    >
+                      <Navigation className={`w-4 h-4 ${isDetectingGPS ? "animate-spin text-emerald-600" : "text-emerald-600 dark:text-emerald-400"}`} />
+                      <span className="hidden sm:inline">Use GPS</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSearchAddress()}
-                    disabled={isGeocodingAddress}
-                    className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {isGeocodingAddress ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                    <span>Locate</span>
-                  </button>
+                {/* Live Autocomplete Suggestions Dropdown (Google Maps standard) */}
+                {showSuggestionsDropdown && searchSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 sm:right-32 mt-1.5 z-50 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-2xl shadow-2xl overflow-hidden divide-y divide-gray-100 dark:divide-zinc-800 max-h-72 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+                    {searchSuggestions.map((item, idx) => (
+                      <div
+                        key={`${item.latitude}_${item.longitude}_${idx}`}
+                        onClick={() => handleSelectSuggestion(item)}
+                        className="p-3.5 flex items-start gap-3 hover:bg-emerald-50/60 dark:hover:bg-zinc-800/80 cursor-pointer transition-colors"
+                      >
+                        <div className="p-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                          <MapPin className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {item.mainText}
+                          </p>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                            {item.secondaryText || item.formattedAddress}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={handleDetectGPS}
-                    disabled={isDetectingGPS}
-                    className="px-4 py-3 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-800 dark:text-gray-200 font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                    title="Detect Current GPS Location"
-                  >
-                    <Navigation className={`w-4 h-4 ${isDetectingGPS ? "animate-spin text-emerald-600" : "text-emerald-600 dark:text-emerald-400"}`} />
-                    <span className="hidden sm:inline">Use Current GPS</span>
-                  </button>
+              {/* Fuzzy / "Did you mean?" Suggested Locations (when exact query has 0 matches) */}
+              {fuzzyNotice && fuzzySuggestions.length > 0 && (
+                <div className="p-4 rounded-2xl border border-amber-300/80 dark:border-amber-700/60 bg-amber-50/80 dark:bg-amber-950/30 space-y-2.5 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 text-xs font-bold">
+                    <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Did you mean one of these nearby areas?</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
+                    {fuzzyNotice}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {fuzzySuggestions.map((cand, idx) => (
+                      <button
+                        key={`${cand.latitude}_${cand.longitude}_${idx}`}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(cand)}
+                        className="text-left p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-amber-200 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-500 hover:shadow-xs transition-all flex items-center gap-2.5 cursor-pointer group"
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {cand.mainText}
+                          </p>
+                          <p className="text-[10px] text-gray-400 truncate">
+                            {cand.secondaryText || cand.formattedAddress}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Regional Landmark Quick-Select Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
+                  Nearby Hubs:
+                </span>
+                {regionalLandmarks.map((hub) => (
+                  <button
+                    key={hub.name}
+                    type="button"
+                    onClick={() => {
+                      setHomeLat(hub.lat);
+                      setHomeLng(hub.lng);
+                      setHomeAddress(hub.query);
+                      setAddressSearchQuery(hub.name);
+                      setShowSuggestionsDropdown(false);
+                      setFuzzySuggestions([]);
+                      setFuzzyNotice(null);
+                      runAutoStopAndZoneDetection(hub.lat, hub.lng);
+                      showToast("success", `Centered map on ${hub.name}`, "Hub Selected");
+                    }}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 dark:bg-zinc-800 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400 dark:hover:border-emerald-700/60 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 shrink-0 transition-colors cursor-pointer"
+                  >
+                    📍 {hub.name}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Interactive CampusFleet Map with Tactile Pin Drop */}
+            {/* Interactive CampusFleet Map with Tactile Pin Drop (Zero Route Data Leak) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                 <span className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
@@ -903,8 +1145,8 @@ export default function StudentOnboardingPage() {
                   interactiveMode="PIN_DROP"
                   draftPinLocation={[homeLat, homeLng]}
                   onMapClick={handleMapLocationSelect}
-                  stops={stops}
-                  selectedStopId={primaryStopId}
+                  stops={stopsForMap}
+                  selectedStopId={assignedStop?.id}
                   height="340px"
                   zoom={15}
                   showUserLocation={true}
@@ -951,15 +1193,37 @@ export default function StudentOnboardingPage() {
                 <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-emerald-100 dark:border-zinc-800 space-y-1">
                   <div className="text-gray-500 dark:text-gray-400 font-medium flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Walking Distance</span>
+                    <span>{isOutOfServiceArea ? "Corridor Distance" : "Walking Distance"}</span>
                   </div>
-                  <p className="font-bold text-emerald-700 dark:text-emerald-400">
-                    {walkingDistanceMeters}m • ~{walkingTimeMins} min walk
-                  </p>
+                  {isOutOfServiceArea ? (
+                    <div>
+                      <p className="font-bold text-amber-600 dark:text-amber-400">
+                        ~{Math.round(walkingDistanceMeters / 1000)} km (Out of Range)
+                      </p>
+                      <p className="text-[10px] text-gray-500">Boarding at corridor stop</p>
+                    </div>
+                  ) : (
+                    <p className="font-bold text-emerald-700 dark:text-emerald-400">
+                      {walkingDistanceMeters}m • ~{walkingTimeMins} min walk
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Optional Alternative Stops Accordion */}
+              {/* Service Area Warning Banner (Prevents absurd 135km walking distance confusion) */}
+              {isOutOfServiceArea && serviceAreaWarning && (
+                <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold">Home Location is Outside Local Shuttle Corridor</p>
+                    <p className="text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-300/90">
+                      {serviceAreaWarning}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Alternative Stops Accordion (Campus Corridor Filtered) */}
               <div className="pt-2">
                 <button
                   type="button"
@@ -979,10 +1243,10 @@ export default function StudentOnboardingPage() {
                       className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                     <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-800">
-                      {stops
+                      {availableStopsForCampus
                         .filter(s => !stopSearchQuery || s.name.toLowerCase().includes(stopSearchQuery.toLowerCase()))
                         .map(s => {
-                          const isCurrent = s.id === primaryStopId;
+                          const isCurrent = s.id === (primaryStopId || assignedStop?.id);
                           return (
                             <div
                               key={s.id}

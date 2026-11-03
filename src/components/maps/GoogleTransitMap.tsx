@@ -2,223 +2,21 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
-import { LiveBusLocation, Stop, FleetBusMarkerData, Campus } from "@/lib/types";
+import { Stop } from "@/lib/types";
 import { getCampusStopFromDatabase } from "./CampusFleetMap";
-import { Crosshair, Building2, Navigation } from "lucide-react";
+import { GoogleTransitMapProps, AuthoritativeGoogleDirectionsEnvelope, RouteMetrics } from "./google/types";
+import { DARK_MAP_STYLES } from "./google/mapStyles";
+import {
+  createStopMarkerSvgUri,
+  createBusMarkerSvgUri,
+  createHomePinMarkerSvgUri,
+} from "./google/markerIcons";
+import { MapOverlays } from "./google/MapOverlays";
 
-export interface RouteMetrics {
-  totalDistanceKm: number;
-  totalDurationMins: number;
-  sourceProvenance: "google_directions_api";
-  isGoogleAuthoritative: true;
-  isDegradedFallback: false;
-  legs: {
-    distanceKm: number;
-    durationMins: number;
-    distanceText: string;
-    durationText: string;
-  }[];
-}
+export type { RouteMetrics, GoogleTransitMapProps };
 
-// In-Memory cache for Google Directions results (retains native LatLng and Bounds class prototypes)
+// In-Memory cache for Google Directions results (preserves native LatLng and Bounds prototypes)
 const inMemoryGoogleDirectionsCache = new Map<string, google.maps.DirectionsResult>();
-
-interface AuthoritativeGoogleDirectionsEnvelope {
-  version: "4.0";
-  provider: "google";
-  sourceProvenance: "google_directions_api";
-  isGoogleAuthoritative: true;
-  isDegradedFallback: false;
-  cachedAt: number;
-  directionsResult: google.maps.DirectionsResult;
-}
-
-export interface GoogleTransitMapProps {
-  apiKey?: string;
-  busLocation?: LiveBusLocation;
-  busName?: string;
-  tripStatus?: string;
-  fleetBuses?: FleetBusMarkerData[];
-  focusedBusId?: number;
-  onBusClick?: (bus: FleetBusMarkerData) => void;
-  stops?: Stop[];
-  campuses?: Campus[];
-  primaryCampus?: Campus | null;
-  routeCoordinates?: [number, number][];
-  walkingCoordinates?: [number, number][];
-  activeStopIndex?: number;
-  shortestPathStopIds?: string[];
-  selectedStopId?: string;
-  isExpressDirect?: boolean;
-  expressReason?: string;
-  height?: string;
-  zoom?: number;
-  onMapClick?: (lat: number, lng: number) => void;
-  onStopClick?: (stop: Stop) => void;
-  draftPinLocation?: [number, number] | null;
-  draftGeofenceRadius?: number;
-  interactiveMode?: "VIEW" | "PIN_DROP";
-  showUserLocation?: boolean;
-  showCampusLandmark?: boolean;
-  tileTheme?: "GOOGLE_STREETS" | "CARTO_VOYAGER" | "CARTO_DARK" | "GOOGLE_HYBRID" | "AUTO";
-  onRouteMetricsCalculated?: (metrics: RouteMetrics) => void;
-  onError?: (err: any) => void;
-}
-
-// Clean human-grade Google Maps Dark Theme (Pure Black / Slate)
-const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#18181b" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#09090b" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#a1a1aa" }] },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d4d4d8" }],
-  },
-  {
-    featureType: "poi",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#71717a" }],
-  },
-  {
-    featureType: "poi.park",
-    elementType: "geometry",
-    stylers: [{ color: "#14291e" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#27272a" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#18181b" }],
-  },
-  {
-    featureType: "road",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#a1a1aa" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#3f3f46" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#27272a" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#f4f4f5" }],
-  },
-  {
-    featureType: "transit",
-    elementType: "geometry",
-    stylers: [{ color: "#27272a" }],
-  },
-  {
-    featureType: "transit.station",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#a1a1aa" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#091c33" }],
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#38bdf8" }],
-  },
-];
-
-// High-DPI Inline SVG Data URIs for Hardware-Accelerated Native Google Maps Markers
-function createStopMarkerSvgUri(params: {
-  index: number;
-  state: "passed" | "next" | "upcoming" | "selected";
-  isTerminal: boolean;
-  label?: string;
-}): string {
-  const { index, state, isTerminal } = params;
-
-  if (isTerminal) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
-      <defs>
-        <filter id="ts" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2.5" stdDeviation="3" flood-opacity="0.4"/>
-        </filter>
-      </defs>
-      <circle cx="22" cy="22" r="19" fill="#4338CA" stroke="#C7D2FE" stroke-width="2.5" filter="url(#ts)"/>
-      <path d="M14 27h16M16 27v-8M22 27v-8M28 27v-8M13 19l9-6 9 6H13z" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    </svg>`;
-    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
-  }
-
-  if (state === "passed") {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <circle cx="16" cy="16" r="12" fill="#64748B" stroke="#CBD5E1" stroke-width="2"/>
-      <path d="M11 16l3.5 3.5L21 12" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    </svg>`;
-    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
-  }
-
-  if (state === "next" || state === "selected") {
-    const color = state === "selected" ? "#059669" : "#2563EB";
-    const ringColor = state === "selected" ? "#34D399" : "#93C5FD";
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-      <defs>
-        <filter id="ns" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2.5" stdDeviation="2.5" flood-opacity="0.35"/>
-        </filter>
-      </defs>
-      <circle cx="20" cy="20" r="18" fill="none" stroke="${ringColor}" stroke-width="2.5" opacity="0.85"/>
-      <circle cx="20" cy="20" r="14" fill="${color}" stroke="#FFFFFF" stroke-width="2.5" filter="url(#ns)"/>
-      <text x="20" y="24.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="13" fill="#FFFFFF">${index}</text>
-    </svg>`;
-    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
-  }
-
-  // Upcoming
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-    <defs>
-      <filter id="us" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.2"/>
-      </filter>
-    </defs>
-    <circle cx="16" cy="16" r="12" fill="#FFFFFF" stroke="#1D4ED8" stroke-width="2.5" filter="url(#us)"/>
-    <text x="16" y="20.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="12" fill="#1E40AF">${index}</text>
-  </svg>`;
-  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
-}
-
-function createBusMarkerSvgUri(busLabel: string, headingDeg: number = 0): string {
-  const shortLabel = busLabel.replace(/bus\s*/i, "").trim() || "BUS";
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-    <defs>
-      <filter id="bs" x="-25%" y="-25%" width="150%" height="150%">
-        <feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.4"/>
-      </filter>
-    </defs>
-    <circle cx="24" cy="24" r="21" fill="#1A73E8" fill-opacity="0.18"/>
-    <circle cx="24" cy="24" r="16" fill="#1A73E8" stroke="#FFFFFF" stroke-width="2.5" filter="url(#bs)"/>
-    ${headingDeg ? `
-      <g transform="rotate(${headingDeg} 24 24)">
-        <polygon points="24,9 28,14 20,14" fill="#FFFFFF"/>
-      </g>
-    ` : ""}
-    <g transform="translate(16.5, 16.5) scale(0.62)">
-      <path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z" fill="#FFFFFF"/>
-    </g>
-    <circle cx="36" cy="12" r="4.5" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5"/>
-  </svg>`;
-  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
-}
 
 export default function GoogleTransitMap({
   apiKey,
@@ -251,9 +49,8 @@ export default function GoogleTransitMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
-  // Persistent Google Native Polylines: Traveled (Muted Slate) vs To Travel (Google Blue)
+  // Persistent Google Native Polylines
   const fullOverviewPathRef = useRef<google.maps.LatLng[]>([]);
   const traveledPolylineRef = useRef<google.maps.Polyline | null>(null);
   const upcomingPolylineRef = useRef<google.maps.Polyline | null>(null);
@@ -269,7 +66,6 @@ export default function GoogleTransitMap({
   const userMarkerRef = useRef<any>(null);
   const userCircleRef = useRef<google.maps.Circle | null>(null);
 
-  const cachedRouteKeyRef = useRef<string>("");
   const initialFitDoneRef = useRef(false);
 
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -277,10 +73,31 @@ export default function GoogleTransitMap({
   const [isLocating, setIsLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
 
+  // Transient Pin Helper: Shows for exactly 1 second, then auto-disappears
+  const [showPinHint, setShowPinHint] = useState(false);
+  const pinHintTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const isPinDrop = interactiveMode === "PIN_DROP";
   const resolvedApiKey = apiKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
   const campusTerminalStop = getCampusStopFromDatabase(stops, campuses, primaryCampus);
 
-  // ── 1. Geolocation Trigger ──
+  // ── 1. Pin Helper Timer ──
+  useEffect(() => {
+    if (isPinDrop) {
+      setShowPinHint(true);
+      if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+      pinHintTimerRef.current = setTimeout(() => {
+        setShowPinHint(false);
+      }, 1000); // 1-second auto-disappear
+    } else {
+      setShowPinHint(false);
+    }
+    return () => {
+      if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+    };
+  }, [isPinDrop]);
+
+  // ── 2. Geolocation Trigger ──
   const handleLocateUser = () => {
     if (typeof window === "undefined" || !navigator.geolocation) {
       setLocationNotice("GPS Geolocation is not supported by your browser");
@@ -319,20 +136,18 @@ export default function GoogleTransitMap({
     }
   };
 
-  // ── 2. Initialize Google Maps JS API Engine ──
+  // ── 3. Initialize Google Maps JS API Engine ──
   useEffect(() => {
     if (!resolvedApiKey) {
       onError?.("No Google Maps API key provided");
       return;
     }
-    if (!containerRef.current) {
-      return;
-    }
+    if (!containerRef.current) return;
 
     let isMounted = true;
 
     (window as any).gm_authFailure = () => {
-      console.warn("Google Maps authentication failure (Referrer check or quota issue). Falling back.");
+      console.warn("Google Maps authentication failure. Falling back to Leaflet.");
       if (isMounted) onError?.("Google Maps authentication error");
     };
 
@@ -349,253 +164,166 @@ export default function GoogleTransitMap({
       ])
         .then(([mapsLib, routesLib]) => {
           if (!isMounted || !containerRef.current) return;
-          const { Map } = mapsLib as google.maps.MapsLibrary;
-          const { DirectionsService, DirectionsRenderer } = routesLib as google.maps.RoutesLibrary;
 
-          directionsServiceRef.current = new DirectionsService();
-
-          const isDark = tileTheme === "CARTO_DARK" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
           const defaultCenter = draftPinLocation
             ? { lat: draftPinLocation[0], lng: draftPinLocation[1] }
-            : busLocation
-              ? { lat: busLocation.latitude, lng: busLocation.longitude }
-              : campusTerminalStop
-                ? { lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude }
-                : stops[0]
-                  ? { lat: stops[0].latitude, lng: stops[0].longitude }
-                  : { lat: 29.375015, lng: 79.529479 };
+            : stops.length > 0
+            ? { lat: stops[0].latitude, lng: stops[0].longitude }
+            : { lat: 29.375015, lng: 79.529479 };
 
-          const mapTypeId = tileTheme === "GOOGLE_HYBRID" ? "hybrid" : "roadmap";
+          const isDarkTheme =
+            tileTheme === "CARTO_DARK" ||
+            (tileTheme === "AUTO" && typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
 
-          const map = new Map(containerRef.current, {
+          const map = new mapsLib.Map(containerRef.current, {
             center: defaultCenter,
-            zoom: zoom,
-            mapTypeId,
+            zoom: zoom || 14,
+            mapTypeId: tileTheme === "GOOGLE_HYBRID" ? google.maps.MapTypeId.HYBRID : google.maps.MapTypeId.ROADMAP,
+            styles: isDarkTheme ? DARK_MAP_STYLES : [],
             disableDefaultUI: true,
             zoomControl: true,
-            zoomControlOptions: {
-              position: google.maps.ControlPosition.RIGHT_BOTTOM,
-            },
             gestureHandling: "greedy",
-            styles: isDark && tileTheme !== "GOOGLE_HYBRID" ? DARK_MAP_STYLES : [],
+            clickableIcons: false,
           });
-
-          // Google's official native DirectionsRenderer (road curves from DirectionsService)
-          const renderer = new DirectionsRenderer({
-            map,
-            suppressMarkers: true, // We draw our custom high-DPI station number badges & bus puck
-            suppressPolylines: true, // We draw the dual traveled vs upcoming polyline with Google's overview_path
-            preserveViewport: true, // Do not snap/jerk camera on live vehicle updates
-          });
-          directionsRendererRef.current = renderer;
 
           map.addListener("click", (e: google.maps.MapMouseEvent) => {
+            if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+            setShowPinHint(false);
             if (e.latLng && onMapClick) {
               onMapClick(Number(e.latLng.lat().toFixed(6)), Number(e.latLng.lng().toFixed(6)));
             }
           });
 
           mapRef.current = map;
+          directionsServiceRef.current = new routesLib.DirectionsService();
           setMapLoaded(true);
-
-          // Trigger resize for mobile browsers
-          setTimeout(() => {
-            if (mapRef.current) {
-              google.maps.event.trigger(mapRef.current, "resize");
-            }
-          }, 150);
         })
-        .catch((err: any) => {
-          console.warn("Failed to load Google Maps JS API:", err);
-          if (isMounted) onError?.(err);
+        .catch((err) => {
+          if (isMounted) {
+            console.warn("Failed to load Google Maps libraries:", err);
+            onError?.(err);
+          }
         });
-    } catch (err: any) {
-      console.warn("Failed to set Google Maps loader options:", err);
-      onError?.(err);
+    } catch (e) {
+      onError?.(e);
     }
 
     return () => {
       isMounted = false;
-      if (directionsRendererRef.current) {
-        directionsRendererRef.current.setMap(null);
-      }
-      traveledPolylineRef.current?.setMap(null);
-      upcomingPolylineRef.current?.setMap(null);
-      upcomingGlowPolylineRef.current?.setMap(null);
-      walkingPolylineRef.current?.setMap(null);
-      busMarkerRef.current?.setMap(null);
-      stopMarkersRef.current.forEach((m) => m.setMap(null));
-      stopMarkersRef.current = [];
     };
-  }, [resolvedApiKey, tileTheme]);
+  }, [resolvedApiKey, onError, tileTheme, zoom]);
 
-  // ── 3. ResizeObserver for Mobile Responsiveness (Ensures map tiles never disappear) ──
-  useEffect(() => {
-    if (!containerRef.current || !mapLoaded) return;
-
-    const ro = new ResizeObserver(() => {
-      if (mapRef.current) {
-        google.maps.event.trigger(mapRef.current, "resize");
-      }
-    });
-
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [mapLoaded]);
-
-  // ── 3a. First-Mile Pedestrian Walking Path Layer ──
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded) return;
-    if (walkingPolylineRef.current) {
-      walkingPolylineRef.current.setMap(null);
-      walkingPolylineRef.current = null;
-    }
-    if (walkingCoordinates && walkingCoordinates.length >= 2) {
-      const path = walkingCoordinates.map(([lat, lng]) => ({ lat, lng }));
-      const lineSymbol = {
-        path: "M 0,-1 0,1",
-        strokeOpacity: 1,
-        scale: 3,
-        strokeColor: "#10B981",
-      };
-      walkingPolylineRef.current = new google.maps.Polyline({
-        path,
-        strokeOpacity: 0,
-        icons: [
-          {
-            icon: lineSymbol,
-            offset: "0",
-            repeat: "14px",
-          },
-        ],
-        map: mapRef.current,
-        zIndex: 60,
-      });
-    }
-  }, [walkingCoordinates, mapLoaded]);
-
-  // ── 3b. Slices Google Maps authoritative overview_path into Traveled vs To Travel (Upcoming) ──
+  // ── 4. Dynamic Traveled vs Upcoming Polyline Projection ──
   const updateTraveledAndUpcoming = useCallback(
-    (busPos?: { lat: number; lng: number } | null) => {
+    (currentBusPos: { lat: number; lng: number } | null) => {
       const map = mapRef.current;
-      const path = fullOverviewPathRef.current;
-      if (!map || path.length === 0 || !window.google?.maps?.geometry) return;
+      const fullPath = fullOverviewPathRef.current;
+      if (!map || fullPath.length < 2 || !window.google?.maps?.geometry) return;
 
-      const isDark = tileTheme === "CARTO_DARK" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
-
-      if (!upcomingGlowPolylineRef.current) {
-        upcomingGlowPolylineRef.current = new google.maps.Polyline({
-          map,
-          strokeColor: isExpressDirect ? "#10B981" : "#3B82F6",
-          strokeWeight: 10,
-          strokeOpacity: 0.25,
-          zIndex: 50,
-        });
-      }
-      if (!upcomingPolylineRef.current) {
-        upcomingPolylineRef.current = new google.maps.Polyline({
-          map,
-          strokeColor: isExpressDirect ? "#059669" : "#1A73E8", // Official Google Navigation Blue
-          strokeWeight: 6,
-          strokeOpacity: 1.0,
-          zIndex: 60,
-        });
-      }
-      if (!traveledPolylineRef.current) {
-        traveledPolylineRef.current = new google.maps.Polyline({
-          map,
-          strokeColor: isDark ? "#64748B" : "#94A3B8", // Muted Transit Slate
-          strokeWeight: 5,
-          strokeOpacity: 0.85,
-          zIndex: 55,
-        });
-      }
-
-      // If no bus GPS position available yet, whole path is upcoming
-      if (!busPos || typeof busPos.lat !== "number" || typeof busPos.lng !== "number") {
-        traveledPolylineRef.current.setPath([]);
-        upcomingPolylineRef.current.setPath(path);
-        upcomingGlowPolylineRef.current.setPath(path);
-        return;
-      }
-
-      const busLatLng = new google.maps.LatLng(busPos.lat, busPos.lng);
-
-      // Find the closest point index on the authoritative Google road path
-      let closestIdx = 0;
-      let minDistance = Infinity;
-      for (let i = 0; i < path.length; i++) {
-        const dist = google.maps.geometry.spherical.computeDistanceBetween(path[i], busLatLng);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestIdx = i;
+      let splitIdx = 0;
+      if (currentBusPos) {
+        let minDistance = Infinity;
+        const busLatLng = new google.maps.LatLng(currentBusPos.lat, currentBusPos.lng);
+        for (let i = 0; i < fullPath.length; i++) {
+          const dist = google.maps.geometry.spherical.computeDistanceBetween(busLatLng, fullPath[i]);
+          if (dist < minDistance) {
+            minDistance = dist;
+            splitIdx = i;
+          }
         }
       }
 
-      // Strictly road-following geometry: traveled and upcoming paths must ONLY contain points on the road network.
-      // Never insert raw off-road GPS coordinates into the road polyline.
-      let traveledPoints: google.maps.LatLng[] = [];
-      let upcomingPoints: google.maps.LatLng[] = [];
+      const isCompletedTrip = tripStatus === "COMPLETED";
+      const actualSplit = isCompletedTrip ? fullPath.length - 1 : splitIdx;
+      const traveledCoords = fullPath.slice(0, actualSplit + 1);
+      const upcomingCoords = fullPath.slice(actualSplit);
 
-      if (closestIdx === 0) {
-        traveledPoints = [];
-        upcomingPoints = path;
-      } else if (closestIdx >= path.length - 1) {
-        traveledPoints = path;
-        upcomingPoints = [];
+      // Traveled Polyline (Subtle Slate)
+      if (!traveledPolylineRef.current) {
+        traveledPolylineRef.current = new google.maps.Polyline({
+          path: traveledCoords,
+          strokeColor: "#94A3B8",
+          strokeOpacity: 0.85,
+          strokeWeight: 4,
+          zIndex: 10,
+          map,
+        });
       } else {
-        traveledPoints = path.slice(0, closestIdx + 1);
-        upcomingPoints = path.slice(closestIdx);
+        traveledPolylineRef.current.setPath(traveledCoords);
+        traveledPolylineRef.current.setMap(map);
       }
 
-      traveledPolylineRef.current.setPath(traveledPoints);
-      upcomingPolylineRef.current.setPath(upcomingPoints);
-      upcomingGlowPolylineRef.current.setPath(upcomingPoints);
+      // Upcoming Polyline (Vibrant Google Blue)
+      if (!upcomingPolylineRef.current) {
+        upcomingGlowPolylineRef.current = new google.maps.Polyline({
+          path: upcomingCoords,
+          strokeColor: "#60A5FA",
+          strokeOpacity: 0.35,
+          strokeWeight: 9,
+          zIndex: 14,
+          map,
+        });
+        upcomingPolylineRef.current = new google.maps.Polyline({
+          path: upcomingCoords,
+          strokeColor: "#1A73E8",
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
+          zIndex: 15,
+          map,
+        });
+      } else {
+        upcomingGlowPolylineRef.current?.setPath(upcomingCoords);
+        upcomingGlowPolylineRef.current?.setMap(map);
+        upcomingPolylineRef.current.setPath(upcomingCoords);
+        upcomingPolylineRef.current.setMap(map);
+      }
     },
-    [isExpressDirect, tileTheme]
+    [tripStatus]
   );
 
-  // ── 4. Google Maps Directions API with Intelligent Multi-Tier Caching (SessionStorage + In-Memory) ──
+  // ── 5. Directions Service Query (STRICT SECURITY ISOLATION: SKIPPED IN PIN_DROP MODE) ──
   useEffect(() => {
     const map = mapRef.current;
     const directionsService = directionsServiceRef.current;
-    const directionsRenderer = directionsRendererRef.current;
-    if (!map || !mapLoaded || !directionsService || !directionsRenderer) return;
+    if (!map || !mapLoaded || !directionsService || typeof window === "undefined" || !window.google) return;
+
+    // SECURITY: In PIN_DROP mode, NEVER fetch or draw multi-stop transit route curves to prevent route data leaks
+    if (isPinDrop) {
+      if (traveledPolylineRef.current) traveledPolylineRef.current.setMap(null);
+      if (upcomingPolylineRef.current) upcomingPolylineRef.current.setMap(null);
+      if (upcomingGlowPolylineRef.current) upcomingGlowPolylineRef.current.setMap(null);
+      return;
+    }
+
+    if (stops.length < 2 && routeCoordinates.length < 2) {
+      if (traveledPolylineRef.current) traveledPolylineRef.current.setMap(null);
+      if (upcomingPolylineRef.current) upcomingPolylineRef.current.setMap(null);
+      if (upcomingGlowPolylineRef.current) upcomingGlowPolylineRef.current.setMap(null);
+      return;
+    }
 
     let isMounted = true;
-
-    // Calculate corridor sequence
     const waypoints: [number, number][] =
       routeCoordinates.length >= 2
         ? routeCoordinates
-        : (!fleetBuses || fleetBuses.length === 0) && stops.length >= 2
-          ? stops.map((s) => [s.latitude, s.longitude])
-          : [];
+        : stops.map((s) => [s.latitude, s.longitude]);
 
     if (waypoints.length < 2) return;
 
-    const cacheKey = `cf_google_authoritative_directions_v4_${waypoints.map((w) => `${w[0].toFixed(5)},${w[1].toFixed(5)}`).join(";")}`;
-
-    // Skip redundant network queries if route sequence has not changed
-    if (cacheKey === cachedRouteKeyRef.current) return;
+    const cacheKey = `cf_gdir_v4_${waypoints.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
 
     function applyRouteResult(result: google.maps.DirectionsResult) {
-      if (!isMounted || !directionsRenderer) return;
-      directionsRenderer.setDirections(result);
-      cachedRouteKeyRef.current = cacheKey;
+      if (!isMounted || !result.routes?.[0]?.overview_path) return;
+      fullOverviewPathRef.current = result.routes[0].overview_path;
 
-      // Extract authoritative road curves and initialize Traveled vs Upcoming Polylines
-      if (result.routes?.[0]?.overview_path) {
-        fullOverviewPathRef.current = result.routes[0].overview_path;
-        const currentBusPos =
-          busLocation && typeof busLocation.latitude === "number"
-            ? { lat: busLocation.latitude, lng: busLocation.longitude }
-            : null;
-        updateTraveledAndUpcoming(currentBusPos);
-      }
+      const currentBusPos =
+        busLocation && typeof busLocation.latitude === "number"
+          ? { lat: busLocation.latitude, lng: busLocation.longitude }
+          : null;
+      updateTraveledAndUpcoming(currentBusPos);
 
-      // Extract high-accuracy Google Maps transit road metrics
-      if (result.routes?.[0]?.legs) {
+      // Route metrics
+      if (result.routes[0].legs) {
         let totalDistMeters = 0;
         let totalDurSec = 0;
         const legs = result.routes[0].legs.map((leg) => {
@@ -619,45 +347,30 @@ export default function GoogleTransitMap({
         });
       }
 
-      // Fit bounds ONCE on initial corridor load
       if (!initialFitDoneRef.current && mapRef.current && result.routes?.[0]?.bounds) {
         mapRef.current.fitBounds(result.routes[0].bounds, { top: 60, right: 40, bottom: 60, left: 40 });
         initialFitDoneRef.current = true;
       }
     }
 
-    // 1. Check in-memory native cache first (zero latency, preserves LatLng class prototypes)
     const inMem = inMemoryGoogleDirectionsCache.get(cacheKey);
     if (inMem) {
       applyRouteResult(inMem);
       return;
     }
 
-    // 2. Check client-side storage cache with strict security envelope validation
     try {
       const cachedRaw = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
       if (cachedRaw) {
-        const envelope = JSON.parse(cachedRaw);
-        if (
-          envelope?.version === "4.0" &&
-          envelope?.provider === "google" &&
-          envelope?.sourceProvenance === "google_directions_api" &&
-          envelope?.isGoogleAuthoritative === true &&
-          envelope?.directionsResult?.routes?.length > 0
-        ) {
+        const envelope: AuthoritativeGoogleDirectionsEnvelope = JSON.parse(cachedRaw);
+        if (envelope?.version === "4.0" && envelope?.directionsResult?.routes?.length > 0) {
           applyRouteResult(envelope.directionsResult);
           inMemoryGoogleDirectionsCache.set(cacheKey, envelope.directionsResult);
           return;
-        } else {
-          // Detected non-Google, degraded, or corrupted data: purge immediately
-          sessionStorage.removeItem(cacheKey);
         }
       }
-    } catch {
-      try { sessionStorage.removeItem(cacheKey); } catch { }
-    }
+    } catch {}
 
-    // 3. Query Google Maps DirectionsService directly (official Google road curves)
     const origin = { lat: waypoints[0][0], lng: waypoints[0][1] };
     const destination = { lat: waypoints[waypoints.length - 1][0], lng: waypoints[waypoints.length - 1][1] };
     const intermediate = waypoints.slice(1, -1).slice(0, 23).map(([lat, lng]) => ({
@@ -678,41 +391,18 @@ export default function GoogleTransitMap({
           inMemoryGoogleDirectionsCache.set(cacheKey, result);
           applyRouteResult(result);
           try {
-            const envelope: AuthoritativeGoogleDirectionsEnvelope = {
-              version: "4.0",
-              provider: "google",
-              sourceProvenance: "google_directions_api",
-              isGoogleAuthoritative: true,
-              isDegradedFallback: false,
-              cachedAt: Date.now(),
-              directionsResult: result,
-            };
-            sessionStorage.setItem(cacheKey, JSON.stringify(envelope));
-          } catch { }
-        } else {
-          console.warn("[GoogleTransitMap] DirectionsService query returned non-OK status:", status);
-          // Fallback to internal road directions API to keep path strictly on roads
-          const coordsStr = waypoints.map((w) => `${w[0]},${w[1]}`).join(";");
-          fetch(`/api/geo/directions?coords=${coordsStr}`)
-            .then((res) => res.json())
-            .then((data) => {
-              if (data?.success && Array.isArray(data.coordinates) && data.coordinates.length >= 2 && isMounted) {
-                const roadPath = data.coordinates.map(([lat, lng]: [number, number]) => new google.maps.LatLng(lat, lng));
-                fullOverviewPathRef.current = roadPath;
-                const currentBusPos =
-                  busLocation && typeof busLocation.latitude === "number"
-                    ? { lat: busLocation.latitude, lng: busLocation.longitude }
-                    : null;
-                updateTraveledAndUpcoming(currentBusPos);
-              } else if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
-                onError?.(`Google Directions service error: ${status}`);
-              }
-            })
-            .catch(() => {
-              if (status !== google.maps.DirectionsStatus.ZERO_RESULTS) {
-                onError?.(`Google Directions service error: ${status}`);
-              }
-            });
+            sessionStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                version: "4.0",
+                provider: "google",
+                sourceProvenance: "google_directions_api",
+                isGoogleAuthoritative: true,
+                cachedAt: Date.now(),
+                directionsResult: result,
+              })
+            );
+          } catch {}
         }
       }
     );
@@ -720,16 +410,44 @@ export default function GoogleTransitMap({
     return () => {
       isMounted = false;
     };
-  }, [mapLoaded, stops, routeCoordinates, onRouteMetricsCalculated, updateTraveledAndUpcoming, busLocation]);
+  }, [mapLoaded, stops, routeCoordinates, isPinDrop, onRouteMetricsCalculated, updateTraveledAndUpcoming, busLocation]);
 
-  // ── 5. Render Native High-DPI Station Stop Markers Along Route ──
+  // ── 6. First-Mile Walking Polyline ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !window.google) return;
+
+    if (walkingPolylineRef.current) {
+      walkingPolylineRef.current.setMap(null);
+      walkingPolylineRef.current = null;
+    }
+
+    if (walkingCoordinates && walkingCoordinates.length >= 2) {
+      const walkingPath = walkingCoordinates.map(([lat, lng]) => new google.maps.LatLng(lat, lng));
+      walkingPolylineRef.current = new google.maps.Polyline({
+        path: walkingPath,
+        strokeColor: "#10B981",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        zIndex: 12,
+        map,
+      });
+    }
+  }, [mapLoaded, walkingCoordinates]);
+
+  // ── 7. Render Station Stop Markers (DATA LEAK GUARD: In PIN_DROP mode, only render assigned stop) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || typeof window === "undefined" || !window.google) return;
 
-    // Clean previous stop markers
     stopMarkersRef.current.forEach((m) => m.setMap(null));
     stopMarkersRef.current = [];
+
+    // DATA PRIVACY: In PIN_DROP mode, NEVER render all system stops across towns!
+    // Only render the commuter's selected/allocated stop to prevent route data leaks.
+    const stopsToRender = isPinDrop
+      ? (selectedStopId ? stops.filter((s) => s.id === selectedStopId) : [])
+      : stops;
 
     const effectiveStopIndex =
       activeStopIndex !== undefined && activeStopIndex !== null
@@ -738,40 +456,36 @@ export default function GoogleTransitMap({
         ? Math.max(0, stops.findIndex((s) => s.id === busLocation.currentStopId))
         : 0;
 
-    stops.forEach((stop, idx) => {
+    stopsToRender.forEach((stop, idx) => {
       const isSelected = Boolean(selectedStopId && stop.id === selectedStopId);
       const isNext = idx === effectiveStopIndex;
       const isPassed = idx < effectiveStopIndex;
-      const isTerminal = idx === stops.length - 1;
+      const isTerminal = idx === stopsToRender.length - 1 && !isPinDrop;
 
       const state: "passed" | "next" | "upcoming" | "selected" = isSelected
         ? "selected"
         : isNext
-          ? "next"
-          : isPassed
-            ? "passed"
-            : "upcoming";
+        ? "next"
+        : isPassed
+        ? "passed"
+        : "upcoming";
 
       const iconUrl = createStopMarkerSvgUri({
-        index: idx + 1,
+        index: isPinDrop ? 1 : idx + 1,
         state,
         isTerminal,
-        label: stop.code || stop.name,
       });
-
-      const size = isTerminal ? 44 : isNext || isSelected ? 40 : 32;
-      const anchorPoint = isTerminal ? 22 : isNext || isSelected ? 20 : 16;
 
       const marker = new google.maps.Marker({
         position: { lat: stop.latitude, lng: stop.longitude },
         map,
         icon: {
           url: iconUrl,
-          scaledSize: new google.maps.Size(size, size),
-          anchor: new google.maps.Point(anchorPoint, anchorPoint),
+          scaledSize: isTerminal ? new google.maps.Size(44, 44) : new google.maps.Size(34, 34),
+          anchor: isTerminal ? new google.maps.Point(22, 22) : new google.maps.Point(17, 17),
         },
-        title: `${idx + 1}. ${stop.name} (${isPassed ? "Passed" : isNext ? "Next Stop" : isTerminal ? "Campus Terminal" : "Upcoming"})`,
-        zIndex: isSelected ? 400 : isNext ? 350 : isTerminal ? 300 : 200,
+        title: `${stop.name} (${stop.code})`,
+        zIndex: isSelected ? 400 : 200 + idx,
       });
 
       marker.addListener("click", () => {
@@ -780,31 +494,18 @@ export default function GoogleTransitMap({
 
       stopMarkersRef.current.push(marker);
     });
+  }, [mapLoaded, stops, activeStopIndex, selectedStopId, isPinDrop, onStopClick, busLocation?.currentStopId]);
 
-    // Campus Terminal Landmark Geofence Ring
-    if (showCampusLandmark && campusTerminalStop) {
-      if (!campusCircleRef.current) {
-        campusCircleRef.current = new google.maps.Circle({
-          center: { lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude },
-          radius: campusTerminalStop.geofenceRadiusMeters || 150,
-          strokeColor: "#4F46E5",
-          strokeOpacity: 0.8,
-          strokeWeight: 2,
-          fillColor: "#6366F1",
-          fillOpacity: 0.12,
-          map,
-        });
-      } else {
-        campusCircleRef.current.setCenter({ lat: campusTerminalStop.latitude, lng: campusTerminalStop.longitude });
-        campusCircleRef.current.setRadius(campusTerminalStop.geofenceRadiusMeters || 150);
-      }
-    }
-  }, [mapLoaded, stops, activeStopIndex, selectedStopId, showCampusLandmark, campusTerminalStop, onStopClick, busLocation?.currentStopId]);
-
-  // ── 6. Live Bus Vehicle Marker & Dynamic Dual-Polyline Traveled/Upcoming Update ──
+  // ── 8. Live Bus Vehicle Marker ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !window.google) return;
+    if (!map || !mapLoaded || !window.google || isPinDrop) {
+      if (busMarkerRef.current) {
+        busMarkerRef.current.setMap(null);
+        busMarkerRef.current = null;
+      }
+      return;
+    }
 
     let activeBusPos: [number, number] | null = null;
     let heading = 0;
@@ -845,42 +546,53 @@ export default function GoogleTransitMap({
         });
       }
 
-      // Smoothly update Traveled vs To Travel polylines with zero re-querying and zero flicker
       updateTraveledAndUpcoming(posObj);
     }
-  }, [mapLoaded, busLocation, busName, tripStatus, focusedBusId, fleetBuses, updateTraveledAndUpcoming]);
+  }, [mapLoaded, busLocation, busName, tripStatus, focusedBusId, fleetBuses, isPinDrop, updateTraveledAndUpcoming]);
 
-  // ── 7. Draft Pin & Geofence (Admin Interactive Mode) ──
+  // ── 9. Draft Home Location Pin (Student & Admin Pin-Drop Mode) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !window.google) return;
 
     if (draftPinLocation) {
-      if (!draftCircleRef.current) {
-        draftCircleRef.current = new google.maps.Circle({
-          center: { lat: draftPinLocation[0], lng: draftPinLocation[1] },
-          radius: draftGeofenceRadius || 80,
-          strokeColor: "#E11D48",
-          strokeOpacity: 0.9,
-          strokeWeight: 2,
-          fillColor: "#FECDD3",
-          fillOpacity: 0.35,
-          map,
-        });
-      } else {
-        draftCircleRef.current.setCenter({ lat: draftPinLocation[0], lng: draftPinLocation[1] });
-        draftCircleRef.current.setRadius(draftGeofenceRadius || 80);
-      }
+      const homePinSvgUri = createHomePinMarkerSvgUri();
 
       if (!draftMarkerRef.current) {
         draftMarkerRef.current = new google.maps.Marker({
           position: { lat: draftPinLocation[0], lng: draftPinLocation[1] },
           map,
-          title: "Draft Stop Location",
-          zIndex: 600,
+          icon: {
+            url: homePinSvgUri,
+            scaledSize: new google.maps.Size(44, 44),
+            anchor: new google.maps.Point(22, 22),
+          },
+          title: "Your Selected Home Location",
+          zIndex: 700,
         });
       } else {
         draftMarkerRef.current.setPosition({ lat: draftPinLocation[0], lng: draftPinLocation[1] });
+      }
+
+      // Geofence circle: only drawn in admin mode, never for student home pin
+      if (draftGeofenceRadius && draftGeofenceRadius > 0 && !isPinDrop) {
+        if (!draftCircleRef.current) {
+          draftCircleRef.current = new google.maps.Circle({
+            center: { lat: draftPinLocation[0], lng: draftPinLocation[1] },
+            radius: draftGeofenceRadius,
+            strokeColor: "#E11D48",
+            strokeOpacity: 0.9,
+            strokeWeight: 2,
+            fillColor: "#FECDD3",
+            fillOpacity: 0.35,
+            map,
+          });
+        } else {
+          draftCircleRef.current.setCenter({ lat: draftPinLocation[0], lng: draftPinLocation[1] });
+        }
+      } else if (draftCircleRef.current) {
+        draftCircleRef.current.setMap(null);
+        draftCircleRef.current = null;
       }
 
       map.panTo({ lat: draftPinLocation[0], lng: draftPinLocation[1] });
@@ -894,9 +606,9 @@ export default function GoogleTransitMap({
         draftMarkerRef.current = null;
       }
     }
-  }, [mapLoaded, draftPinLocation, draftGeofenceRadius]);
+  }, [mapLoaded, draftPinLocation, draftGeofenceRadius, isPinDrop]);
 
-  // ── 8. Render User Location Dot ──
+  // ── 10. User GPS Blue Dot Marker ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !window.google || !userLocation) return;
@@ -915,7 +627,7 @@ export default function GoogleTransitMap({
       map,
     });
 
-    const userMarker = new google.maps.Marker({
+    userMarkerRef.current = new google.maps.Marker({
       position: { lat: userLocation.lat, lng: userLocation.lng },
       map,
       icon: {
@@ -929,13 +641,13 @@ export default function GoogleTransitMap({
       title: "Your GPS Location",
       zIndex: 900,
     });
-    userMarkerRef.current = userMarker;
   }, [mapLoaded, userLocation]);
 
   return (
     <div
-      className={`relative w-full rounded-3xl overflow-hidden shadow-inner border border-zinc-200 dark:border-zinc-800 z-0 flex flex-col ${height === "100%" ? "h-full min-h-[350px] flex-1" : ""
-        }`}
+      className={`relative w-full rounded-3xl overflow-hidden shadow-inner border border-zinc-200 dark:border-zinc-800 z-0 flex flex-col ${
+        height === "100%" ? "h-full min-h-[350px] flex-1" : ""
+      }`}
       style={{
         height: height || "400px",
         minHeight: height === "100%" ? "350px" : height || "400px",
@@ -951,69 +663,20 @@ export default function GoogleTransitMap({
         }}
       />
 
-      {/* Floating Google Controls: Locate Me & Center on Campus */}
-      <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
-        {showUserLocation && (
-          <button
-            onClick={handleLocateUser}
-            type="button"
-            title={userLocation ? "Your GPS Location is Active (Click to Re-center)" : "Locate My Position (GPS)"}
-            aria-label="Locate me"
-            className={`p-2.5 rounded-2xl shadow-xl border backdrop-blur-md transition-all flex items-center justify-center group ${userLocation
-              ? "bg-blue-600 text-white border-blue-400 ring-2 ring-blue-300 hover:bg-blue-700"
-              : "bg-white dark:bg-black text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              }`}
-          >
-            <Crosshair className={`w-4 h-4 ${isLocating ? "animate-spin text-amber-400" : ""}`} />
-          </button>
-        )}
-
-        {showCampusLandmark && campusTerminalStop && (
-          <button
-            onClick={handlePanToCampus}
-            type="button"
-            title={`Center on ${campusTerminalStop.name}`}
-            aria-label="Center on Campus"
-            className="p-2.5 rounded-2xl shadow-xl border bg-white dark:bg-black text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-all flex items-center justify-center"
-          >
-            <Building2 className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Floating GPS Location Status Toast */}
-      {locationNotice && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-full bg-zinc-900/90 text-white text-xs font-bold shadow-2xl border border-zinc-700/80 backdrop-blur-md flex items-center gap-1.5 animate-in fade-in slide-in-from-top-2">
-          <Navigation className="w-3.5 h-3.5 text-blue-400" />
-          <span>{locationNotice}</span>
-        </div>
-      )}
-
-      {/* Google Maps Transit Legend */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 shadow-lg text-[10px] font-bold text-zinc-700 dark:text-zinc-300 select-none">
-        <div className="flex items-center gap-1.5" title="Route segment already covered by the bus">
-          <span className="w-3.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 inline-block"></span>
-          <span>Traveled</span>
-        </div>
-        <span className="text-zinc-300 dark:text-zinc-700">•</span>
-        <div className="flex items-center gap-1.5" title="Remaining route corridor to campus">
-          <span className="w-3.5 h-1.5 rounded-full bg-blue-600 inline-block"></span>
-          <span>To Campus</span>
-        </div>
-        {campusTerminalStop && (
-          <>
-            <span className="text-zinc-300 dark:text-zinc-700">•</span>
-            <div
-              onClick={handlePanToCampus}
-              className="flex items-center gap-1 text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-              title={`Pan to ${campusTerminalStop.name}`}
-            >
-              <span>🏛️</span>
-              <span>{campusTerminalStop.code}</span>
-            </div>
-          </>
-        )}
-      </div>
+      {/* Floating Controls, Transient 1s Pin Hint, and Isolated Legend */}
+      <MapOverlays
+        showUserLocation={showUserLocation}
+        userLocation={userLocation}
+        isLocating={isLocating}
+        onLocateUser={handleLocateUser}
+        showCampusLandmark={showCampusLandmark}
+        campusTerminalStop={campusTerminalStop}
+        onPanToCampus={handlePanToCampus}
+        locationNotice={locationNotice}
+        interactiveMode={interactiveMode}
+        showPinHint={showPinHint}
+        hasRouteLegend={stops.length >= 2}
+      />
     </div>
   );
 }

@@ -270,6 +270,25 @@ function LeafletTransitMap({
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
+  // Transient Pin Drop Helper (Shows for 1 second, then automatically disappears)
+  const [showPinHint, setShowPinHint] = useState(false);
+  const pinHintTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (interactiveMode === "PIN_DROP") {
+      setShowPinHint(true);
+      if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+      pinHintTimerRef.current = setTimeout(() => {
+        setShowPinHint(false);
+      }, 1000); // 1 second duration
+    } else {
+      setShowPinHint(false);
+    }
+    return () => {
+      if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+    };
+  }, [interactiveMode]);
+
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
   const onStopClickRef = useRef(onStopClick);
@@ -389,6 +408,8 @@ function LeafletTransitMap({
         L.control.zoom({ position: "bottomright" }).addTo(map);
 
         map.on("click", (e: any) => {
+          if (pinHintTimerRef.current) clearTimeout(pinHintTimerRef.current);
+          setShowPinHint(false);
           if (onMapClickRef.current) {
             onMapClickRef.current(Number(e.latlng.lat.toFixed(6)), Number(e.latlng.lng.toFixed(6)));
           }
@@ -492,9 +513,11 @@ function LeafletTransitMap({
       }
 
       // Calculate Main Route Waypoints
-      // Only draw road corridor if explicit routeCoordinates provided OR in single route mode (not full fleet view)
+      // Never draw auto-connected multi-stop route polylines in PIN_DROP mode
       const waypoints: [number, number][] =
-        routeCoordinates.length >= 2
+        interactiveMode === "PIN_DROP"
+          ? []
+          : routeCoordinates.length >= 2
           ? routeCoordinates
           : (!fleetBuses || fleetBuses.length === 0) && stops.length >= 2
           ? stops.map(s => [s.latitude, s.longitude])
@@ -745,7 +768,13 @@ function LeafletTransitMap({
         (routeCoordinates.length >= 2 || hasSpecificRoute || (!fleetBuses || fleetBuses.length === 0)) &&
         stops.length >= 2;
 
-      stops.forEach((stop, idx) => {
+      // In PIN_DROP mode, NEVER render all system stops across campuses!
+      // If a specific pickup stop is selected, ONLY render that single stop to avoid route data leak.
+      const stopsToRender = interactiveMode === "PIN_DROP"
+        ? (selectedStopId ? stops.filter(s => s.id === selectedStopId) : [])
+        : stops;
+
+      stopsToRender.forEach((stop, idx) => {
         const isPassed = idx < activeStopIndex;
         const isNext = idx === activeStopIndex;
         const isStudentPickup = selectedStopId && stop.id === selectedStopId;
@@ -831,10 +860,10 @@ function LeafletTransitMap({
           className: "custom-draft-pin-icon",
           html: `
             <div class="relative flex items-center justify-center w-10 h-10 -translate-x-1/2 -translate-y-full">
-              <div class="w-8 h-8 rounded-full bg-red-600 border-2 border-white shadow-2xl flex items-center justify-center text-white text-sm font-black animate-bounce ring-4 ring-red-400/50">
+              <div class="w-8 h-8 rounded-full bg-emerald-600 border-2 border-white shadow-2xl flex items-center justify-center text-white text-sm font-black ring-4 ring-emerald-400/40">
                 ${stopPinSvg}
               </div>
-              <div class="absolute -bottom-1 w-2 h-2 rounded-full bg-red-700"></div>
+              <div class="absolute -bottom-1 w-2 h-2 rounded-full bg-emerald-700"></div>
             </div>
           `,
           iconSize: [40, 40],
@@ -846,24 +875,25 @@ function LeafletTransitMap({
           zIndexOffset: 1500,
         }).addTo(markersGroupRef.current);
 
-        draftMarker.bindPopup(`
-          <div style="font-family: sans-serif; font-size: 12px; line-height: 1.4;">
-            <strong style="color: #e11d48; font-size: 13px; display: flex; align-items: center; gap: 4px;">${stopPinSvg} New Selected Location</strong><br/>
-            <span>Lat: <strong>${draftPinLocation[0].toFixed(5)}</strong></span><br/>
-            <span>Lng: <strong>${draftPinLocation[1].toFixed(5)}</strong></span><br/>
-            <span>Radius: <strong>${draftGeofenceRadius}m</strong></span>
-          </div>
-        `).openPopup();
+        // Subtle non-intrusive tooltip on hover/click instead of auto-opening coordinate popup
+        draftMarker.bindTooltip("Your Home Location", {
+          direction: "top",
+          offset: [0, -32],
+          className: "custom-pin-tooltip",
+        });
 
-        L.circle(draftPinLocation, {
-          radius: draftGeofenceRadius || 80,
-          color: "#e11d48",
-          dashArray: "6, 6",
-          weight: 2,
-          opacity: 0.9,
-          fillColor: "#fecdd3",
-          fillOpacity: 0.35,
-        }).addTo(markersGroupRef.current);
+        // Only draw geofence circle in admin stop creation mode, not student home pin drop
+        if (draftGeofenceRadius && draftGeofenceRadius > 0 && interactiveMode !== "PIN_DROP") {
+          L.circle(draftPinLocation, {
+            radius: draftGeofenceRadius,
+            color: "#e11d48",
+            dashArray: "6, 6",
+            weight: 2,
+            opacity: 0.9,
+            fillColor: "#fecdd3",
+            fillOpacity: 0.35,
+          }).addTo(markersGroupRef.current);
+        }
 
         map.panTo(draftPinLocation);
       }
@@ -1340,53 +1370,56 @@ function LeafletTransitMap({
         </div>
       )}
 
-      {/* Google Maps Style Navigation Legend in Bottom Left */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border border-gray-200/80 dark:border-gray-800/80 shadow-lg text-[10px] font-bold text-gray-700 dark:text-gray-300 select-none">
-        <div className="flex items-center gap-1" title="Already traveled road path">
-          <span className="w-3.5 h-1.5 rounded-full bg-gray-400 inline-block"></span>
-          <span>Covered</span>
+      {/* Google Maps Style Navigation Legend in Bottom Left (Hidden in PIN_DROP mode) */}
+      {interactiveMode !== "PIN_DROP" && (
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border border-gray-200/80 dark:border-gray-800/80 shadow-lg text-[10px] font-bold text-gray-700 dark:text-gray-300 select-none">
+          <div className="flex items-center gap-1" title="Already traveled road path">
+            <span className="w-3.5 h-1.5 rounded-full bg-gray-400 inline-block"></span>
+            <span>Covered</span>
+          </div>
+          <span className="text-gray-300 dark:text-gray-700">•</span>
+          <div className="flex items-center gap-1" title="Upcoming road path ahead">
+            <span className="w-3.5 h-1.5 rounded-full bg-blue-500 inline-block shadow-xs shadow-blue-400"></span>
+            <span>Ahead</span>
+          </div>
+          {campusTerminalStop && (
+            <>
+              <span className="text-gray-300 dark:text-gray-700">•</span>
+              <div
+                onClick={handlePanToCampus}
+                className="flex items-center gap-1 text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                title={`Pan to ${campusTerminalStop.name}`}
+              >
+                <span>🎓</span>
+                <span>{campusTerminalStop.code}</span>
+              </div>
+            </>
+          )}
+          {userLocation && (
+            <>
+              <span className="text-gray-300 dark:text-gray-700">•</span>
+              <div
+                onClick={() => {
+                  if (mapInstanceRef.current && userLocation) {
+                    mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 15, { animate: true });
+                  }
+                }}
+                className="flex items-center gap-1 text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                title="Your Live GPS Location"
+              >
+                <span className="w-2 h-2 rounded-full bg-blue-600 border border-white inline-block"></span>
+                <span>You</span>
+              </div>
+            </>
+          )}
         </div>
-        <span className="text-gray-300 dark:text-gray-700">•</span>
-        <div className="flex items-center gap-1" title="Upcoming road path ahead">
-          <span className="w-3.5 h-1.5 rounded-full bg-blue-500 inline-block shadow-xs shadow-blue-400"></span>
-          <span>Ahead</span>
-        </div>
-        {campusTerminalStop && (
-          <>
-            <span className="text-gray-300 dark:text-gray-700">•</span>
-            <div
-              onClick={handlePanToCampus}
-              className="flex items-center gap-1 text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-              title={`Pan to ${campusTerminalStop.name}`}
-            >
-              <span>🎓</span>
-              <span>{campusTerminalStop.code}</span>
-            </div>
-          </>
-        )}
-        {userLocation && (
-          <>
-            <span className="text-gray-300 dark:text-gray-700">•</span>
-            <div
-              onClick={() => {
-                if (mapInstanceRef.current && userLocation) {
-                  mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 15, { animate: true });
-                }
-              }}
-              className="flex items-center gap-1 text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-              title="Your Live GPS Location"
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-600 border border-white inline-block"></span>
-              <span>You</span>
-            </div>
-          </>
-        )}
-      </div>
+      )}
 
-      {interactiveMode === "PIN_DROP" && (
-        <div className="absolute top-3 left-3 z-10 bg-red-600 text-white font-bold text-xs px-3.5 py-2 rounded-2xl shadow-xl flex items-center gap-2 border border-white/30 animate-pulse pointer-events-none">
-          <MapPin className="w-4 h-4 shrink-0" />
-          <span>Click anywhere on the map to set stop coordinates</span>
+      {/* Transient Pin Helper Pill - Shows for 1 second on touch/activation then auto-disappears */}
+      {interactiveMode === "PIN_DROP" && showPinHint && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 dark:bg-zinc-900/95 text-white font-medium text-xs px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-white/20 pointer-events-none transition-all duration-300 animate-in fade-in zoom-in-95">
+          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>Click anywhere on map to drop pin</span>
         </div>
       )}
 

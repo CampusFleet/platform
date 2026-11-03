@@ -2,7 +2,7 @@ import { getSession } from "@/lib/jwt";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getOrFetchWithCache } from "@/lib/redis";
-import type { Route, Bus, Stop, Student, Trip, Booking, Staff, UserAccount, Campus, ClassItem, Shift, TripDirection } from "@/lib/types";
+import type { Route, Bus, Stop, Student, Trip, Booking, Staff, UserAccount, Campus, ClassItem, Shift, TripDirection, RestZone } from "@/lib/types";
 
 export async function getStaffServerData(redirectPath: string = "/transport-admin") {
   const session = await getSession();
@@ -28,8 +28,9 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     dbCampuses,
     dbClasses,
     dbShifts,
+    dbRestZones,
   } = await getOrFetchWithCache({
-    key: "staff:transport_admin_raw_tables",
+    key: "staff:transport_admin_raw_tables_v3",
     ttl: 20, // 20s cache with jitter for instant page switching
     allowEmpty: true,
     fetchFn: async () => {
@@ -46,6 +47,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
         { data: dbCampuses },
         { data: dbClasses },
         { data: dbShifts },
+        { data: dbRestZones },
       ] = await Promise.all([
         supabaseAdmin.from("trips").select("*").order("trip_code"),
         supabaseAdmin.from("buses").select("*"),
@@ -59,6 +61,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
         supabaseAdmin.from("campuses").select("*"),
         supabaseAdmin.from("v_classes_expanded").select("*"),
         supabaseAdmin.from("shifts").select("*"),
+        supabaseAdmin.from("rest_zones").select("*"),
       ]);
 
       return {
@@ -74,6 +77,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
         dbCampuses,
         dbClasses,
         dbShifts,
+        dbRestZones,
       };
     },
   });
@@ -190,6 +194,9 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     className: s.class_name || "",
     studentIdCode: s.student_id_code || "",
     rfidCardId: s.rfid_card_id || "",
+    homeLatitude: s.home_latitude !== null && s.home_latitude !== undefined ? Number(s.home_latitude) : undefined,
+    homeLongitude: s.home_longitude !== null && s.home_longitude !== undefined ? Number(s.home_longitude) : undefined,
+    homeAddress: s.home_address || "",
   }));
 
   const shiftMap = new Map((dbShifts || []).map((s: any) => [s.id, s]));
@@ -304,6 +311,21 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     isPrimary: Boolean(c.is_primary),
   }));
 
+  const restZones: RestZone[] = (dbRestZones || []).map((rz: any) => ({
+    id: rz.id,
+    name: rz.name,
+    code: rz.code,
+    latitude: Number(rz.latitude),
+    longitude: Number(rz.longitude),
+    landmark: rz.landmark || "",
+    fleetCapacity: Number(rz.fleet_capacity ?? 25),
+    operatingHours: rz.operating_hours || "24/7 Fleet Staging",
+    campusId: rz.campus_id || "",
+    isActive: Boolean(rz.is_active ?? true),
+    createdAt: rz.created_at,
+    updatedAt: rz.updated_at,
+  }));
+
   const classes: ClassItem[] = (dbClasses || []).map((cl: any) => ({
     id: cl.id,
     name: cl.name,
@@ -328,6 +350,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     staff,
     users,
     campuses,
+    restZones,
     classes,
     shifts,
   };

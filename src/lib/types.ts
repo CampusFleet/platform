@@ -58,6 +58,21 @@ export interface Campus {
   updatedAt?: string;
 }
 
+export interface RestZone {
+  id: string;
+  name: string;
+  code: string;
+  latitude: number;
+  longitude: number;
+  landmark?: string;
+  fleetCapacity?: number;
+  operatingHours?: string;
+  campusId?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Stop {
   id: string;
   name: string;

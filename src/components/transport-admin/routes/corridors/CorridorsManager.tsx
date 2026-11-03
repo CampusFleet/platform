@@ -1,13 +1,14 @@
 "use client";
 
 import { RouteBuilderModal } from './RouteBuilderModal';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, LayoutGrid, Map as MapIcon, Truck, Eye } from 'lucide-react';
 import { AllocateBusModal } from './AllocateBusModal';
+import TransitStudioMap from "@/components/maps/TransitStudioMap";
 import Link from "next/link";
 import React, { useEffect, useState, useMemo } from "react";
 import { store } from "@/lib/store";
 import dynamic from "next/dynamic";
-import { Route, Stop, Bus, Campus } from "@/lib/types";
+import { Route, Stop, Bus, Campus, Student } from "@/lib/types";
 import { WhereIsMyBusFlowchart } from "@/components/transit/WhereIsMyBusFlowchart";
 
 // Dynamic import for Leaflet map with no SSR
@@ -68,7 +69,132 @@ import type { Trip } from "@/lib/types";
 import { useRoutesContext } from "@/components/transport-admin/routes/RoutesContext";
 
 export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "create" }) {
-  const { routes, stops, buses, trips, campuses, selectedRouteId, setSelectedRouteId, showToast } = useRoutesContext();
+  const { routes, stops, buses, trips, campuses, students = [], restZones = [], selectedRouteId, setSelectedRouteId, showToast } = useRoutesContext();
+
+  // Studio Mode vs. Corridors Grid Directory Mode
+  const [viewMode, setViewMode] = useState<"STUDIO" | "DIRECTORY">("STUDIO");
+
+  // Selected Active Campus for Transit Studio (Fixed Anchor 1) sourced directly from database
+  const [selectedCampusId, setSelectedCampusId] = useState<string>(() => {
+    const primary = (campuses || []).find(c => c.isPrimary);
+    return primary?.id || campuses?.[0]?.id || "";
+  });
+
+  // Keep selectedCampusId in sync with database campuses table
+  useEffect(() => {
+    if (!selectedCampusId && campuses && campuses.length > 0) {
+      const primary = campuses.find(c => c.isPrimary);
+      setSelectedCampusId(primary?.id || campuses[0].id);
+    }
+  }, [campuses, selectedCampusId]);
+
+  // Dynamically resolved from campuses table in database - zero hardcoding
+  const selectedCampus = useMemo(() => {
+    if (!campuses || campuses.length === 0) return null;
+    const match = campuses.find(c => c.id === selectedCampusId);
+    if (match) return match;
+    const primary = campuses.find(c => c.isPrimary);
+    return primary || campuses[0] || null;
+  }, [campuses, selectedCampusId]);
+
+  // Handler for Deploy Corridor from Fullscreen Transit Studio
+  const handleSaveCorridorFromStudio = async (data: {
+    name: string;
+    code: string;
+    campusId: string;
+    restZone: any;
+    stops: any[];
+    distanceKm: number;
+    durationMins: number;
+  }) => {
+    try {
+      const campus = campuses.find(c => c.id === data.campusId) || selectedCampus;
+      if (!campus) {
+        alert("Cannot deploy corridor without an active campus from the database.");
+        return;
+      }
+      const campusTerminal = getTerminalStopForCampus(campus, stops);
+
+      let restZoneStop = stops.find(s => s.code === data.restZone.code);
+      if (!restZoneStop) {
+        restZoneStop = {
+          id: `stop-${data.restZone.id}`,
+          name: data.restZone.name,
+          code: data.restZone.code,
+          latitude: data.restZone.latitude,
+          longitude: data.restZone.longitude,
+          landmark: data.restZone.landmark || "Fleet Depot Rest Area",
+          geofenceRadiusMeters: 120,
+          campusId: "",
+          zoneCode: "ZONE_A",
+        };
+        await store.createStop(restZoneStop);
+      }
+
+      const totalStopsCount = data.stops.length + 2;
+      const formattedStops = [
+        {
+          stopId: campusTerminal.id,
+          stopOrder: 1,
+          arrivalOffsetMinutes: 0,
+          bufferTimeMinutes: 2,
+          stop: campusTerminal,
+        },
+        ...data.stops.map((s, idx) => ({
+          stopId: s.id,
+          stopOrder: idx + 2,
+          arrivalOffsetMinutes: Math.round(((idx + 1) / totalStopsCount) * data.durationMins),
+          bufferTimeMinutes: s.dwellMinutes || 2,
+          stop: {
+            id: s.id,
+            name: s.name,
+            code: s.code,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            landmark: s.landmark || "",
+            geofenceRadiusMeters: 80,
+            campusId: "",
+            zoneCode: s.zoneCode || "ZONE_A",
+          },
+        })),
+        {
+          stopId: restZoneStop.id,
+          stopOrder: totalStopsCount,
+          arrivalOffsetMinutes: data.durationMins,
+          bufferTimeMinutes: 5,
+          stop: restZoneStop,
+        },
+      ];
+
+      const newRoute = await store.createRoute({
+        name: data.name,
+        code: data.code,
+        description: `Corridor connecting ${campus.name} and ${data.restZone.name}`,
+        direction: "HOME_TO_CAMPUS",
+        campusId: campus.id,
+        color: "#2563EB",
+        totalDistanceKm: data.distanceKm,
+        estimatedDurationMins: data.durationMins,
+        stops: formattedStops,
+        isActive: true,
+      });
+
+      try {
+        await fetch("/api/routes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newRoute),
+        });
+      } catch (e) {
+        console.warn("Failed to persist corridor to DB:", e);
+      }
+
+      alert(`Corridor "${data.name}" successfully created and deployed!`);
+      setSelectedRouteId(newRoute.id);
+    } catch (err: any) {
+      alert("Error saving corridor: " + (err?.message || "Unknown error"));
+    }
+  };
 
   // Campus Location Modal States
   const [isCampusModalOpen, setIsCampusModalOpen] = useState(false);
@@ -751,33 +877,59 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
   return (
     <div className="space-y-6 animate-in fade-in pb-12">
       {/* Main Tabs */}
-      <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-800 pb-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-600/20`}
+            onClick={() => setViewMode("STUDIO")}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
+              viewMode === "STUDIO"
+                ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
+                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700"
+            }`}
           >
-            <GitBranch className="w-4 h-4" />
-            <span className="hidden sm:inline">Corridors & Routes</span>
+            <MapIcon className="w-4 h-4" />
+            <span>Transit Studio (GIS Map)</span>
           </button>
+
+          <button
+            onClick={() => setViewMode("DIRECTORY")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === "DIRECTORY"
+                ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
+                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700"
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span>Corridors Directory ({routes.length})</span>
+          </button>
+
           {true && (
             <button
               onClick={handleToggleEmergencyOverride}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${isOverrideActive
-                ? "bg-red-600 text-white animate-pulse"
-                : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
-                }`}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                isOverrideActive
+                  ? "bg-red-600 text-white animate-pulse"
+                  : "bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800"
+              }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               {isOverrideActive ? "Override Active" : "Emergency Override"}
             </button>
           )}
         </div>
+
         <div className="flex items-center gap-2">
-          <Link href="/transport-admin/routes/stops/create" className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
+          <Link
+            href="/transport-admin/routes/stops/create"
+            className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+          >
             <MapPin className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
             <span className="hidden sm:inline">Add Stop</span>
           </Link>
-          <Link href="/transport-admin/routes/corridors/create" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+          <Link
+            href="/transport-admin/routes/corridors/create"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
+          >
             <Plus className="w-3.5 h-3.5" />
             <span>Create Route</span>
           </Link>
@@ -785,7 +937,129 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
       </div>
 
       {/* ============================================================= */}
-      {/* CORRIDORS GRID OR CREATE VIEW                                 */}
+      {/* UNIVERSITY CAMPUS HUBS (CLICK TO SWITCH STUDIO ANCHOR)        */}
+      {/* ============================================================= */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-black text-gray-900 dark:text-white flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>University Campus Hubs & Terminals</span>
+            </h2>
+            <p className="text-xs text-gray-500">
+              Corridor Anchor 1 is fixed at the selected Campus Terminal; Corridor Anchor 2 connects to the Overnight Fleet Depot & Rest Zone.
+            </p>
+          </div>
+          <span className="text-[11px] font-mono font-bold text-gray-400">
+            {campuses.length} Campuses Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {campuses.map(c => {
+            const isSelected = c.id === selectedCampusId;
+            const corridorsCount = routes.filter(
+              r => r.campusId === c.id || r.originCampusId === c.id || r.destinationCampusId === c.id
+            ).length;
+            const campusStudents = students.filter(
+              s => s.campusId === c.id || (s.campus && s.campus.toLowerCase().includes(c.name.toLowerCase().slice(0, 4)))
+            );
+
+            return (
+              <div
+                key={c.id}
+                onClick={() => {
+                  setSelectedCampusId(c.id);
+                  setViewMode("STUDIO");
+                }}
+                className={`group p-5 rounded-3xl border transition-all duration-200 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  isSelected
+                    ? "bg-gradient-to-br from-blue-50/80 to-white dark:from-blue-950/30 dark:to-gray-900 border-blue-500 shadow-xl shadow-blue-500/10 ring-2 ring-blue-500/20"
+                    : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-blue-300 dark:hover:border-blue-700 shadow-sm hover:shadow-md"
+                }`}
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-9 h-9 rounded-2xl flex items-center justify-center font-bold text-xs ${
+                        isSelected
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                          : "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                      }`}>
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] uppercase font-bold text-gray-400 block">
+                            {c.code || "CAMPUS"}
+                          </span>
+                          {c.isPrimary && (
+                            <span className="bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-400 text-[9px] font-bold px-1.5 py-0.2 rounded font-mono border border-amber-300 dark:border-amber-800">
+                              Primary Hub
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="font-black text-gray-900 dark:text-white text-base leading-snug group-hover:text-blue-600 transition-colors">
+                          {c.name}
+                        </h3>
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100/80 dark:bg-blue-900/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                        <Check className="w-3 h-3" /> Active in Studio
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mb-4">
+                    {c.landmark || c.address || "Main Academic Complex & Transit Bay"}
+                  </p>
+
+                  {/* Fixed Corridor Anchors Info */}
+                  <div className="grid grid-cols-2 gap-2 mb-4 bg-gray-50 dark:bg-gray-800/60 p-2.5 rounded-2xl border border-gray-100 dark:border-gray-800 text-[11px]">
+                    <div>
+                      <span className="text-[9px] font-mono uppercase font-bold text-emerald-600 dark:text-emerald-400 block">
+                        Anchor 1 (Origin)
+                      </span>
+                      <span className="font-bold text-gray-800 dark:text-gray-200 truncate block">
+                        Campus Terminal
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-mono uppercase font-bold text-indigo-600 dark:text-indigo-400 block">
+                        Anchor 2 (Dest)
+                      </span>
+                      <span className="font-bold text-gray-800 dark:text-gray-200 truncate block">
+                        Rest Depot Area
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800 text-xs">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-gray-500 dark:text-gray-400 text-[11px]">
+                      <strong className="text-gray-900 dark:text-white">{corridorsCount}</strong> corridors
+                    </span>
+                    <span className="text-gray-300 dark:text-gray-700">•</span>
+                    <span className="font-mono text-gray-500 dark:text-gray-400 text-[11px]">
+                      <strong className="text-gray-900 dark:text-white">{campusStudents.length || students.length}</strong> commuters
+                    </span>
+                  </div>
+
+                  <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                    Open in Studio <ArrowRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ============================================================= */}
+      {/* STUDIO VIEW OR DIRECTORY VIEW                                 */}
       {/* ============================================================= */}
       {mode === "create" ? (
         <RouteBuilderModal
@@ -812,6 +1086,43 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
           builderOrderedStopIds={builderOrderedStopIds}
           builderMetrics={builderMetrics}
         />
+      ) : viewMode === "STUDIO" ? (
+        selectedCampus ? (
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <h3 className="text-sm font-black text-gray-900 dark:text-white">
+                  Transit Studio Google Map — {selectedCampus.name}
+                </h3>
+              </div>
+              <p className="text-[11px] text-gray-500 font-mono">
+                Road-snapped corridors with student demand walkability layer &amp; fare zone assignment
+              </p>
+            </div>
+
+            <TransitStudioMap
+              campus={selectedCampus}
+              campuses={campuses}
+              stops={stops}
+              students={students}
+              availableRestZones={restZones}
+              onSelectCampus={(c) => setSelectedCampusId(c.id)}
+              onSaveCorridor={handleSaveCorridorFromStudio}
+            />
+          </div>
+        ) : (
+          <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800 space-y-3">
+            <Building2 className="w-10 h-10 text-gray-300 mx-auto" />
+            <h3 className="font-bold text-gray-900 dark:text-white">No Campuses Found in Database</h3>
+            <p className="text-xs text-gray-500 max-w-sm mx-auto">
+              Please register or wait for campuses to sync from the PostgreSQL database table.
+            </p>
+          </div>
+        )
       ) : (
         <div className="space-y-6 pt-2">
           {routes.length > 0 ? (

@@ -16,8 +16,6 @@ export default async function TransportManagerRoutesLayout({ children }: { child
       initialCampuses={data.campuses}
       initialStudents={data.students}
       initialRestZones={data.restZones}
-      initialStudents={data.students}
-      initialRestZones={data.restZones}
     >
       {children}
     </RoutesProvider>

@@ -1,5 +1,5 @@
-import StopsManager from "@/components/transport-admin/routes/stops/StopsManager";
+import { redirect } from "next/navigation";
 
 export default function StopsPage() {
-  return <StopsManager />;
+  redirect("/transport-admin/routes");
 }

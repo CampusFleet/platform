@@ -47,6 +47,7 @@ export interface StudioStop {
   zoneCode?: string;
   dwellMinutes?: number;
   order: number;
+  isBusMergeStop?: boolean;
 }
 
 export interface StudentDemandPoint {
@@ -60,6 +61,8 @@ export interface StudentDemandPoint {
   walkDistanceMeters: number;
   walkStatus: "WALKABLE" | "MODERATE" | "UNDERSERVED";
   nearestStopName?: string;
+  routeProximityMeters?: number;
+  stopDistanceMeters?: number;
 }
 
 export interface TransitStudioMapConfig {
@@ -68,6 +71,8 @@ export interface TransitStudioMapConfig {
   tileTheme?: "GOOGLE_STREETS" | "CARTO_DARK" | "GOOGLE_HYBRID";
   onStopClick?: (stop: StudioStop) => void;
   onStopMoved?: (stopId: string, lat: number, lng: number) => void;
+  onRestZoneClick?: (restZone: StudioRestZoneAnchor) => void;
+  onRestZoneMoved?: (lat: number, lng: number) => void;
   onMapClickAddStop?: (lat: number, lng: number) => void;
   onDemandMetricsCalculated?: (metrics: {
     total: number;
@@ -114,15 +119,17 @@ function createRestZoneAnchorSvg(): string {
   return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
 }
 
-function createStudioStopMarkerSvg(order: number, zoneCode?: string, isSelected = false): string {
+function createStudioStopMarkerSvg(order: number, zoneCode?: string, isSelected = false, isMergeStop = false): string {
   const zoneColor =
     zoneCode === "ZONE_A" ? "#059669" :
     zoneCode === "ZONE_B" ? "#0284C7" :
     zoneCode === "ZONE_C" ? "#7C3AED" :
     "#2563EB";
 
-  const ringColor = isSelected ? "#F59E0B" : zoneColor;
-  const strokeWidth = isSelected ? "3.5" : "2.5";
+  const ringColor = isSelected ? "#F59E0B" : isMergeStop ? "#9333EA" : zoneColor;
+  const strokeWidth = isSelected ? "3.5" : isMergeStop ? "3" : "2.5";
+  const mergeHalo = isMergeStop ? `<circle cx="21" cy="21" r="20" fill="none" stroke="#A855F7" stroke-width="1.8" stroke-dasharray="3,3" opacity="0.85"/>` : "";
+  const mergeBadge = isMergeStop ? `<circle cx="33" cy="9" r="6" fill="#9333EA" stroke="#FFFFFF" stroke-width="1.5"/><path d="M30.5 9H35.5M33 6.5L35.5 9L33 11.5" stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>` : "";
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 42 42">
     <defs>
@@ -130,9 +137,11 @@ function createStudioStopMarkerSvg(order: number, zoneCode?: string, isSelected 
         <feDropShadow dx="0" dy="2.5" stdDeviation="2.5" flood-opacity="0.35"/>
       </filter>
     </defs>
+    ${mergeHalo}
     <circle cx="21" cy="21" r="18" fill="none" stroke="${ringColor}" stroke-width="${strokeWidth}" opacity="0.9"/>
-    <circle cx="21" cy="21" r="14" fill="${zoneColor}" stroke="#FFFFFF" stroke-width="2" filter="url(#ss)"/>
+    <circle cx="21" cy="21" r="14" fill="${isMergeStop ? "#7E22CE" : zoneColor}" stroke="#FFFFFF" stroke-width="2" filter="url(#ss)"/>
     <text x="21" y="25" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="12" fill="#FFFFFF">${order}</text>
+    ${mergeBadge}
   </svg>`;
   return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
 }
@@ -182,6 +191,7 @@ export class TransitStudioMapController extends BaseMapController {
   // Road Polyline
   private roadPolyline: any = null;
   private roadGlowPolyline: any = null;
+  private cachedRoadPath: any[] = [];
 
   // Studio Mode: ADD_STOP | INSPECT | VIEW
   private studioMode: "ADD_STOP" | "INSPECT" | "VIEW" = "VIEW";
@@ -322,6 +332,7 @@ export class TransitStudioMapController extends BaseMapController {
       position: pos,
       map: this.mapInstance,
       title: `${restZone.name} (Fleet Rest Depot)`,
+      draggable: true,
       icon: {
         url: createRestZoneAnchorSvg(),
         scaledSize: new this.googleMaps.maps.Size(46, 46),
@@ -331,14 +342,31 @@ export class TransitStudioMapController extends BaseMapController {
     });
 
     marker.addListener("click", () => {
-      this.showInfoWindow(
-        pos,
-        `<div style="font-family: sans-serif; padding: 4px;">
-          <div style="font-size: 10px; font-weight: 800; color: #4F46E5; text-transform: uppercase;">Fleet Rest Zone & Depot (Fixed Anchor)</div>
-          <div style="font-size: 13px; font-weight: 800; color: #111827; margin-top: 2px;">${restZone.name}</div>
-          <div style="font-size: 11px; color: #6B7280; margin-top: 2px;">Capacity: ${restZone.fleetCapacity || 25} Vehicles • ${restZone.landmark || "Overnight Depot"}</div>
-        </div>`
-      );
+      if (this.config.onRestZoneClick) {
+        this.config.onRestZoneClick(restZone);
+      } else {
+        this.showInfoWindow(
+          marker.getPosition(),
+          `<div style="font-family: -apple-system, sans-serif; padding: 4px;">
+            <div style="font-size: 10px; font-weight: 800; color: #4F46E5; text-transform: uppercase;">Fleet Rest Zone & Depot (Fixed Anchor)</div>
+            <div style="font-size: 13px; font-weight: 800; color: #111827; margin-top: 2px;">${restZone.name}</div>
+            <div style="font-size: 11px; color: #6B7280; margin-top: 2px;">Capacity: ${restZone.fleetCapacity || 25} Vehicles • ${restZone.landmark || "Overnight Depot"}</div>
+            <div style="margin-top: 4px; font-size: 10px; color: #4F46E5; font-weight: 600;">Drag marker to relocate depot</div>
+          </div>`
+        );
+      }
+    });
+
+    marker.addListener("dragend", (e: any) => {
+      const newLat = Number(e.latLng.lat().toFixed(6));
+      const newLng = Number(e.latLng.lng().toFixed(6));
+      restZone.latitude = newLat;
+      restZone.longitude = newLng;
+      if (this.config.onRestZoneMoved) {
+        this.config.onRestZoneMoved(newLat, newLng);
+      }
+      this.recalculateRoutePath();
+      this.recalculateDemandWalkability();
     });
 
     this.restZoneMarker = marker;
@@ -370,7 +398,7 @@ export class TransitStudioMapController extends BaseMapController {
         title: `${idx + 1}. ${stop.name}`,
         draggable: true,
         icon: {
-          url: createStudioStopMarkerSvg(idx + 1, stop.zoneCode, isSelected),
+          url: createStudioStopMarkerSvg(idx + 1, stop.zoneCode, isSelected, Boolean(stop.isBusMergeStop)),
           scaledSize: new this.googleMaps.maps.Size(40, 40),
           anchor: new this.googleMaps.maps.Point(20, 20),
         },
@@ -479,16 +507,68 @@ export class TransitStudioMapController extends BaseMapController {
   }
 
   /**
-   * Recalculates student walking distances to nearest stop in real time
+   * Computes the shortest perpendicular distance in meters from a coordinate
+   * to the active snapped road polyline of the corridor.
+   */
+  private getDistanceToPathMeters(lat: number, lng: number): number {
+    if (!this.cachedRoadPath || this.cachedRoadPath.length < 2) return Infinity;
+
+    let minDistanceKm = Infinity;
+    const len = this.cachedRoadPath.length;
+
+    for (let i = 0; i < len - 1; i++) {
+      const p1 = this.cachedRoadPath[i];
+      const p2 = this.cachedRoadPath[i + 1];
+      const lat1 = typeof p1.lat === "function" ? p1.lat() : p1.lat;
+      const lng1 = typeof p1.lng === "function" ? p1.lng() : p1.lng;
+      const lat2 = typeof p2.lat === "function" ? p2.lat() : p2.lat;
+      const lng2 = typeof p2.lng === "function" ? p2.lng() : p2.lng;
+
+      // Fast bounding-box prefilter (0.02 deg ~ 2.2 km)
+      const minLat = Math.min(lat1, lat2) - 0.02;
+      const maxLat = Math.max(lat1, lat2) + 0.02;
+      const minLng = Math.min(lng1, lng2) - 0.02;
+      const maxLng = Math.max(lng1, lng2) + 0.02;
+      if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) {
+        continue;
+      }
+
+      const dx = lng2 - lng1;
+      const dy = lat2 - lat1;
+      const lenSq = dx * dx + dy * dy;
+
+      let t = 0;
+      if (lenSq > 0) {
+        t = ((lng - lng1) * dx + (lat - lat1) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+      }
+
+      const projLat = lat1 + t * dy;
+      const projLng = lng1 + t * dx;
+
+      const d = calculateHaversineDistanceKm(lat, lng, projLat, projLng);
+      if (d < minDistanceKm) {
+        minDistanceKm = d;
+      }
+    }
+
+    return minDistanceKm === Infinity ? Infinity : Math.round(minDistanceKm * 1000);
+  }
+
+  /**
+   * Recalculates student walking distances to nearest stop and route corridor in real time.
+   * A commuter is considered WALKABLE if:
+   *  1) Direct distance to a designated station is <= 500m, OR
+   *  2) The active transit corridor road runs directly past them (<= 500m).
    * Colors:
-   * 🟢 < 500m -> WALKABLE
-   * 🟡 500m - 1000m -> MODERATE
-   * 🔴 > 1000m -> UNDERSERVED
+   * 🟢 <= 500m -> WALKABLE (Green)
+   * 🟡 500m - 1000m -> MODERATE (Amber)
+   * 🔴 > 1000m -> UNDERSERVED (Red)
    */
   private recalculateDemandWalkability(): void {
     if (!this.googleMaps || !this.mapInstance) return;
 
-    // Collect all candidate stops (intermediate stops + campus terminal)
+    // Collect all candidate stops (campus terminal + intermediate stops + rest zone depot)
     const candidateStops: { name: string; lat: number; lng: number }[] = [];
     if (this.campusAnchor) {
       candidateStops.push({ name: `${this.campusAnchor.name} Terminal`, lat: this.campusAnchor.latitude, lng: this.campusAnchor.longitude });
@@ -496,6 +576,9 @@ export class TransitStudioMapController extends BaseMapController {
     this.studioStops.forEach(s => {
       candidateStops.push({ name: s.name, lat: s.latitude, lng: s.longitude });
     });
+    if (this.restZoneAnchor) {
+      candidateStops.push({ name: this.restZoneAnchor.name, lat: this.restZoneAnchor.latitude, lng: this.restZoneAnchor.longitude });
+    }
 
     let walkableCount = 0;
     let moderateCount = 0;
@@ -508,29 +591,36 @@ export class TransitStudioMapController extends BaseMapController {
     }
 
     this.demandPoints.forEach((student) => {
-      let minDistanceKm = Infinity;
-      let closestStopName = "Campus Terminal";
+      let minStopDistanceKm = Infinity;
+      let closestStopName = this.campusAnchor ? `${this.campusAnchor.name} Terminal` : "Campus Terminal";
 
       if (candidateStops.length > 0) {
         for (const st of candidateStops) {
           const dist = calculateHaversineDistanceKm(student.latitude, student.longitude, st.lat, st.lng);
-          if (dist < minDistanceKm) {
-            minDistanceKm = dist;
+          if (dist < minStopDistanceKm) {
+            minStopDistanceKm = dist;
             closestStopName = st.name;
           }
         }
       } else {
-        minDistanceKm = 2.5; // No stops yet
+        minStopDistanceKm = 2.5;
       }
 
-      const distMeters = Math.round(minDistanceKm * 1000);
-      student.walkDistanceMeters = distMeters;
+      const stopDistMeters = Math.round(minStopDistanceKm * 1000);
+      const routeDistMeters = this.getDistanceToPathMeters(student.latitude, student.longitude);
+
+      // Effective access distance is the closer of nearest stop or active road corridor proximity
+      const effectiveDistMeters = Math.min(stopDistMeters, routeDistMeters);
+
+      student.walkDistanceMeters = effectiveDistMeters;
+      student.routeProximityMeters = routeDistMeters;
+      student.stopDistanceMeters = stopDistMeters;
       student.nearestStopName = closestStopName;
 
-      if (distMeters <= 500) {
+      if (effectiveDistMeters <= 500) {
         student.walkStatus = "WALKABLE";
         walkableCount++;
-      } else if (distMeters <= 1000) {
+      } else if (effectiveDistMeters <= 1000) {
         student.walkStatus = "MODERATE";
         moderateCount++;
       } else {
@@ -556,23 +646,31 @@ export class TransitStudioMapController extends BaseMapController {
         });
 
         marker.addListener("click", () => {
+          const isDirectlyOnRoute = routeDistMeters <= 500;
           const statusBadge =
-            student.walkStatus === "WALKABLE" ? `<span style="background: #D1FAE5; color: #065F46; padding: 2px 6px; border-radius: 6px; font-weight: bold; font-size: 10px;">🟢 WALKABLE (&lt;500m)</span>` :
-            student.walkStatus === "MODERATE" ? `<span style="background: #FEF3C7; color: #92400E; padding: 2px 6px; border-radius: 6px; font-weight: bold; font-size: 10px;">🟡 MODERATE (500m-1km)</span>` :
-            `<span style="background: #FEE2E2; color: #991B1B; padding: 2px 6px; border-radius: 6px; font-weight: bold; font-size: 10px;">🔴 UNDERSERVED (&gt;1km)</span>`;
+            student.walkStatus === "WALKABLE"
+              ? `<span style="background: #D1FAE5; color: #065F46; padding: 2px 7px; border-radius: 6px; font-weight: 800; font-size: 10px;">🟢 WALKABLE (&lt;500m)</span>`
+              : student.walkStatus === "MODERATE"
+              ? `<span style="background: #FEF3C7; color: #92400E; padding: 2px 7px; border-radius: 6px; font-weight: 800; font-size: 10px;">🟡 MODERATE (500m-1km)</span>`
+              : `<span style="background: #FEE2E2; color: #991B1B; padding: 2px 7px; border-radius: 6px; font-weight: 800; font-size: 10px;">🔴 UNDERSERVED (&gt;1km)</span>`;
 
           const content = `
-            <div style="font-family: sans-serif; padding: 4px; min-width: 200px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 10px; font-weight: bold; color: #6B7280; text-transform: uppercase;">Student Demand Pin</span>
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 4px; min-width: 220px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 4px;">
+                <span style="font-size: 10px; font-weight: 800; color: #6B7280; text-transform: uppercase;">Student Demand Pin</span>
                 ${statusBadge}
               </div>
-              <div style="font-size: 13px; font-weight: 800; color: #111827;">${student.name}</div>
-              <div style="font-size: 11px; color: #4B5563; margin-top: 2px;">${student.department} • ${student.semester}</div>
-              <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E5E7EB; font-size: 11px; color: #374151;">
-                Nearest Stop: <strong>${student.nearestStopName}</strong><br/>
-                Walking Distance: <strong>${student.walkDistanceMeters}m</strong> (~${Math.round(student.walkDistanceMeters / 80)} min walk)
+              <div style="font-size: 13px; font-weight: 900; color: #111827;">${student.name}</div>
+              <div style="font-size: 11px; color: #6B7280; margin-top: 1px;">${student.department} • ${student.semester}</div>
+              <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E5E7EB; font-size: 11px; color: #374151; display: flex; flex-direction: column; gap: 3px;">
+                <div>Corridor Proximity: <strong style="${isDirectlyOnRoute ? 'color: #059669;' : ''}">${routeDistMeters < 1000 ? `~${routeDistMeters}m (Along Active Corridor)` : `${(routeDistMeters / 1000).toFixed(1)} km`}</strong></div>
+                <div>Nearest Stop: <strong>${student.nearestStopName}</strong> (~${stopDistMeters < 1000 ? `${stopDistMeters}m` : `${(stopDistMeters / 1000).toFixed(1)} km`})</div>
               </div>
+              ${isDirectlyOnRoute && stopDistMeters > 500 ? `
+                <div style="margin-top: 6px; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 5px 8px; font-size: 10px; color: #065F46; line-height: 1.35;">
+                  💡 <strong>Direct Corridor Access:</strong> Bus travels along this road! Click <strong>"Place Stops"</strong> to formalize a boarding stop here.
+                </div>
+              ` : ''}
             </div>
           `;
           this.showInfoWindow(marker.getPosition(), content);
@@ -585,6 +683,7 @@ export class TransitStudioMapController extends BaseMapController {
           scaledSize: new this.googleMaps.maps.Size(22, 22),
           anchor: new this.googleMaps.maps.Point(11, 11),
         });
+        marker.setZIndex(student.walkStatus === "UNDERSERVED" ? 30 : 10);
         marker.setVisible(this.isDemandLayerVisible);
       }
     });
@@ -700,6 +799,7 @@ export class TransitStudioMapController extends BaseMapController {
 
   private renderOverviewPath(path: any[]): void {
     this.clearPolylines();
+    this.cachedRoadPath = path || [];
 
     // High-visibility road casing polyline
     this.roadGlowPolyline = new this.googleMaps.maps.Polyline({
@@ -720,9 +820,13 @@ export class TransitStudioMapController extends BaseMapController {
       map: this.mapInstance,
       zIndex: 3,
     });
+
+    // Re-evaluate demand walkability against the newly snapped road corridor
+    this.recalculateDemandWalkability();
   }
 
   private clearPolylines(): void {
+    this.cachedRoadPath = [];
     if (this.roadPolyline) {
       this.roadPolyline.setMap(null);
       this.roadPolyline = null;

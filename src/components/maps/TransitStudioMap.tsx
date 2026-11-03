@@ -13,7 +13,7 @@ import {
   MapPin, Plus, Trash2, ArrowUp, ArrowDown, Users, Check, X,
   Maximize2, Minimize2, Building2, Truck, Navigation, Sliders,
   RotateCcw, Sparkles, Layers, ShieldCheck, HelpCircle, Eye, EyeOff,
-  Route as RouteIcon, ChevronDown, ChevronUp, ChevronRight, Edit3
+  Route as RouteIcon, ChevronDown, ChevronUp, ChevronRight, Edit3, GitMerge
 } from "lucide-react";
 
 export interface TransitStudioMapProps {
@@ -359,12 +359,14 @@ export default function TransitStudioMap({
       longitude: s.longitude,
       landmark: s.landmark,
       zoneCode: s.zoneCode || "ZONE_A",
+      isBusMergeStop: Boolean(s.isBusMergeStop),
       dwellMinutes: 2,
       order: idx + 1,
     }));
   });
 
   const [inspectedStop, setInspectedStop] = useState<StudioStop | null>(null);
+  const [inspectedDepot, setInspectedDepot] = useState<StudioRestZoneAnchor | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Real-time Metrics
@@ -395,7 +397,15 @@ export default function TransitStudioMap({
       zoom: 13,
       tileTheme: isDark ? "CARTO_DARK" : "GOOGLE_STREETS",
       onStopClick: (stop) => {
+        setInspectedDepot(null);
         setInspectedStop(stop);
+      },
+      onRestZoneClick: (rz) => {
+        setInspectedStop(null);
+        setInspectedDepot(rz);
+      },
+      onRestZoneMoved: (lat, lng) => {
+        handleMoveDepot(lat, lng);
       },
       onStopMoved: (stopId, lat, lng) => {
         setStudioStops(prev =>
@@ -426,6 +436,7 @@ export default function TransitStudioMap({
           longitude: lng,
           landmark,
           zoneCode: "ZONE_A",
+          isBusMergeStop: false,
           dwellMinutes: 2,
           order: studioStops.length + 1,
         };
@@ -538,6 +549,69 @@ export default function TransitStudioMap({
     setStudioStops(prev => prev.map(s => (s.id === updated.id ? updated : s)));
   };
 
+  const handleToggleMergeStop = async (stop: StudioStop) => {
+    const nextState = !stop.isBusMergeStop;
+    const updated = { ...stop, isBusMergeStop: nextState };
+    setInspectedStop(updated);
+    setStudioStops(prev => prev.map(s => (s.id === stop.id ? updated : s)));
+
+    // If this is an existing database stop, persist to database API immediately
+    if (stop.id && !stop.id.startsWith("studio-stop-")) {
+      try {
+        await fetch(`/api/stops/${encodeURIComponent(stop.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isBusMergeStop: nextState }),
+        });
+      } catch (e) {
+        console.warn("Failed to persist merge stop state to database:", e);
+      }
+    }
+  };
+
+  const handleMoveDepot = async (lat: number, lng: number) => {
+    setSelectedRestZone(prev => ({ ...prev, latitude: lat, longitude: lng }));
+    setDepotList(prev => prev.map(d => (d.id === selectedRestZone.id ? { ...d, latitude: lat, longitude: lng } : d)));
+    if (inspectedDepot && inspectedDepot.id === selectedRestZone.id) {
+      setInspectedDepot(prev => prev ? { ...prev, latitude: lat, longitude: lng } : null);
+    }
+    // Persist new coordinates to database if it's a real depot entity
+    if (selectedRestZone.id && !selectedRestZone.id.startsWith("depot-staging-")) {
+      try {
+        await fetch("/api/rest-zones", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: selectedRestZone.id,
+            latitude: lat,
+            longitude: lng,
+          }),
+        });
+      } catch (e) {
+        console.warn("Failed to persist moved depot coordinates:", e);
+      }
+    }
+  };
+
+  const handleUpdateInspectedDepot = async (updates: Partial<StudioRestZoneAnchor>) => {
+    if (!inspectedDepot) return;
+    const updated = { ...inspectedDepot, ...updates };
+    setInspectedDepot(updated);
+    setSelectedRestZone(prev => (prev.id === updated.id ? updated : prev));
+    setDepotList(prev => prev.map(d => (d.id === updated.id ? updated : d)));
+
+    // Persist to database API
+    try {
+      await fetch("/api/rest-zones", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      });
+    } catch (e) {
+      console.warn("Failed to persist updated depot details:", e);
+    }
+  };
+
   // Load an existing corridor route from database into the studio map
   const loadRouteIntoStudio = (routeId: string) => {
     const foundRoute = routes.find(r => r.id === routeId);
@@ -575,6 +649,7 @@ export default function TransitStudioMap({
           longitude: stopObj.longitude,
           landmark: stopObj.landmark || "Corridor Station",
           zoneCode: stopObj.zoneCode || "ZONE_A",
+          isBusMergeStop: Boolean(stopObj.isBusMergeStop || rs.isBusMergeStop),
           dwellMinutes: 2,
           order: idx + 1,
         };
@@ -638,6 +713,7 @@ export default function TransitStudioMap({
         longitude: s.longitude,
         landmark: s.landmark,
         zoneCode: s.zoneCode || "ZONE_A",
+        isBusMergeStop: Boolean(s.isBusMergeStop),
         dwellMinutes: 2,
         order: idx + 1,
       }));
@@ -1086,7 +1162,10 @@ export default function TransitStudioMap({
             return (
               <div
                 key={stop.id}
-                onClick={() => setInspectedStop(stop)}
+                onClick={() => {
+                  setInspectedDepot(null);
+                  setInspectedStop(stop);
+                }}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer ${
                   isSelected
                     ? "bg-blue-50/90 dark:bg-blue-950/40 border-blue-500 ring-1 ring-blue-500 shadow-md"
@@ -1095,15 +1174,20 @@ export default function TransitStudioMap({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
                       {idx + 1}
                     </div>
                     <div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs font-bold text-gray-900 dark:text-white">{stop.name}</span>
                         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${zoneColor}`}>
                           {stop.zoneCode || "ZONE_A"}
                         </span>
+                        {stop.isBusMergeStop && (
+                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-0.5">
+                            <GitMerge className="w-2.5 h-2.5" /> Merge Hub
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] text-gray-500 dark:text-gray-400 block mt-0.5 truncate max-w-[150px]">
                         {stop.landmark || "Transit Boarding Point"}
@@ -1144,17 +1228,35 @@ export default function TransitStudioMap({
             );
           })}
 
-          {/* Anchor 2: Rest Zone Depot */}
-          <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl flex items-center justify-between">
+          {/* Anchor 2: Rest Zone Depot (Click to Inspect / Rename) */}
+          <div
+            onClick={() => {
+              setInspectedStop(null);
+              setInspectedDepot(selectedRestZone);
+            }}
+            className={`p-3 rounded-2xl border transition-all cursor-pointer ${
+              inspectedDepot?.id === selectedRestZone.id
+                ? "bg-indigo-100/90 dark:bg-indigo-950/50 border-indigo-500 ring-1 ring-indigo-500 shadow-md"
+                : "bg-indigo-50/80 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60 hover:border-indigo-400"
+            } flex items-center justify-between`}
+            title="Click to Rename / Configure Destination Depot"
+          >
             <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+              <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
                 A2
               </div>
               <div>
-                <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
-                  DESTINATION REST DEPOT
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                    DESTINATION REST DEPOT
+                  </span>
+                  <span className="text-[9px] font-mono text-indigo-500 dark:text-indigo-400 font-bold">
+                    [Edit]
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-gray-900 dark:text-white block truncate max-w-[170px]">
+                  {selectedRestZone.name}
                 </span>
-                <span className="text-xs font-bold text-gray-900 dark:text-white">{selectedRestZone.name}</span>
               </div>
             </div>
             <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-400 font-bold bg-indigo-100 dark:bg-indigo-950 px-2 py-0.5 rounded">
@@ -1233,6 +1335,56 @@ export default function TransitStudioMap({
               </div>
             </div>
 
+            {/* Bus Merge Stop Toggle */}
+            <div className={`p-2.5 rounded-2xl border transition-all ${
+              inspectedStop.isBusMergeStop
+                ? "bg-purple-50/90 dark:bg-purple-950/40 border-purple-400 dark:border-purple-600 shadow-sm"
+                : "bg-gray-50/80 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold transition-all ${
+                    inspectedStop.isBusMergeStop
+                      ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+                      : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                  }`}>
+                    <GitMerge className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-gray-900 dark:text-white">Bus Merge Stop</span>
+                      {inspectedStop.isBusMergeStop && (
+                        <span className="text-[9px] font-mono font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800">
+                          ACTIVE HUB
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                      Multi-bus passenger transfer &amp; merge junction
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleMergeStop(inspectedStop)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    inspectedStop.isBusMergeStop ? "bg-purple-600" : "bg-gray-300 dark:bg-gray-700"
+                  }`}
+                  role="switch"
+                  aria-checked={Boolean(inspectedStop.isBusMergeStop)}
+                  title={inspectedStop.isBusMergeStop ? "Disable Bus Merge Stop" : "Activate as Bus Merge Stop"}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      inspectedStop.isBusMergeStop ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
@@ -1246,6 +1398,101 @@ export default function TransitStudioMap({
                 type="button"
                 onClick={() => setInspectedStop(null)}
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating Depot Inspector Card (When Depot Anchor 2 is Clicked or Selected) ── */}
+      {inspectedDepot && (
+        <div className="absolute bottom-4 right-4 z-20 w-80 sm:w-88 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-3xl border border-indigo-200/90 dark:border-indigo-800/80 shadow-2xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+                A2
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-gray-900 dark:text-white">Fleet Depot Inspector</h4>
+                <span className="text-[9px] font-mono font-bold text-indigo-600 dark:text-indigo-400">CORRIDOR DESTINATION ANCHOR</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInspectedDepot(null)}
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-2 text-xs">
+            <div>
+              <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Depot Staging Name</label>
+              <input
+                type="text"
+                value={inspectedDepot.name}
+                onChange={e => handleUpdateInspectedDepot({ name: e.target.value })}
+                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Depot Code</label>
+                <input
+                  type="text"
+                  value={inspectedDepot.code}
+                  onChange={e => handleUpdateInspectedDepot({ code: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 font-mono font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Fleet Capacity</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={inspectedDepot.fleetCapacity || 25}
+                  onChange={e => handleUpdateInspectedDepot({ fleetCapacity: Number(e.target.value) })}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Landmark &amp; Facilities</label>
+              <input
+                type="text"
+                value={inspectedDepot.landmark || ""}
+                onChange={e => handleUpdateInspectedDepot({ landmark: e.target.value })}
+                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            {/* GPS coordinates & Drag tip */}
+            <div className="p-2 bg-indigo-50/70 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800/60 text-[10px] text-indigo-900 dark:text-indigo-300 font-mono flex items-center justify-between">
+              <span>GPS: {Number(inspectedDepot.latitude).toFixed(4)}, {Number(inspectedDepot.longitude).toFixed(4)}</span>
+              <span className="text-[9px] font-sans font-bold text-indigo-600 dark:text-indigo-400">Drag pin on map</span>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDepotModalTab("LIST");
+                  setIsDepotManagerOpen(true);
+                }}
+                className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
+              >
+                Open Depot Manager
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInspectedDepot(null)}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs"
               >
                 Done
               </button>

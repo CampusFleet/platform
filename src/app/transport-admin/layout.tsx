@@ -76,11 +76,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       ]
     },
     routes: {
-      title: "Routes & Stops",
+      title: "Routes & Corridors",
       items: [
         { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
-        { href: "/transport-admin/routes", label: "All Corridors", shortLabel: "Routes", icon: Route },
-        { href: "/transport-admin/routes/stops", label: "Bus Stops", shortLabel: "Stops", icon: MapPin },
+        { href: "/transport-admin/routes", label: "GIS Corridors & Stops", shortLabel: "Corridors", icon: Route },
         { href: "/transport-admin/routes/locations", label: "Campuses", shortLabel: "Campuses", icon: Building2 },
       ]
     },

@@ -168,15 +168,14 @@ export default function ClientPortalLayout({
   
   // Only block access if the server definitively said they are NOT subscribed!
   const isAccessBlocked = isStudent && !isSubscriptionActive && !isPaymentPage && !isOnboardingPage;
+
+  // Immediate redirect for new or unsubscribed students
   useEffect(() => {
     // If the server explicitly said we are subscribed, SKIP ALL REDIRECTS!
     if (initialIsSubscribed) return;
     
-    // Skip if we don't have a student resolved yet (still loading)
-    if (isStudent && !activeStudent) return;
-    
     if (isStudent) {
-      // Seamlessly guide unsubscribed or new students to the Unified Onboarding & Pass Activation gateway
+      // Seamlessly guide unsubscribed, new, or re-registered students to the Unified Onboarding & Pass Activation gateway
       const hasPaymentParams = typeof window !== "undefined" && window.location.search.includes("razorpay_");
       if (!isSubscriptionActive && !isOnboardingPage && (!isPaymentPage || !hasPaymentParams)) {
         console.warn("[REDIRECT] New or Unsubscribed Commuter -> /portal/onboarding");
@@ -184,6 +183,16 @@ export default function ClientPortalLayout({
       }
     }
   }, [isStudent, hasCompleteProfile, activeStudent, pathname, router, isOnboardingPage, isPaymentPage, initialIsSubscribed, isSubscriptionActive]);
+
+  // Fallback safety watchdog: if student access is blocked on /portal, guarantee automatic redirect to /portal/onboarding
+  useEffect(() => {
+    if (isAccessBlocked && !isOnboardingPage && !isPaymentPage) {
+      const timer = setTimeout(() => {
+        router.replace("/portal/onboarding");
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [isAccessBlocked, isOnboardingPage, isPaymentPage, router]);
 
   if (currentUser && !isAuthorizedStudent) {
     const role = currentUser.role;

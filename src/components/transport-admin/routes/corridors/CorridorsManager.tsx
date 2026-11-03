@@ -72,6 +72,20 @@ import { useRoutesContext } from "@/components/transport-admin/routes/RoutesCont
 export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "create" }) {
   const { routes, stops, buses, trips, campuses, students = [], restZones = [], selectedRouteId, setSelectedRouteId, showToast } = useRoutesContext();
 
+  // Strictly filter for authentic student commuters — exclude drivers, conductors, crew, teachers, staff, or test accounts
+  const commuterStudents = useMemo(() => {
+    return (students || []).filter(s => {
+      const id = (s.id || "").toLowerCase();
+      const name = (s.fullName || "").toLowerCase();
+      const email = (s.email || "").toLowerCase();
+      if (id.startsWith("stud-usr-cnd-") || id.startsWith("stud-usr-drv-") || id.startsWith("stud-user-teacher-")) return false;
+      if (name.includes("(conductor") || name.includes("(driver") || name.includes("(bus ") || name.includes("tempo shuttle")) return false;
+      if (name.startsWith("prof.") || name.startsWith("dr.")) return false;
+      if (email.startsWith("conductor.") || email.startsWith("driver.")) return false;
+      return true;
+    });
+  }, [students]);
+
   const searchParams = useSearchParams();
   const queryRouteId = searchParams?.get("routeId") || searchParams?.get("corridor") || "";
 
@@ -946,7 +960,7 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
             const corridorsCount = routes.filter(
               r => r.campusId === c.id || r.originCampusId === c.id || r.destinationCampusId === c.id
             ).length;
-            const campusStudents = students.filter(
+            const campusStudents = commuterStudents.filter(
               s => s.campusId === c.id || (s.campus && s.campus.toLowerCase().includes(c.name.toLowerCase().slice(0, 4)))
             );
 
@@ -1028,7 +1042,7 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
                     </span>
                     <span className="text-gray-300 dark:text-gray-700">•</span>
                     <span className="font-mono text-gray-500 dark:text-gray-400 text-[11px]">
-                      <strong className="text-gray-900 dark:text-white">{campusStudents.length || students.length}</strong> commuters
+                      <strong className="text-gray-900 dark:text-white">{campusStudents.length || commuterStudents.length}</strong> commuters
                     </span>
                   </div>
 
@@ -1094,7 +1108,7 @@ export default function CorridorsManager({ mode = "view" }: { mode?: "view" | "c
             selectedRouteId={selectedRouteId}
             onSelectRoute={(id) => setSelectedRouteId(id || "")}
             stops={stops}
-            students={students}
+            students={commuterStudents}
             availableRestZones={restZones}
             onSelectCampus={(c) => setSelectedCampusId(c.id)}
             onSaveCorridor={handleSaveCorridorFromStudio}

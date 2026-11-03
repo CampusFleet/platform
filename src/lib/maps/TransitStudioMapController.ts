@@ -438,8 +438,22 @@ export class TransitStudioMapController extends BaseMapController {
   public setDemandStudents(students: Student[]): void {
     if (this.isDestroyed || !this.mapInstance || !this.googleMaps) return;
 
+    // Filter strictly for authentic commuter students — exclude conductors, drivers, teachers, staff, or crew
+    const commuterStudents = (students || []).filter(s => {
+      const id = (s.id || "").toLowerCase();
+      const name = (s.fullName || (s as any).name || "").toLowerCase();
+      const email = (s.email || "").toLowerCase();
+
+      if (id.startsWith("stud-usr-cnd-") || id.startsWith("stud-usr-drv-") || id.startsWith("stud-user-teacher-")) return false;
+      if (name.includes("(conductor") || name.includes("(driver") || name.includes("(bus ") || name.includes("tempo shuttle")) return false;
+      if (name.startsWith("prof.") || name.startsWith("dr.")) return false;
+      if (email.startsWith("conductor.") || email.startsWith("driver.")) return false;
+
+      return true;
+    });
+
     // Filter valid students or synthesize localized commuter pins near primary stop
-    this.demandPoints = students.map((s, idx) => {
+    this.demandPoints = commuterStudents.map((s, idx) => {
       let lat = s.homeLatitude;
       let lng = s.homeLongitude;
 

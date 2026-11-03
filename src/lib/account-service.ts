@@ -59,7 +59,6 @@ export async function findOrCreateUser({
     if (fullName && !existingUser.full_name) updates.full_name = fullName;
 
     if (Object.keys(updates).length > 0) {
-      updates.updated_at = new Date().toISOString();
       await supabaseAdmin.from("users").update(updates).eq("id", existingUser.id);
     }
 
@@ -161,13 +160,13 @@ export async function findOrCreateUser({
       photo_url: effectivePhotoUrl,
       provider,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     })
     .select()
     .single();
 
   if (createErr) {
     console.error("Failed to create user in findOrCreateUser:", createErr);
+    throw new Error(`Failed to create institutional user account: ${createErr.message}`);
   }
 
   // If role is student, link existing student record or create new one with user_id conflict handling

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabaseClient";
 import { getTodayIST } from "./time-manager";
 import { createTripId } from "./id";
+import { categorizeShifts } from "./duty-blocks";
 
 export interface DailyRolloverResult {
   success: boolean;
@@ -120,20 +121,25 @@ export async function executeDailyRollover(
     const drivers = (staffList || []).filter((s: any) => s.role === "driver" || s.role === "transport_staff");
     const conductors = (staffList || []).filter((s: any) => s.role === "conductor" || s.role === "transport_staff");
 
-    // 4. Filter shifts to active operational schedules dynamically from database
-    const activeShifts = (shifts || []).filter(
-      (sh) => sh.is_active !== false && !sh.is_special
+    // 4. Dynamically categorize active shifts into Inbound (Home -> Campus) and Outbound (Campus -> Home)
+    const { incomingShifts, outgoingShifts } = categorizeShifts(
+      (shifts || []).map((s: any) => ({
+        ...s,
+        shiftType: s.type,
+      }))
     );
-    if (activeShifts.length === 0) {
-      console.warn("[DailyRollover] No active shifts found in database.");
-    }
+
+    const inboundShift = incomingShifts[0];
 
     // 5. Only active operational buses (exclude vehicles in workshop / maintenance)
     const operationalBuses = (buses || []).filter((b) => b.status === "ACTIVE");
     const activeRoutes = (routes || []).filter((r) => r.is_active !== false);
     const newTripsToInsert: any[] = [];
 
-    // 6. Generate scheduled trips strictly via relational database mappings
+    // Date parity for cyclic rotation: ensures buses rotate between outgoing shifts daily
+    const dayNumber = parseInt(targetDate.replace(/[^0-9]/g, "").slice(-2), 10) || 1;
+
+    // 6. Generate scheduled trips strictly via 1-Inbound + 1-Outbound Vehicle Duty Block protocol
     activeRoutes.forEach((route) => {
       // Find bus mapped to this corridor via database foreign key
       const assignedBus = operationalBuses.find((b) => b.current_route_id === route.id);
@@ -142,6 +148,8 @@ export async function executeDailyRollover(
         console.warn(`[DailyRollover] Route ${route.code || route.id} has no ACTIVE vehicle assigned. Skipping.`);
         return;
       }
+
+      const busIdx = operationalBuses.findIndex((b) => b.id === assignedBus.id);
 
       // Resolve primary crew assigned to this vehicle
       const busNum = Number(assignedBus.bus_number);
@@ -162,19 +170,22 @@ export async function executeDailyRollover(
         (busNum === 51 && (c.employee_code?.includes("TMP") || c.id?.includes("tempo")))
       ) || null;
 
-      activeShifts.forEach((shift) => {
-        const timeCode = shift.start_time ? shift.start_time.substring(0, 5).replace(":", "") : "";
-        const shiftSuffix = timeCode || (shift.type || shift.id || "RUN").substring(0, 4).toUpperCase();
-        const routeClean = route.id.replace(/[^a-zA-Z0-9]/g, "-");
-        const tripId = createTripId();
-        const tripCode = `TRIP-${(route.code || routeClean).toUpperCase().replace(/[^a-zA-Z0-9]/g, "")}-${shiftSuffix}-${targetDate.replace(/-/g, "")}`;
+      const routeClean = (route.code || route.id).toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
+      const dateClean = targetDate.replace(/[^0-9]/g, "");
+
+      // 1. Inbound Morning Run (07:15, Home -> Campus)
+      if (inboundShift) {
+        const rawTime = (inboundShift as any).start_time || inboundShift.startTime || "";
+        const timeCode = rawTime ? rawTime.substring(0, 5).replace(":", "") : "0715";
+        const inboundTripId = createTripId();
+        const inboundTripCode = `TRIP-${routeClean}-${timeCode}-${dateClean}`;
 
         newTripsToInsert.push({
-          id: tripId,
-          trip_code: tripCode,
+          id: inboundTripId,
+          trip_code: inboundTripCode,
           route_id: route.id,
           bus_id: assignedBus.id,
-          shift_id: shift.id,
+          shift_id: inboundShift.id,
           driver_id: driver?.id || null,
           conductor_id: conductor?.id || null,
           trip_date: targetDate,
@@ -183,7 +194,38 @@ export async function executeDailyRollover(
           manifest_locked: false,
           current_stop_index: 0,
         });
-      });
+      }
+
+      // 2. Outbound Run (Campus -> Home): Dynamic Rotation across active outgoing shifts
+      const assignedOutshift =
+        outgoingShifts.length > 0
+          ? outgoingShifts[(busIdx + dayNumber) % outgoingShifts.length]
+          : null;
+
+      if (assignedOutshift) {
+        const timeCode = (assignedOutshift as any).start_time
+          ? (assignedOutshift as any).start_time.substring(0, 5).replace(":", "")
+          : assignedOutshift.startTime
+          ? assignedOutshift.startTime.substring(0, 5).replace(":", "")
+          : "1645";
+        const outboundTripId = createTripId();
+        const outboundTripCode = `TRIP-${routeClean}-${timeCode}-${dateClean}`;
+
+        newTripsToInsert.push({
+          id: outboundTripId,
+          trip_code: outboundTripCode,
+          route_id: route.id,
+          bus_id: assignedBus.id,
+          shift_id: assignedOutshift.id,
+          driver_id: driver?.id || null,
+          conductor_id: conductor?.id || null,
+          trip_date: targetDate,
+          status: "SCHEDULED",
+          delay_minutes: 0,
+          manifest_locked: false,
+          current_stop_index: 0,
+        });
+      }
     });
 
     // Deduplicate by trip id

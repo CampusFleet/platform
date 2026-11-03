@@ -22,10 +22,24 @@ import {
   Sunrise,
   Sunset,
   Building,
+  Sparkles,
+  ArrowRight,
+  Filter,
+  CheckCheck,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
 import { formatTime, formatDate } from "@/lib/utils";
 import type { Trip, Bus, Route, Staff, UserAccount, AttendanceRecord } from "@/lib/types";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
+import {
+  buildDutyBlocks,
+  rotateDutyBlocks,
+  autoAssignDutyBlocks,
+  categorizeShifts,
+  BusDutyBlock,
+  ShiftSummaryOption,
+} from "@/lib/duty-blocks";
 
 interface TransportManagerCrewViewProps {
   initialTrips?: Trip[];
@@ -50,10 +64,13 @@ export default function TransportManagerCrewView({
   const [shifts, setShifts] = useState<any[]>(() => store.getShifts());
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => store.getAttendanceRecords());
 
-  const [activeViewMode, setActiveViewMode] = useState<"ROSTER" | "DUTY_LEDGER">("ROSTER");
+  const [activeViewMode, setActiveViewMode] = useState<"DUTY_BLOCKS" | "ROSTER" | "DUTY_LEDGER">("DUTY_BLOCKS");
   const [crewSearchQuery, setCrewSearchQuery] = useState("");
   const [shiftFilter, setShiftFilter] = useState("ALL");
-  const [selectedTripForCrew, setSelectedTripForCrew] = useState<any | null>(null);
+  const [dutyFilter, setDutyFilter] = useState<"ALL" | "CONFLICTS" | "UNCREWED">("ALL");
+
+  const [selectedBlockForCrew, setSelectedBlockForCrew] = useState<BusDutyBlock | null>(null);
+  const [selectedTripForCrew, setSelectedTripForCrew] = useState<Trip | null>(null);
   const [crewModalOpen, setCrewModalOpen] = useState(false);
   const [selectedDriverId, setSelectedDriverId] = useState("");
   const [selectedConductorId, setSelectedConductorId] = useState("");
@@ -61,15 +78,34 @@ export default function TransportManagerCrewView({
   const [crewAssignError, setCrewAssignError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Operational Date
   const [crewDate, setCrewDate] = useState(() => {
     const now = new Date();
     const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
     return ist.toISOString().split("T")[0];
   });
 
+  // Dynamic duty blocks computed from current data
+  const { dutyBlocks: computedBlocks, incomingShifts, outgoingShifts, summary } = useMemo(() => {
+    return buildDutyBlocks(buses, routes, shifts, trips, staff, users, crewDate);
+  }, [buses, routes, shifts, trips, staff, users, crewDate]);
+
+  // Local editable duty blocks state (allows Transport Manager to adjust, auto-assign, or rotate before publishing)
+  const [localDutyBlocks, setLocalDutyBlocks] = useState<BusDutyBlock[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isPublishingRoster, setIsPublishingRoster] = useState(false);
+  const [rotationStep, setRotationStep] = useState(1);
+
+  // Sync local duty blocks when computed blocks change (unless user has active unsaved edits)
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      setLocalDutyBlocks(computedBlocks);
+    }
+  }, [computedBlocks, hasUnsavedChanges]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   useEffect(() => {
@@ -161,7 +197,24 @@ export default function TransportManagerCrewView({
     return Array.from(map.values());
   }, [staff, users]);
 
-  // Filtered Trips for selected date and dynamic shift
+  // Filtered Duty Blocks for current search & status filters
+  const filteredDutyBlocks = useMemo(() => {
+    return localDutyBlocks.filter((block) => {
+      if (dutyFilter === "CONFLICTS" && block.dutyStatus !== "CONFLICT_MULTIPLE_OUTGOING") return false;
+      if (dutyFilter === "UNCREWED" && block.driverId && block.conductorId) return false;
+      if (!crewSearchQuery.trim()) return true;
+      const q = crewSearchQuery.toLowerCase();
+      return (
+        String(block.busNumber).includes(q) ||
+        block.routeName?.toLowerCase().includes(q) ||
+        block.driverName?.toLowerCase().includes(q) ||
+        block.conductorName?.toLowerCase().includes(q) ||
+        block.outgoingShiftName?.toLowerCase().includes(q)
+      );
+    });
+  }, [localDutyBlocks, crewSearchQuery, dutyFilter]);
+
+  // Filtered Trips for selected date and dynamic shift (Granular View)
   const filteredTrips = useMemo(() => {
     return trips.filter((t) => {
       if (t.tripDate !== crewDate) return false;
@@ -188,8 +241,89 @@ export default function TransportManagerCrewView({
     );
   }, [attendanceRecords]);
 
-  const openAssignModal = (trip: Trip) => {
+  // Handle Dynamic Outgoing Shift selection for a single bus
+  const handleSelectOutgoingShift = (busId: number, shiftId: string) => {
+    const shift = outgoingShifts.find((s) => s.id === shiftId);
+    if (!shift) return;
+
+    setLocalDutyBlocks((prev) =>
+      prev.map((block) => {
+        if (block.busId === busId) {
+          return {
+            ...block,
+            outgoingShiftId: shift.id,
+            outgoingShiftName: shift.name,
+            outgoingShiftTime: shift.startTime,
+            dutyStatus: "PENDING_CONFIRMATION",
+            conflictingTrips: [], // Conflict is resolved by picking this shift
+          };
+        }
+        return block;
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  // Handle Auto-Assign Across Outgoing Shifts
+  const handleAutoAssign = () => {
+    const assigned = autoAssignDutyBlocks(localDutyBlocks, outgoingShifts, 0);
+    setLocalDutyBlocks(assigned);
+    setHasUnsavedChanges(true);
+    showToast("⚡ Auto-assigned dynamic 1-Inbound + 1-Outbound duty blocks!");
+  };
+
+  // Handle Dynamic Bus Rotation
+  const handleRotateRoster = () => {
+    const rotated = rotateDutyBlocks(localDutyBlocks, outgoingShifts, rotationStep);
+    setRotationStep((s) => s + 1);
+    setLocalDutyBlocks(rotated);
+    setHasUnsavedChanges(true);
+    showToast("🔄 Rotated fleet outgoing shift duties across buses!");
+  };
+
+  // Confirm and Publish Duty Blocks to Supabase Database
+  const handleConfirmAndPublish = async () => {
+    setIsPublishingRoster(true);
+    try {
+      const res = await fetch("/api/dispatch/duty-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "CONFIRM_ALLOCATIONS",
+          targetDate: crewDate,
+          dutyBlocks: localDutyBlocks,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(
+          `✓ Fleet duty allocations published! (${data.upsertedCount} active runs, ${data.removedDuplicatesCount} conflicts resolved).`
+        );
+        setHasUnsavedChanges(false);
+        await store.syncFromSupabase();
+      } else {
+        showToast(data.error || "Failed to confirm allocations.");
+      }
+    } catch (err: any) {
+      showToast("Network error: " + err.message);
+    } finally {
+      setIsPublishingRoster(false);
+    }
+  };
+
+  const openCrewModalForBlock = (block: BusDutyBlock) => {
+    setSelectedBlockForCrew(block);
+    setSelectedTripForCrew(null);
+    setSelectedDriverId(block.driverId || "");
+    setSelectedConductorId(block.conductorId || "");
+    setCrewAssignError(null);
+    setCrewModalOpen(true);
+  };
+
+  const openCrewModalForTrip = (trip: Trip) => {
     setSelectedTripForCrew(trip);
+    setSelectedBlockForCrew(null);
     setSelectedDriverId(trip.driverId || "");
     setSelectedConductorId(trip.conductorId || "");
     setCrewAssignError(null);
@@ -197,25 +331,57 @@ export default function TransportManagerCrewView({
   };
 
   const handleSaveCrewAssignment = async () => {
-    if (!selectedTripForCrew) return;
     setIsAssigningCrew(true);
     setCrewAssignError(null);
 
     try {
+      const payload: any = {
+        driverId: selectedDriverId || null,
+        conductorId: selectedConductorId || null,
+      };
+
+      if (selectedBlockForCrew) {
+        payload.busId = selectedBlockForCrew.busId;
+        payload.tripDate = crewDate;
+        payload.applyToAllShifts = true;
+      } else if (selectedTripForCrew) {
+        payload.tripId = selectedTripForCrew.id;
+      }
+
       const res = await fetch("/api/staff/assign-crew", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tripId: selectedTripForCrew.id,
-          driverId: selectedDriverId || null,
-          conductorId: selectedConductorId || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (data.success) {
         showToast("✓ Crew roster updated successfully!");
         setCrewModalOpen(false);
+
+        // Update local block state immediately
+        if (selectedBlockForCrew) {
+          const drv = eligibleDrivers.find((d) => d.id === selectedDriverId);
+          const cnd = eligibleConductors.find((c) => c.id === selectedConductorId);
+
+          setLocalDutyBlocks((prev) =>
+            prev.map((b) =>
+              b.busId === selectedBlockForCrew.busId
+                ? {
+                    ...b,
+                    driverId: selectedDriverId || undefined,
+                    driverName: drv?.name,
+                    driverPhone: drv?.phone,
+                    driverLicense: drv?.license,
+                    conductorId: selectedConductorId || undefined,
+                    conductorName: cnd?.name,
+                    conductorPhone: cnd?.phone,
+                  }
+                : b
+            )
+          );
+        }
+
         store.syncFromSupabase();
       } else {
         setCrewAssignError(data.error || "Failed to update crew assignment.");
@@ -227,127 +393,538 @@ export default function TransportManagerCrewView({
     }
   };
 
+  // Helper for quick date shortcuts
+  const setQuickDate = (offsetDays: number) => {
+    const now = new Date();
+    const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000 + offsetDays * 24 * 60 * 60 * 1000);
+    setCrewDate(ist.toISOString().split("T")[0]);
+    setHasUnsavedChanges(false);
+  };
+
+  const isToday = useMemo(() => {
+    const now = new Date();
+    const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    return crewDate === ist.toISOString().split("T")[0];
+  }, [crewDate]);
+
   return (
     <div className="space-y-6 animate-in fade-in">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-bold animate-in slide-in-from-bottom-3">
-          <CheckCircle2 className="w-4 h-4 text-green-400 dark:text-green-600" />
+        <div className="fixed bottom-6 right-6 z-50 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-bold animate-in slide-in-from-bottom-3 border border-gray-700/50">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Header Banner */}
-      <div className="bg-blue-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden border border-blue-800/40">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-xs font-mono font-bold text-blue-300 mb-2">
               <Award className="w-3.5 h-3.5" />
-              <span>Crew Qualification Dispatch Matrix</span>
+              <span>Dynamic Fleet Dispatch & Shift Allocation Cockpit</span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black">
-              Bus Crew Allocation & Role Qualifications
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+              Vehicle Duty Blocks & Crew Rostering
             </h2>
             <p className="text-xs sm:text-sm text-blue-200/80 max-w-2xl mt-1">
-              Staff dispatch authority: Assign certified drivers and conductors to campus transit buses.
-              <span className="block mt-1 font-bold text-yellow-300 text-xs">
-                • Driver Slot: Strictly qualified drivers only (conductors cannot drive).
-                • Conductor Slot: Both conductors and certified drivers can serve as conductors.
-              </span>
+              Standard 1-Inbound + 1-Outbound Vehicle Duty Block protocol: Each physical bus operates 1 morning
+              arrival shift and 1 designated departure shift. Automatic rotation balances mileage and driver duty hours.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-gray-800/80 p-2 rounded-2xl border border-gray-700">
-              <CalendarDays className="w-4 h-4 text-blue-400" />
-              <input
-                type="date"
-                value={crewDate}
-                onChange={(e) => setCrewDate(e.target.value)}
-                className="text-xs px-2 py-1 rounded-xl bg-gray-900 border border-gray-700 text-white font-mono font-bold outline-none"
-              />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex items-center gap-1 bg-gray-800/80 p-1.5 rounded-2xl border border-gray-700">
+              <button
+                onClick={() => setQuickDate(0)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-xl transition-all ${
+                  isToday ? "bg-blue-600 text-white shadow" : "text-gray-300 hover:text-white"
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setQuickDate(1)}
+                className="px-2.5 py-1 text-[11px] font-bold rounded-xl text-gray-300 hover:text-white transition-all"
+              >
+                Tomorrow
+              </button>
+              <div className="h-4 w-px bg-gray-700 mx-1" />
+              <div className="flex items-center gap-1 px-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
+                <input
+                  type="date"
+                  value={crewDate}
+                  onChange={(e) => {
+                    setCrewDate(e.target.value);
+                    setHasUnsavedChanges(false);
+                  }}
+                  className="text-xs px-2 py-0.5 rounded-lg bg-gray-900 border border-gray-700 text-white font-mono font-bold outline-none"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Crew Status Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* Dynamic Operational KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* 1. Active Fleet */}
         <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-          <div className="text-[10px] uppercase font-black tracking-wider text-blue-600 dark:text-blue-400">
-            Scheduled Runs
+          <div className="text-[10px] uppercase font-black tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <BusFront className="w-3 h-3" />
+            <span>Active Fleet</span>
           </div>
           <div className="text-2xl font-black font-mono mt-1 text-gray-900 dark:text-white">
-            {filteredTrips.length}
+            {localDutyBlocks.length}
           </div>
-          <div className="text-[10px] text-gray-400 font-mono mt-0.5">Fleet runs for selected date</div>
+          <div className="text-[10px] text-gray-400 font-mono mt-0.5">Vehicles in service</div>
         </div>
 
+        {/* 2. Inbound Shift */}
         <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-          <div className="text-[10px] uppercase font-black tracking-wider text-green-600 dark:text-green-400">
-            Fully Crewed
+          <div className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <Sunrise className="w-3 h-3" />
+            <span>Inbound (AM)</span>
           </div>
-          <div className="text-2xl font-black font-mono mt-1 text-green-600 dark:text-green-400">
-            {filteredTrips.filter((t) => t.driverId && t.conductorId).length}
+          <div className="text-2xl font-black font-mono mt-1 text-gray-900 dark:text-white">
+            {localDutyBlocks.length} / {localDutyBlocks.length}
+          </div>
+          <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+            {incomingShifts[0]?.startTime || "07:15"} Morning Run
+          </div>
+        </div>
+
+        {/* 3 & 4. Dynamic Outgoing Shifts Counts */}
+        {outgoingShifts.map((shift, sIdx) => {
+          const count = localDutyBlocks.filter((b) => b.outgoingShiftId === shift.id).length;
+          const isFirst = sIdx === 0;
+          return (
+            <div
+              key={shift.id}
+              className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm"
+            >
+              <div
+                className={`text-[10px] uppercase font-black tracking-wider flex items-center gap-1 ${
+                  isFirst
+                    ? "text-indigo-600 dark:text-indigo-400"
+                    : "text-purple-600 dark:text-purple-400"
+                }`}
+              >
+                <Sunset className="w-3 h-3" />
+                <span className="truncate">{shift.name.split(" ")[0]} ({shift.startTime})</span>
+              </div>
+              <div className="text-2xl font-black font-mono mt-1 text-gray-900 dark:text-white">
+                {count}
+              </div>
+              <div className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                {shift.startTime} Departure
+              </div>
+            </div>
+          );
+        })}
+
+        {/* 5. Integrity & Conflict Monitor */}
+        <div
+          className={`p-4 rounded-2xl border shadow-sm ${
+            summary.conflictCount > 0
+              ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60"
+              : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+          }`}
+        >
+          <div
+            className={`text-[10px] uppercase font-black tracking-wider flex items-center gap-1 ${
+              summary.conflictCount > 0
+                ? "text-red-600 dark:text-red-400 font-black"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}
+          >
+            {summary.conflictCount > 0 ? (
+              <AlertTriangle className="w-3 h-3" />
+            ) : (
+              <ShieldCheck className="w-3 h-3" />
+            )}
+            <span>Rule Integrity</span>
+          </div>
+          <div
+            className={`text-2xl font-black font-mono mt-1 ${
+              summary.conflictCount > 0
+                ? "text-red-600 dark:text-red-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}
+          >
+            {summary.conflictCount > 0 ? `${summary.conflictCount} Conflicts` : "100% Valid"}
+          </div>
+          <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+            {summary.conflictCount > 0 ? "Double-booked outshifts" : "1 In + 1 Out protocol"}
+          </div>
+        </div>
+
+        {/* 6. Crew Readiness */}
+        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+          <div className="text-[10px] uppercase font-black tracking-wider text-teal-600 dark:text-teal-400 flex items-center gap-1">
+            <Users className="w-3 h-3" />
+            <span>Fully Crewed</span>
+          </div>
+          <div className="text-2xl font-black font-mono mt-1 text-teal-600 dark:text-teal-400">
+            {localDutyBlocks.filter((b) => b.driverId && b.conductorId).length} / {localDutyBlocks.length}
           </div>
           <div className="text-[10px] text-gray-400 font-mono mt-0.5">Driver + Conductor Ready</div>
         </div>
-
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-          <div className="text-[10px] uppercase font-black tracking-wider text-red-600 dark:text-red-400">
-            Missing Driver
-          </div>
-          <div className="text-2xl font-black font-mono mt-1 text-red-600 dark:text-red-400">
-            {filteredTrips.filter((t) => !t.driverId).length}
-          </div>
-          <div className="text-[10px] text-gray-400 font-mono mt-0.5">Requires Immediate Action</div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-          <div className="text-[10px] uppercase font-black tracking-wider text-yellow-600 dark:text-yellow-400">
-            Missing Conductor
-          </div>
-          <div className="text-2xl font-black font-mono mt-1 text-yellow-600 dark:text-yellow-400">
-            {filteredTrips.filter((t) => !t.conductorId).length}
-          </div>
-          <div className="text-[10px] text-gray-400 font-mono mt-0.5">Ticket Radar Officer Needed</div>
-        </div>
       </div>
 
-      {/* View Mode Switcher Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-2">
-        <button
-          onClick={() => setActiveViewMode("ROSTER")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeViewMode === "ROSTER"
-              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-              : "bg-white dark:bg-gray-850 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-          }`}
-        >
-          <BusFront className="w-4 h-4" />
-          <span>Fleet Crew Dispatch Table</span>
-        </button>
+      {/* Operational Warning Banner when Conflicts Exist in Database */}
+      {summary.conflictCount > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold">Dual Outshift Conflict Detected:</span> Several buses are currently scheduled
+              for multiple overlapping outgoing shifts on this date (e.g. 13:30 AND 16:45).
+              Click <strong>Auto-Assign</strong> or allocate individual buses, then click <strong>Confirm & Publish</strong> to eliminate double-booking.
+            </div>
+          </div>
+          <button
+            onClick={handleAutoAssign}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shrink-0 cursor-pointer text-xs"
+          >
+            ⚡ Auto-Resolve Conflicts
+          </button>
+        </div>
+      )}
 
-        <button
-          onClick={() => setActiveViewMode("DUTY_LEDGER")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeViewMode === "DUTY_LEDGER"
-              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-              : "bg-white dark:bg-gray-850 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-          }`}
-        >
-          <Banknote className="w-4 h-4" />
-          <span>Crew Duty Attendance & Payroll Ledger ({crewDutyRecords.length})</span>
-        </button>
+      {/* View Mode Switcher Tabs & Primary Control Actions */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-800 pb-3">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveViewMode("DUTY_BLOCKS")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeViewMode === "DUTY_BLOCKS"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "bg-white dark:bg-gray-850 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            <BusFront className="w-4 h-4" />
+            <span>Vehicle Duty Blocks ({localDutyBlocks.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveViewMode("ROSTER")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeViewMode === "ROSTER"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "bg-white dark:bg-gray-850 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>Granular Dispatch Runs ({filteredTrips.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveViewMode("DUTY_LEDGER")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeViewMode === "DUTY_LEDGER"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "bg-white dark:bg-gray-850 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            <Banknote className="w-4 h-4" />
+            <span>Crew Duty Attendance & Payroll ({crewDutyRecords.length})</span>
+          </button>
+        </div>
+
+        {/* Action Controls for Duty Blocks */}
+        {activeViewMode === "DUTY_BLOCKS" && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAutoAssign}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-750 transition-all cursor-pointer shadow-sm"
+              title="Auto-distribute buses across outgoing shifts based on student demand balance"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              <span>Auto-Assign</span>
+            </button>
+
+            <button
+              onClick={handleRotateRoster}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-750 transition-all cursor-pointer shadow-sm"
+              title="Rotate bus shift assignments to equalize vehicle wear and driver hours"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Rotate Fleet</span>
+            </button>
+
+            <button
+              onClick={handleConfirmAndPublish}
+              disabled={isPublishingRoster}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shadow-md ${
+                hasUnsavedChanges || summary.conflictCount > 0
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white animate-pulse"
+                  : "bg-blue-600 hover:bg-blue-500 text-white"
+              }`}
+            >
+              <CheckCheck className="w-4 h-4" />
+              <span>{isPublishingRoster ? "Publishing..." : hasUnsavedChanges ? "Confirm & Publish Changes *" : "Confirm & Publish Roster"}</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Tab 1: Dispatch Table */}
+      {/* ── TAB 1: VEHICLE DUTY BLOCKS (PRIMARY COCKPIT) ────────────────────────── */}
+      {activeViewMode === "DUTY_BLOCKS" && (
+        <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-6 border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                <BusFront className="w-4 h-4 text-blue-600" />
+                <span>Vehicle Duty Blocks Allocation Matrix</span>
+              </h3>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                Every bus is dispatched on 1 Morning Incoming shift + 1 Designated Outgoing shift. Toggle outgoing shifts directly per bus below.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl text-[11px] font-bold">
+                <button
+                  onClick={() => setDutyFilter("ALL")}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    dutyFilter === "ALL" ? "bg-white dark:bg-gray-700 shadow-xs text-blue-600 dark:text-blue-400" : "text-gray-500"
+                  }`}
+                >
+                  All ({localDutyBlocks.length})
+                </button>
+                <button
+                  onClick={() => setDutyFilter("CONFLICTS")}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    dutyFilter === "CONFLICTS" ? "bg-white dark:bg-gray-700 shadow-xs text-red-600 dark:text-red-400" : "text-gray-500"
+                  }`}
+                >
+                  Conflicts ({summary.conflictCount})
+                </button>
+                <button
+                  onClick={() => setDutyFilter("UNCREWED")}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    dutyFilter === "UNCREWED" ? "bg-white dark:bg-gray-700 shadow-xs text-amber-600 dark:text-amber-400" : "text-gray-500"
+                  }`}
+                >
+                  Uncrewed ({summary.uncrewedCount})
+                </button>
+              </div>
+
+              <div className="relative flex-1 sm:w-64 sm:flex-none">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={crewSearchQuery}
+                  onChange={(e) => setCrewSearchQuery(e.target.value)}
+                  placeholder="Search bus, route, or crew..."
+                  className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 outline-none focus:border-blue-500 font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {filteredDutyBlocks.length === 0 ? (
+            <div className="py-16 text-center text-xs text-gray-400 font-mono space-y-2">
+              <BusFront className="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600" />
+              <div>No vehicle duty blocks match the active filter or search query.</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-gray-50 dark:bg-gray-800/60 uppercase font-black text-gray-400 border-b border-gray-200 dark:border-gray-800 text-[10px]">
+                  <tr>
+                    <th className="p-3.5">Bus & Corridor Route</th>
+                    <th className="p-3.5">Incoming Shift (Home ➔ Campus)</th>
+                    <th className="p-3.5">Allocated Outgoing Shift (Campus ➔ Home)</th>
+                    <th className="p-3.5">Designated Driver</th>
+                    <th className="p-3.5">Designated Conductor</th>
+                    <th className="p-3.5 text-center">Duty Status</th>
+                    <th className="p-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {filteredDutyBlocks.map((block) => {
+                    const isFullyCrewed = Boolean(block.driverId && block.conductorId);
+                    const hasConflict = block.dutyStatus === "CONFLICT_MULTIPLE_OUTGOING";
+
+                    const driverAtt = attendanceRecords.find(
+                      (a) =>
+                        (a.userId === block.driverId || a.studentId === block.driverId) &&
+                        (a.busId === block.busId)
+                    );
+
+                    const conductorAtt = attendanceRecords.find(
+                      (a) =>
+                        (a.userId === block.conductorId || a.studentId === block.conductorId) &&
+                        (a.busId === block.busId)
+                    );
+
+                    return (
+                      <tr
+                        key={block.busId}
+                        className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors ${
+                          hasConflict ? "bg-red-50/30 dark:bg-red-950/20" : ""
+                        }`}
+                      >
+                        {/* Bus & Corridor */}
+                        <td className="p-3.5">
+                          <div className="font-black text-gray-900 dark:text-white flex items-center gap-1.5 text-sm">
+                            <BusFront className="w-4 h-4 text-blue-600" />
+                            <span>Bus {block.busNumber}</span>
+                          </div>
+                          <div className="font-bold text-gray-700 dark:text-gray-300 text-[11px] mt-0.5">
+                            {block.routeName}
+                          </div>
+                          <div className="text-[10px] font-mono text-gray-400 mt-0.5">
+                            {block.registrationNo} • {block.capacity} seats
+                          </div>
+                        </td>
+
+                        {/* Incoming Shift (Morning) */}
+                        <td className="p-3.5">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold text-[11px]">
+                            <Sunrise className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>{block.incomingShiftName}</span>
+                            <span className="font-mono text-[10px] opacity-75">({block.incomingShiftTime})</span>
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-mono mt-1 flex items-center gap-1">
+                            <span>Pickup: Stops ➔ Campus</span>
+                          </div>
+                        </td>
+
+                        {/* Allocated Outgoing Shift (Campus -> Home) Dynamic Selector */}
+                        <td className="p-3.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {outgoingShifts.map((shift) => {
+                              const isSelected = block.outgoingShiftId === shift.id;
+                              return (
+                                <button
+                                  key={shift.id}
+                                  onClick={() => handleSelectOutgoingShift(block.busId, shift.id)}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                                    isSelected
+                                      ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                      : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700"
+                                  }`}
+                                >
+                                  <Sunset className={`w-3 h-3 ${isSelected ? "text-white" : "text-gray-400"}`} />
+                                  <span>{shift.name.split(" ")[0]}</span>
+                                  <span className="font-mono text-[10px] opacity-80">({shift.startTime})</span>
+                                  {isSelected && <Check className="w-3 h-3 ml-0.5 text-white" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {hasConflict && (
+                            <div className="mt-1 text-[10px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>Dual Outshift Conflict (Select one to allocate)</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Designated Driver */}
+                        <td className="p-3.5">
+                          {block.driverName ? (
+                            <div>
+                              <div className="font-bold text-gray-900 dark:text-white">{block.driverName}</div>
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {block.driverPhone || "—"} • {block.driverLicense || "HMV"}
+                              </div>
+                              {driverAtt ? (
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>Checked-in ({formatTime(driverAtt.timestamp)})</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 mt-0.5">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Pending Check-in</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-bold text-red-500 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" /> Unassigned
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Designated Conductor */}
+                        <td className="p-3.5">
+                          {block.conductorName ? (
+                            <div>
+                              <div className="font-bold text-gray-900 dark:text-white">{block.conductorName}</div>
+                              <div className="text-[10px] text-gray-400 font-mono">{block.conductorPhone || "—"}</div>
+                              {conductorAtt ? (
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>Checked-in ({formatTime(conductorAtt.timestamp)})</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 mt-0.5">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Pending Check-in</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-bold text-yellow-500 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" /> Unassigned
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Duty Status */}
+                        <td className="p-3.5 text-center">
+                          {hasConflict ? (
+                            <span className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800">
+                              Conflict (Dual)
+                            </span>
+                          ) : (
+                            <span
+                              className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                isFullyCrewed
+                                  ? "bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300"
+                                  : "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300"
+                              }`}
+                            >
+                              {isFullyCrewed ? "1 In + 1 Out Ready" : "Crew Pending"}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-3.5 text-right">
+                          <button
+                            onClick={() => openCrewModalForBlock(block)}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                          >
+                            {isFullyCrewed ? "Change Crew" : "Assign Crew"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 2: GRANULAR TRIP DISPATCH RUNS ─────────────────────────────────── */}
       {activeViewMode === "ROSTER" && (
         <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-6 border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h3 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2">
               <BusFront className="w-4 h-4 text-blue-600" />
-              <span>Fleet Crew Dispatch Table</span>
+              <span>Granular Transit Runs (Trips)</span>
             </h3>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -385,10 +962,10 @@ export default function TransportManagerCrewView({
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
               <table className="w-full text-xs text-left">
-                <thead className="bg-gray-50 dark:bg-gray-800/60 uppercase font-black text-gray-400 border-b border-gray-200 dark:border-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/60 uppercase font-black text-gray-400 border-b border-gray-200 dark:border-gray-800 text-[10px]">
                   <tr>
-                    <th className="p-3.5">Bus & Trip</th>
-                    <th className="p-3.5">Corridor Route</th>
+                    <th className="p-3.5">Bus & Operational Code</th>
+                    <th className="p-3.5">Corridor Route & Direction</th>
                     <th className="p-3.5">Assigned Driver</th>
                     <th className="p-3.5">Assigned Conductor</th>
                     <th className="p-3.5 text-center">Crew Status</th>
@@ -415,54 +992,42 @@ export default function TransportManagerCrewView({
                     );
 
                     const isComplete = Boolean(trip.driverId && trip.conductorId);
+                    const shift = shifts.find((s) => s.id === trip.shiftId);
+                    const isOutbound = shift?.direction === "CAMPUS_TO_HOME";
+                    const isC2C = shift?.direction === "CAMPUS_TO_CAMPUS";
 
                     return (
                       <tr key={trip.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
                         <td className="p-3.5">
                           <div className="font-black text-gray-900 dark:text-white flex items-center gap-1.5">
                             <BusFront className="w-3.5 h-3.5 text-blue-600" />
-                            <span>{bus?.busNumber || "Bus TBA"}</span>
+                            <span>Bus {bus?.busNumber || "TBA"}</span>
                           </div>
                           <div className="text-[10px] font-mono text-gray-400">{trip.tripCode}</div>
-                          {store.isTripSpecial(trip) && (
-                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                              <Lock className="w-2.5 h-2.5 shrink-0" />
-                              <span>Special Restricted Run</span>
-                            </span>
-                          )}
                         </td>
 
                         <td className="p-3.5">
                           <div className="font-bold text-gray-800 dark:text-gray-200">{route?.name || "Route TBA"}</div>
                           <div className="text-[10px] font-mono mt-0.5">
-                            {(() => {
-                              const shift = shifts.find((s) => s.id === trip.shiftId);
-                              const isOutbound = shift?.direction === "CAMPUS_TO_HOME";
-                              const isC2C = shift?.direction === "CAMPUS_TO_CAMPUS";
-                              return (
-                                <span
-                                  className={`inline-flex items-center gap-1 font-bold ${
-                                    isC2C
-                                      ? "text-purple-600 dark:text-purple-400"
-                                      : isOutbound
-                                      ? "text-indigo-600 dark:text-indigo-400"
-                                      : "text-blue-600 dark:text-blue-400"
-                                  }`}
-                                >
-                                  {isC2C ? (
-                                    <Building className="w-3 h-3 shrink-0" />
-                                  ) : isOutbound ? (
-                                    <Sunset className="w-3 h-3 shrink-0" />
-                                  ) : (
-                                    <Sunrise className="w-3 h-3 shrink-0" />
-                                  )}
-                                  <span>{shift?.name || "Transit Run"}</span>
-                                  {shift?.startTime && (
-                                    <span className="opacity-75 font-normal">({shift.startTime})</span>
-                                  )}
-                                </span>
-                              );
-                            })()}
+                            <span
+                              className={`inline-flex items-center gap-1 font-bold ${
+                                isC2C
+                                  ? "text-purple-600 dark:text-purple-400"
+                                  : isOutbound
+                                  ? "text-indigo-600 dark:text-indigo-400"
+                                  : "text-amber-600 dark:text-amber-400"
+                              }`}
+                            >
+                              {isC2C ? (
+                                <Building className="w-3 h-3 shrink-0" />
+                              ) : isOutbound ? (
+                                <Sunset className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <Sunrise className="w-3 h-3 shrink-0" />
+                              )}
+                              <span>{shift?.name || "Transit Run"}</span>
+                              {shift?.startTime && <span className="opacity-75 font-normal">({shift.startTime})</span>}
+                            </span>
                           </div>
                         </td>
 
@@ -472,17 +1037,10 @@ export default function TransportManagerCrewView({
                               <div className="font-bold text-gray-900 dark:text-white">{driver.fullName}</div>
                               <div className="text-[10px] text-gray-400 font-mono">{driver.phone || "—"}</div>
                               {driverAtt ? (
-                                driverAtt.method === "BUS_QR_SCAN" ? (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                                    <ShieldCheck className="w-3 h-3" />
-                                    <span>✓ QR Checked-in ({formatTime(driverAtt.timestamp)})</span>
-                                  </div>
-                                ) : (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>✓ Card Checked-in ({formatTime(driverAtt.timestamp)})</span>
-                                  </div>
-                                )
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>Checked-in ({formatTime(driverAtt.timestamp)})</span>
+                                </div>
                               ) : (
                                 <div className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 mt-0.5">
                                   <Clock className="w-3 h-3" />
@@ -503,17 +1061,10 @@ export default function TransportManagerCrewView({
                               <div className="font-bold text-gray-900 dark:text-white">{conductor.fullName}</div>
                               <div className="text-[10px] text-gray-400 font-mono">{conductor.phone || "—"}</div>
                               {conductorAtt ? (
-                                conductorAtt.method === "BUS_QR_SCAN" ? (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                                    <ShieldCheck className="w-3 h-3" />
-                                    <span>✓ QR Checked-in ({formatTime(conductorAtt.timestamp)})</span>
-                                  </div>
-                                ) : (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>✓ Card Checked-in ({formatTime(conductorAtt.timestamp)})</span>
-                                  </div>
-                                )
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>Checked-in ({formatTime(conductorAtt.timestamp)})</span>
+                                </div>
                               ) : (
                                 <div className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 mt-0.5">
                                   <Clock className="w-3 h-3" />
@@ -542,7 +1093,7 @@ export default function TransportManagerCrewView({
 
                         <td className="p-3.5 text-right">
                           <button
-                            onClick={() => openAssignModal(trip)}
+                            onClick={() => openCrewModalForTrip(trip)}
                             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
                           >
                             {isComplete ? "Change Crew" : "Assign Crew"}
@@ -558,7 +1109,7 @@ export default function TransportManagerCrewView({
         </div>
       )}
 
-      {/* Tab 2: Crew Duty Attendance & Payroll Ledger */}
+      {/* ── TAB 3: CREW DUTY ATTENDANCE & PAYROLL LEDGER ──────────────────────── */}
       {activeViewMode === "DUTY_LEDGER" && (
         <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-6 border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -581,7 +1132,7 @@ export default function TransportManagerCrewView({
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
               <table className="w-full text-xs text-left">
-                <thead className="bg-gray-50 dark:bg-gray-800/60 uppercase font-black text-gray-400 border-b border-gray-200 dark:border-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/60 uppercase font-black text-gray-400 border-b border-gray-200 dark:border-gray-800 text-[10px]">
                   <tr>
                     <th className="p-3.5">Crew Member</th>
                     <th className="p-3.5">Assigned Bus</th>
@@ -617,7 +1168,7 @@ export default function TransportManagerCrewView({
 
                         <td className="p-3.5">
                           <div className="font-bold text-gray-800 dark:text-gray-200">
-                            {bus?.busNumber || record.busId || "Fleet Bus"}
+                            {bus?.busNumber ? `Bus ${bus.busNumber}` : record.busId || "Fleet Bus"}
                           </div>
                           <div className="text-[10px] font-mono text-gray-400">
                             {bus?.registrationNo || "UK-07-FLEET"}
@@ -673,14 +1224,23 @@ export default function TransportManagerCrewView({
       )}
 
       {/* Crew Assignment Modal */}
-      {crewModalOpen && selectedTripForCrew && (
+      {crewModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-3xl p-6 border border-gray-200 dark:border-gray-800 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
-              <h4 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-600" />
-                <span>Assign Bus Crew</span>
-              </h4>
+              <div>
+                <h4 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  <span>
+                    {selectedBlockForCrew
+                      ? `Assign Crew to Bus ${selectedBlockForCrew.busNumber}`
+                      : "Assign Trip Crew"}
+                  </span>
+                </h4>
+                <div className="text-[11px] text-gray-400 mt-0.5">
+                  {selectedBlockForCrew?.routeName || selectedTripForCrew?.tripCode}
+                </div>
+              </div>
               <button
                 onClick={() => setCrewModalOpen(false)}
                 className="p-1 rounded-lg text-gray-400 hover:text-white"
@@ -738,14 +1298,14 @@ export default function TransportManagerCrewView({
             <div className="flex justify-end gap-2 pt-3">
               <button
                 onClick={() => setCrewModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveCrewAssignment}
                 disabled={isAssigningCrew}
-                className="px-4 py-2 text-xs font-black rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+                className="px-4 py-2 text-xs font-black rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-sm cursor-pointer"
               >
                 {isAssigningCrew ? "Saving Roster..." : "Confirm Crew Allocation"}
               </button>

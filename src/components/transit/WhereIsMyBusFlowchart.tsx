@@ -22,6 +22,8 @@ import {
 
 export interface WhereIsMyBusFlowchartProps {
   route: Route;
+  stops?: Stop[];
+  buses?: Bus[];
   bus?: Bus | null;
   busLocation?: LiveBusLocation | null;
   trip?: Trip | null;
@@ -54,6 +56,8 @@ function formatTimeWithOffset(baseTimeStr = "07:15", offsetMins = 0): string {
 
 export function WhereIsMyBusFlowchart({
   route,
+  stops: stopsCatalog = [],
+  buses = [],
   bus,
   busLocation,
   trip,
@@ -67,7 +71,35 @@ export function WhereIsMyBusFlowchart({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
 
-  const stops = useMemo(() => route?.stops || [], [route]);
+  const stops = useMemo(() => {
+    const rawStops = route?.stops || [];
+    return rawStops
+      .map((rs: any, idx: number) => {
+        const stopObj =
+          rs?.stop ||
+          (stopsCatalog || []).find((s) => s.id === (rs?.stopId || rs?.stop_id)) || {
+            id: rs?.stopId || rs?.stop_id || `stop-${idx}`,
+            name: rs?.name || `Station ${idx + 1}`,
+            code: rs?.code || `ST-${idx + 1}`,
+            latitude: Number(rs?.latitude) || 29.38,
+            longitude: Number(rs?.longitude) || 79.52,
+            landmark: rs?.landmark || "",
+            geofenceRadiusMeters: 100,
+            campusId: "",
+            campus: "",
+            isBusMergeStop: false,
+          };
+        return {
+          ...rs,
+          stopId: rs?.stopId || rs?.stop_id || stopObj.id,
+          stopOrder: rs?.stopOrder ?? idx + 1,
+          arrivalOffsetMinutes: rs?.arrivalOffsetMinutes ?? idx * 5,
+          bufferTimeMinutes: rs?.bufferTimeMinutes ?? 2,
+          stop: stopObj,
+        };
+      })
+      .filter((rs) => Boolean(rs && rs.stop));
+  }, [route, stopsCatalog]);
 
   // Determine current active stop index from liveLocation if available
   const currentIndex = useMemo(() => {
@@ -93,13 +125,17 @@ export function WhereIsMyBusFlowchart({
     let cumulative = 0;
 
     for (let i = 1; i < stops.length; i++) {
-      const prev = stops[i - 1].stop;
-      const curr = stops[i].stop;
+      const prev = stops[i - 1]?.stop;
+      const curr = stops[i]?.stop;
+      if (!prev || !curr) {
+        distances.push(cumulative);
+        continue;
+      }
       const dist = calculateHaversineDistanceKm(
-        prev.latitude,
-        prev.longitude,
-        curr.latitude,
-        curr.longitude
+        prev.latitude ?? 0,
+        prev.longitude ?? 0,
+        curr.latitude ?? 0,
+        curr.longitude ?? 0
       );
       cumulative += dist;
       distances.push(Math.round(cumulative * 10) / 10);
@@ -113,8 +149,8 @@ export function WhereIsMyBusFlowchart({
   const isDelayed = delayMinutes > 2;
 
   // Real-time broadcasted coordinates from driver telematics
-  const busLat = busLocation?.latitude ?? stops[currentIndex]?.stop.latitude ?? stops[0]?.stop.latitude ?? 0;
-  const busLng = busLocation?.longitude ?? stops[currentIndex]?.stop.longitude ?? stops[0]?.stop.longitude ?? 0;
+  const busLat = busLocation?.latitude ?? stops[currentIndex]?.stop?.latitude ?? stops[0]?.stop?.latitude ?? 0;
+  const busLng = busLocation?.longitude ?? stops[currentIndex]?.stop?.longitude ?? stops[0]?.stop?.longitude ?? 0;
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${busLat},${busLng}`;
 
   const handleRefresh = () => {
@@ -201,7 +237,7 @@ export function WhereIsMyBusFlowchart({
           const isPassed = idx < currentIndex;
           const isCurrent = idx === currentIndex;
           const isUpcoming = idx > currentIndex;
-          const isSelected = rs.stop.id === selectedStopId;
+          const isSelected = rs.stop?.id === selectedStopId;
           const isFirst = idx === 0;
           const isLast = idx === stops.length - 1;
 
@@ -222,7 +258,7 @@ export function WhereIsMyBusFlowchart({
           const distanceKm = stopDistances[idx] ?? rs.arrivalOffsetMinutes * 0.7;
 
           return (
-            <React.Fragment key={rs.stopId}>
+            <React.Fragment key={rs.stopId || rs.stop?.id || idx}>
               {/* If bus is moving between previous stop and this current stop, show live bus marker */}
               {isCurrent && !isFirst && (
                 <div className="relative my-2 py-2.5 px-3 sm:px-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900/60 text-blue-900 dark:text-blue-100 flex items-center justify-between">
@@ -235,7 +271,7 @@ export function WhereIsMyBusFlowchart({
                         <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[10px] font-bold">
                           LIVE
                         </span>
-                        <span>Approaching {rs.stop.name}</span>
+                        <span>Approaching {rs.stop?.name || "Next Stop"}</span>
                       </div>
                       <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
                         Speed: <strong>{liveSpeed} km/h</strong> • {isDelayed ? `${delayMinutes}m delay` : "On time"}
@@ -263,7 +299,7 @@ export function WhereIsMyBusFlowchart({
 
               {/* ── Stop Row ── */}
               <div
-                onClick={() => onSelectStop && onSelectStop(rs.stop)}
+                onClick={() => onSelectStop && rs.stop && onSelectStop(rs.stop)}
                 className={`grid grid-cols-12 items-center py-3 px-2 sm:px-3 rounded-lg transition-colors cursor-pointer relative ${
                   isSelected
                     ? "bg-green-50 dark:bg-green-950/30 border border-green-300 dark:border-green-800"
@@ -357,7 +393,7 @@ export function WhereIsMyBusFlowchart({
                             : "text-gray-900 dark:text-white"
                         }`}
                       >
-                        {rs.stop.name}
+                        {rs.stop?.name || `Station ${idx + 1}`}
                       </h4>
                       {isLast && (
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
@@ -375,7 +411,7 @@ export function WhereIsMyBusFlowchart({
                       <span className="font-mono">{distanceKm} km</span>
                       <span>•</span>
                       <span className="truncate max-w-[130px] sm:max-w-[200px]">
-                        {rs.stop.landmark || `Bay ${String.fromCharCode(65 + (idx % 4))}`}
+                        {rs.stop?.landmark || `Bay ${String.fromCharCode(65 + (idx % 4))}`}
                       </span>
                     </div>
 
@@ -432,7 +468,7 @@ export function WhereIsMyBusFlowchart({
               <Navigation className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
               <span>
                 {currentIndex < stops.length
-                  ? `Approaching ${stops[currentIndex].stop.name}`
+                  ? `Approaching ${stops[currentIndex]?.stop?.name || "Next Stop"}`
                   : "Arrived at Destination"}
               </span>
             </div>

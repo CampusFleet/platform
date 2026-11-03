@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   GitBranch, MapPin, Maximize2, Minimize2, MoreVertical, Route as RouteIcon,
@@ -13,18 +13,83 @@ const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"),
 import WhereIsMyBusFlowchart from "@/components/transit/WhereIsMyBusFlowchart";
 
 export default function CorridorDetailView({ routeId }: { routeId: string }) {
-  const { routes, stops, buses, trips, campuses, isAddStopModalOpen } = useRoutesContext();
+  const { routes, stops, buses, trips, campuses } = useRoutesContext();
 
   const [routeViewMode, setRouteViewMode] = useState<"FLOWCHART" | "MAP">("FLOWCHART");
   const [selectedBusToAllocate, setSelectedBusToAllocate] = useState("");
   const [isAllocateBusModalOpen, setIsAllocateBusModalOpen] = useState(false);
   const [isOverrideActive, setIsOverrideActive] = useState(false);
 
-  const activeRoute = routes.find(r => r.id === routeId) || routes[0];
-  const assignedBuses = buses.filter(b => b.routeId === routeId);
+  const activeRoute = useMemo(() => {
+    if (!routes || routes.length === 0) return null;
+    return routes.find(r => r.id === routeId || r.code === routeId) || routes[0];
+  }, [routes, routeId]);
+
+  const assignedBuses = useMemo(() => {
+    if (!activeRoute) return [];
+    return (buses || []).filter(
+      b => b?.routeId === activeRoute.id || (b as any)?.currentRouteId === activeRoute.id
+    );
+  }, [buses, activeRoute]);
+
+  // Enrich stops with coordinates & landmarks from master stops catalog if needed
+  const corridorStops = useMemo(() => {
+    if (!activeRoute?.stops) return [];
+    return (activeRoute.stops || [])
+      .map((rs: any, idx: number) => {
+        const stopObj =
+          rs?.stop ||
+          (stops || []).find((s) => s.id === (rs?.stopId || rs?.stop_id)) || {
+            id: rs?.stopId || rs?.stop_id || `stop-${idx}`,
+            name: rs?.name || `Station ${idx + 1}`,
+            code: rs?.code || `ST-${idx + 1}`,
+            latitude: Number(rs?.latitude) || 29.38,
+            longitude: Number(rs?.longitude) || 79.52,
+            landmark: rs?.landmark || "",
+            geofenceRadiusMeters: 100,
+            campusId: "",
+            campus: "",
+            isBusMergeStop: false,
+          };
+        return {
+          ...rs,
+          stopId: stopObj.id || rs?.stopId,
+          stopOrder: rs?.stopOrder ?? idx + 1,
+          arrivalOffsetMinutes: rs?.arrivalOffsetMinutes ?? idx * 5,
+          bufferTimeMinutes: rs?.bufferTimeMinutes ?? 2,
+          stop: stopObj,
+        };
+      })
+      .filter(Boolean);
+  }, [activeRoute, stops]);
+
+  const mapStops = useMemo(() => {
+    return corridorStops.map((rs: any) => rs.stop).filter(Boolean);
+  }, [corridorStops]);
+
+  const corridorCoordinates = useMemo(() => {
+    return corridorStops
+      .map((rs: any) => (rs?.stop?.latitude && rs?.stop?.longitude ? [rs.stop.latitude, rs.stop.longitude] : null))
+      .filter(Boolean) as [number, number][];
+  }, [corridorStops]);
+
+  if (!routes || routes.length === 0) {
+    return (
+      <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800">
+        <RefreshCcw className="w-6 h-6 text-blue-500 animate-spin mx-auto mb-2" />
+        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Loading corridor details...</p>
+      </div>
+    );
+  }
 
   if (!activeRoute) {
-    return <div className="p-8 text-center text-gray-500">Route not found.</div>;
+    return (
+      <div className="p-12 text-center bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800">
+        <RouteIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+        <p className="text-base font-bold text-gray-800 dark:text-gray-200">Corridor Not Found</p>
+        <p className="text-xs text-gray-500 font-mono mt-1">Route ID: {routeId}</p>
+      </div>
+    );
   }
 
   const handleDeallocateBus = () => { alert("Not implemented"); };
@@ -32,6 +97,9 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
   const handleOpenEditRoute = () => { alert("Not implemented"); };
   const handleDeleteRoute = () => { alert("Not implemented"); };
   const handleToggleEmergencyOverride = () => setIsOverrideActive(prev => !prev);
+
+  const activeTrips = (trips || []).filter(t => t && (t.routeId === activeRoute.id || (t as any).route_id === activeRoute.id));
+  const liveTripsCount = activeTrips.filter(t => t?.status === "IN_TRANSIT" || (t as any)?.status === "IN_PROGRESS").length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
@@ -41,16 +109,16 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: activeRoute.color }} />
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: activeRoute.color || "#2563eb" }} />
                 <h3 className="font-bold text-base text-gray-900 dark:text-white">
                   {activeRoute.name}
                 </h3>
                 <span className="font-mono text-xs text-blue-600 font-bold bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded-md">
-                  {activeRoute.code}
+                  {activeRoute.code || "CORRIDOR"}
                 </span>
               </div>
               <span className="text-xs font-mono text-gray-500 mt-0.5 block">
-                {activeRoute.distanceKm} km • ~{activeRoute.estimatedDurationMins} mins • Direction: {activeRoute.direction}
+                {activeRoute.totalDistanceKm || activeRoute.distanceKm || 0} km • ~{activeRoute.estimatedDurationMins || 45} mins • Direction: {activeRoute.direction || "Inbound"}
               </span>
             </div>
 
@@ -90,17 +158,17 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
           <div className="h-[500px] bg-gray-100 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden relative isolate">
             {routeViewMode === "MAP" ? (
               <CampusFleetMap
-                routes={[activeRoute]}
-                stops={stops}
-                buses={buses}
-                isAddStopModalOpen={isAddStopModalOpen}
-                style="road"
+                stops={mapStops.length > 0 ? mapStops : stops}
+                campuses={campuses}
+                routeCoordinates={corridorCoordinates}
+                height="100%"
               />
             ) : (
               <WhereIsMyBusFlowchart
-                route={activeRoute}
+                route={{ ...activeRoute, stops: corridorStops }}
                 stops={stops}
                 buses={assignedBuses}
+                bus={assignedBuses[0] || null}
               />
             )}
             <div className="absolute top-2 right-2 flex flex-col gap-2 z-[9999]">
@@ -138,11 +206,11 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
                 <div key={b.id} className="p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-800 rounded-2xl flex items-center justify-between group">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 flex items-center justify-center font-bold text-xs">
-                      {b.busNumber.replace('Bus ', '')}
+                      {String(b.busNumber || "").replace('Bus ', '')}
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold">{b.registrationNo}</div>
-                      <div className="text-[9px] text-gray-500 font-mono">{b.capacity} seats</div>
+                      <div className="text-[10px] font-bold">{b.registrationNo || `Bus ${b.busNumber}`}</div>
+                      <div className="text-[9px] text-gray-500 font-mono">{b.capacity || 40} seats</div>
                     </div>
                   </div>
                   <button
@@ -172,44 +240,57 @@ export default function CorridorDetailView({ routeId }: { routeId: string }) {
             </h3>
             <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2 py-1 rounded-lg font-mono font-bold flex items-center gap-1 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              {trips.filter(t => t.routeId === activeRoute.id && t.status === "IN_TRANSIT").length} Live
+              {liveTripsCount} Live
             </span>
           </div>
 
           <div className="space-y-3 pt-2">
-            {trips.filter(t => t.routeId === activeRoute.id).length > 0 ? (
-              trips.filter(t => t.routeId === activeRoute.id).map(trip => {
-                const assignedBus = buses.find(b => b.id === trip.busId);
+            {activeTrips.length > 0 ? (
+              activeTrips.map(trip => {
+                const assignedBus = (buses || []).find(b => b.id === trip.busId || String(b.id) === String(trip.busId));
+                const manifestCount = Array.isArray(trip?.manifest)
+                  ? trip.manifest.length
+                  : Array.isArray((trip as any)?.reservations)
+                  ? (trip as any).reservations.length
+                  : typeof (trip as any)?.occupancy === "number"
+                  ? (trip as any).occupancy
+                  : 0;
+
+                const isLive = trip.status === "IN_TRANSIT" || (trip as any)?.status === "IN_PROGRESS";
+
                 return (
                   <div key={trip.id} className="p-4 bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-800 rounded-2xl space-y-3 relative overflow-hidden group hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                    {trip.status === "IN_TRANSIT" && (
+                    {isLive && (
                       <div className="absolute top-0 left-0 w-1 h-full bg-green-500" />
                     )}
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className={`p-1.5 rounded-lg ${trip.status === "IN_TRANSIT" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"} font-bold text-[10px]`}>
-                          {assignedBus?.busNumber || "TBD"}
+                        <div className={`p-1.5 rounded-lg ${isLive ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300"} font-bold text-[10px]`}>
+                          {assignedBus?.busNumber ? `Bus ${assignedBus.busNumber}` : "Bus Assigned"}
                         </div>
-                        <div className="text-xs font-bold text-gray-900 dark:text-white">Trip {trip.id.substring(0, 5)}</div>
+                        <div className="text-xs font-bold text-gray-900 dark:text-white">
+                          Dispatch #{trip.tripCode || (trip.id ? trip.id.substring(0, 6) : "1")}
+                        </div>
                       </div>
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${trip.status === "IN_TRANSIT" ? "bg-green-100 text-green-700 border border-green-200" :
-                        trip.status === "COMPLETED" ? "bg-gray-100 text-gray-500" :
-                          "bg-blue-100 text-blue-700"
-                        }`}>
-                        {trip.status}
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                        isLive ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 border border-green-200 dark:border-green-800" :
+                        trip.status === "COMPLETED" ? "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" :
+                        "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400"
+                      }`}>
+                        {trip.status || "SCHEDULED"}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div className="bg-white dark:bg-gray-900 rounded-xl p-2 border border-gray-100 dark:border-gray-800">
                         <span className="text-[9px] uppercase font-bold text-gray-400 block mb-0.5">Departed</span>
-                        <div className="text-[11px] font-mono font-black">{trip.startTime || "Scheduled"}</div>
+                        <div className="text-[11px] font-mono font-black">{trip.startedAt || (trip as any).departureTime || (trip as any).startTime || "Scheduled"}</div>
                       </div>
                       <div className="bg-white dark:bg-gray-900 rounded-xl p-2 border border-gray-100 dark:border-gray-800">
                         <span className="text-[9px] uppercase font-bold text-gray-400 block mb-0.5">Occupancy</span>
                         <div className="text-[11px] font-mono font-black">
-                          {trip.manifest.length} / {assignedBus?.capacity || 40}
+                          {manifestCount} / {assignedBus?.capacity || 40}
                         </div>
                       </div>
                     </div>

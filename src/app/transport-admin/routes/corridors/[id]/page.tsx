@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 export default function CorridorDetailPage({ params }: { params: { id: string } }) {
+  const routeId = params?.id ? decodeURIComponent(params.id) : "";
+
   return (
     <div className="space-y-6 animate-in fade-in pb-12 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 border-b border-gray-200 dark:border-gray-800 pb-4">
@@ -18,7 +20,7 @@ export default function CorridorDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
-      <CorridorDetailView routeId={params.id} />
+      <CorridorDetailView routeId={routeId} />
     </div>
   );
 }

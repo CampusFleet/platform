@@ -37,6 +37,16 @@ export default async function StudentPortalPage() {
   const activeStudentRow = dbStudents?.[0];
   const resolvedStudentId = activeStudentRow?.id || session.userId;
 
+  // New or unsubscribed students are guided directly to Unified Onboarding & Pass Activation
+  const isStudentSubscribed =
+    Boolean(activeStudentRow?.has_active_subscription) ||
+    activeStudentRow?.payment_status === "APPROVED" ||
+    activeStudentRow?.payment_status === "COMPLETED";
+
+  if (session.role === "student" && !isStudentSubscribed) {
+    redirect("/portal/onboarding");
+  }
+
   const now = new Date();
   const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
   const todayIST = istDate.toISOString().split("T")[0];

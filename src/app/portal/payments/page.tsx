@@ -12,12 +12,22 @@ export const dynamic = "force-dynamic";
  * - Queries past payment transactions, transit zones, and fee balances
  * - Delivers pre-rendered HTML with immediate receipt visibility
  */
-export default async function SubscriptionsAndBillingPage() {
+export default async function SubscriptionsAndBillingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const session = await getSession();
 
   if (!session) {
     redirect("/login?redirect=/portal/payments");
   }
+
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const hasPaymentCallback = Boolean(
+    resolvedSearchParams.razorpay_payment_id ||
+    resolvedSearchParams.razorpay_payment_link_id
+  );
 
   const [
     { data: dbStudents },
@@ -28,6 +38,17 @@ export default async function SubscriptionsAndBillingPage() {
     supabaseAdmin.from("payments").select("*").order("created_at", { ascending: false }).limit(100),
     supabaseAdmin.from("transit_zones").select("*").order("code"),
   ]);
+
+  const activeStudentRow = dbStudents?.[0];
+  const isStudentSubscribed =
+    Boolean(activeStudentRow?.has_active_subscription) ||
+    activeStudentRow?.payment_status === "APPROVED" ||
+    activeStudentRow?.payment_status === "COMPLETED";
+
+  // If new / unsubscribed student visits /portal/payments directly without payment callback params, guide them to Unified Onboarding & Pass Activation
+  if (session.role === "student" && !isStudentSubscribed && !hasPaymentCallback) {
+    redirect("/portal/onboarding");
+  }
 
   const students: Student[] = (dbStudents || []).map((s: any) => ({
     id: s.id,

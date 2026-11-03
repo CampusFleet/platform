@@ -30,6 +30,9 @@ import {
   Radio,
   Zap,
   PhoneCall,
+  ExternalLink,
+  Footprints,
+  Route as RouteIcon,
 } from "lucide-react";
 import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatGrid";
 import { generateSeatLayout, getTeacherStartingSeats } from "@/lib/utils";
@@ -37,6 +40,19 @@ import { AttendanceLockCard } from "./AttendanceLockCard";
 import { telematicsService } from "@/lib/telematicsService";
 import { ContactCrewModal } from "./ContactCrewModal";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, TransportSettings, Staff } from "@/lib/types";
+
+// Dynamic import for CampusFleetMap with fallback
+const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-72 rounded-3xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
+      <div className="flex flex-col items-center gap-2 text-zinc-400">
+        <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="text-xs font-medium">Loading Navigation Map...</span>
+      </div>
+    </div>
+  ),
+});
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -512,6 +528,62 @@ export default function SmartTransitCockpit({
     const mins = Math.max(1, Math.round((busToStopDistMeters / 1000) / (25 / 60)));
     return `~${mins} mins (${busToStopDistMeters > 1000 ? `${(busToStopDistMeters / 1000).toFixed(1)} km` : `${busToStopDistMeters}m`})`;
   }, [busToStopDistMeters, isTelematicsLive]);
+
+  // Effective User GPS / Residential Location for First-Mile Guidance
+  const effectiveUserLat = userGeoCoords?.lat ?? (student as any)?.home_latitude ?? (student as any)?.homeLatitude ?? 29.220936;
+  const effectiveUserLng = userGeoCoords?.lng ?? (student as any)?.home_longitude ?? (student as any)?.homeLongitude ?? 79.514496;
+
+  const [hasArrivedAtStopManually, setHasArrivedAtStopManually] = useState(false);
+  const [showSeatGridWhileWalking, setShowSeatGridWhileWalking] = useState(false);
+
+  const userToStopDistMeters = useMemo(() => {
+    if (!effectiveUserLat || !effectiveUserLng || !assignedStop?.latitude || !assignedStop?.longitude) {
+      return null;
+    }
+    return calculateDistanceMeters(
+      effectiveUserLat,
+      effectiveUserLng,
+      assignedStop.latitude,
+      assignedStop.longitude
+    );
+  }, [effectiveUserLat, effectiveUserLng, assignedStop]);
+
+  const isAtPickupStop = useMemo(() => {
+    if (hasArrivedAtStopManually) return true;
+    if (userToStopDistMeters !== null && userToStopDistMeters <= 60) return true;
+    return false;
+  }, [hasArrivedAtStopManually, userToStopDistMeters]);
+
+  const walkingCoordinates = useMemo<[number, number][]>(() => {
+    if (!effectiveUserLat || !effectiveUserLng || !assignedStop?.latitude || !assignedStop?.longitude) {
+      return [];
+    }
+    return [
+      [effectiveUserLat, effectiveUserLng],
+      [assignedStop.latitude, assignedStop.longitude],
+    ];
+  }, [effectiveUserLat, effectiveUserLng, assignedStop]);
+
+  const walkingEtaMins = useMemo(() => {
+    if (!userToStopDistMeters) return 5;
+    return Math.max(1, Math.round(userToStopDistMeters / 80));
+  }, [userToStopDistMeters]);
+
+  const busEtaMins = useMemo(() => {
+    if (!busToStopDistMeters) return null;
+    return Math.max(1, Math.round(busToStopDistMeters / 416));
+  }, [busToStopDistMeters]);
+
+  const arrivalCushionMins = useMemo(() => {
+    if (busEtaMins === null) return null;
+    return busEtaMins - walkingEtaMins;
+  }, [busEtaMins, walkingEtaMins]);
+
+  const googleMapsWalkingUrl = useMemo(() => {
+    if (!assignedStop?.latitude || !assignedStop?.longitude) return null;
+    const originStr = effectiveUserLat && effectiveUserLng ? `&origin=${effectiveUserLat},${effectiveUserLng}` : "";
+    return `https://www.google.com/maps/dir/?api=1${originStr}&destination=${assignedStop.latitude},${assignedStop.longitude}&travelmode=walking`;
+  }, [effectiveUserLat, effectiveUserLng, assignedStop]);
 
   const assignedDriverName = useMemo(() => {
     if (telematicsLocation?.driverName) return telematicsLocation.driverName;
@@ -1182,7 +1254,174 @@ export default function SmartTransitCockpit({
     );
   }
 
-  // ─── 1. NO ASSIGNED BUS CURRENTLY ─────────────────────────────────
+  // ─── 1. FIRST-MILE WALKING NAVIGATION (NOT ON BUS & NOT AT STOP) ───
+  const isWalkingToStop = !isAttendanceMarked && !isAtPickupStop && !hasArrivedAtStopManually && Boolean(assignedStop?.latitude && assignedStop?.longitude);
+
+  if (isWalkingToStop && !showSeatGridWhileWalking) {
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        {/* Top shift update */}
+        {schedule?.isIncomingOver && previousReservation && (
+          <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 text-xs flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="font-bold text-indigo-950 dark:text-indigo-200">
+                Morning Shift Completed {previousReservation.chosen_seat ? `• Seat ${previousReservation.chosen_seat}` : ""}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+              Next Shift Assigned: <strong className="text-indigo-600 dark:text-indigo-400">{assignedShiftName}</strong>
+            </div>
+          </div>
+        )}
+
+        {/* Live Radar Launcher Banner */}
+        {renderLiveRadarLauncherBanner()}
+
+        {/* Modern First-Mile Walking Navigation Card */}
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                <Footprints className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold uppercase text-emerald-600 dark:text-emerald-400 tracking-wider">
+                    First-Mile Guidance
+                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    {userToStopDistMeters ? `${userToStopDistMeters}m to stop` : "Walking Mode"}
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white mt-0.5">
+                  Walk to {assignedStop?.name || "Designated Stop"}
+                </h2>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHasArrivedAtStopManually(true)}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>I've Arrived at Stop</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Google / CampusFleet Interactive Map: Walking Path + Realtime Bus Pin */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-zinc-500">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                Live Pedestrian Walking Route to Boarding Point
+              </span>
+              <span className="font-mono text-[11px] bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+                ~{walkingEtaMins} min walk
+              </span>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative z-0">
+              <CampusFleetMap
+                height="300px"
+                zoom={15}
+                walkingCoordinates={walkingCoordinates}
+                stops={stops}
+                selectedStopId={assignedStop?.id}
+                busLocation={telematicsLocation}
+                showUserLocation={true}
+                tileTheme="GOOGLE_STREETS"
+              />
+            </div>
+          </div>
+
+          {/* Walking Sync & Bus Telematics Comparison */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+              <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+                <Footprints className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Your Walk Time</span>
+              </div>
+              <div className="text-base font-black text-zinc-900 dark:text-white font-mono">
+                ~{walkingEtaMins} mins
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                {userToStopDistMeters ? `${userToStopDistMeters}m at 4.8 km/h` : "Standard walking pace"}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+              <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+                <BusFront className="w-3.5 h-3.5 text-blue-600" />
+                <span>Bus Arrival ETA</span>
+              </div>
+              <div className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">
+                {liveEtaText || "~10 mins"}
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                {telematicsLocation?.speedKmh ? `${telematicsLocation.speedKmh} km/h • ` : ""}
+                {assignedBus?.busNumber ? `Bus ${assignedBus.busNumber}` : "Assigned Fleet Bus"}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+              <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                <span>Sync Status</span>
+              </div>
+              <div className={`text-sm font-bold ${
+                arrivalCushionMins !== null && arrivalCushionMins >= 2
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : arrivalCushionMins !== null && arrivalCushionMins < 2
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-zinc-900 dark:text-white"
+              }`}>
+                {arrivalCushionMins !== null && arrivalCushionMins >= 2
+                  ? `On Track (+${arrivalCushionMins}m buffer)`
+                  : arrivalCushionMins !== null && arrivalCushionMins < 2
+                  ? "Speed Up! Bus arriving soon"
+                  : "Scheduled Run"}
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                {assignedShiftStartTime ? `${formatShiftTime(assignedShiftStartTime)} Shift Departure` : "On-time departure"}
+              </p>
+            </div>
+          </div>
+
+          {/* Turn-by-Turn External Link & Seat Preview Actions */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+            {googleMapsWalkingUrl && (
+              <a
+                href={googleMapsWalkingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Navigation className="w-4 h-4" />
+                <span>Start Walking Navigation in Google Maps</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+              </a>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowSeatGridWhileWalking(true)}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <UserCheck className="w-4 h-4 text-emerald-600" />
+              <span>Select Bus Seat Ahead of Time ↓</span>
+            </button>
+          </div>
+        </div>
+        {renderToastNotification()}
+      </div>
+    );
+  }
+
+  // ─── 2. NO ASSIGNED BUS CURRENTLY ─────────────────────────────────
   if (!assignedBus) {
     return (
       <div className="space-y-6">
@@ -1227,8 +1466,7 @@ export default function SmartTransitCockpit({
     );
   }
 
-  // ─── 2. BUS ASSIGNED, ATTENDANCE NOT YET MARKED ───────────────────
-  // "show the seat attendance page to mark attendance that's it nothing else"
+  // ─── 3. BUS ASSIGNED, ATTENDANCE NOT YET MARKED ───────────────────
   if (!isAttendanceMarked) {
     return (
       <div className="space-y-6">

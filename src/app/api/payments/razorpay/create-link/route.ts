@@ -79,7 +79,8 @@ export async function POST(request: NextRequest) {
 
     const host = request.headers.get("host") || "campusfleet.vercel.app";
     const protocol = host.includes("localhost") ? "http" : "https";
-    const callbackUrl = `${protocol}://${host}/portal/payments?student_id=${studentId}`;
+    const callbackPath = body.callbackPath || `/portal/onboarding?student_id=${studentId}`;
+    const callbackUrl = callbackPath.startsWith("http") ? callbackPath : `${protocol}://${host}${callbackPath}`;
 
     const options = {
       amount: amountInPaise,

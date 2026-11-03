@@ -176,16 +176,11 @@ export default function ClientPortalLayout({
     if (isStudent && !activeStudent) return;
     
     if (isStudent) {
-      // 1. Force onboarding if profile is incomplete
-      if (!hasCompleteProfile && !isOnboardingPage) {
-        console.warn("[REDIRECT] Profile Incomplete -> /portal/onboarding");
+      // Seamlessly guide unsubscribed or new students to the Unified Onboarding & Pass Activation gateway
+      const hasPaymentParams = typeof window !== "undefined" && window.location.search.includes("razorpay_");
+      if (!isSubscriptionActive && !isOnboardingPage && (!isPaymentPage || !hasPaymentParams)) {
+        console.warn("[REDIRECT] New or Unsubscribed Commuter -> /portal/onboarding");
         router.replace("/portal/onboarding");
-      } 
-      // 2. Force payment if profile is complete but subscription inactive
-      // ONLY if confirmedActiveRef was never set (truly never paid)
-      else if (hasCompleteProfile && !isSubscriptionActive && !isPaymentPage && !isOnboardingPage) {
-        console.warn("[REDIRECT] Subscription Inactive -> /portal/payments");
-        router.replace("/portal/payments");
       }
     }
   }, [isStudent, hasCompleteProfile, activeStudent, pathname, router, isOnboardingPage, isPaymentPage, initialIsSubscribed, isSubscriptionActive]);
@@ -244,8 +239,8 @@ export default function ClientPortalLayout({
         { href: "/portal/settings", label: t('settings'), icon: User, requiresPayment: false },
       ]
     : [
-        { href: "/portal/payments", label: t('feePayment'), icon: CreditCard, requiresPayment: false },
-        { href: "/portal/onboarding", label: t('profileDetails'), icon: User, requiresPayment: false },
+        { href: "/portal/onboarding", label: "Pass Activation", icon: CreditCard, requiresPayment: false },
+        { href: "/portal/settings", label: t('settings'), icon: User, requiresPayment: false },
       ];
 
   const processedNavLinks = navLinks.map(link => ({
@@ -287,8 +282,8 @@ export default function ClientPortalLayout({
                 }
             : {
                 label: "Activate Transit Pass",
-                href: "/portal/payments",
-                subtitle: "Select zone & complete fee payment to unlock pass",
+                href: "/portal/onboarding",
+                subtitle: "Confirm home address & unlock transit pass",
                 icon: CreditCard,
               }
         }
@@ -301,62 +296,11 @@ export default function ClientPortalLayout({
           : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6"
       }`}>
         {isAccessBlocked ? (
-          <div className="max-w-2xl mx-auto my-10 p-6 sm:p-10 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xl text-center space-y-6 animate-in zoom-in-95">
-            <div className="w-16 h-16 rounded-3xl bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center mx-auto shadow-inner">
-              <Lock className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-2">
-              <div className="inline-block text-[11px] font-extrabold uppercase px-3 py-1 rounded-full bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
-                Transport Pass Inactive • Payment Required
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white">
-                Semester Transit Access Locked
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
-                Without verified transit fee payment, seat booking, digital dynamic QR pass, and live fleet telematics are restricted.
-              </p>
-            </div>
-
-            {activeStudent?.paymentStatus === "PENDING_APPROVAL" ? (
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-950/60 rounded-2xl border border-yellow-200 dark:border-yellow-800 text-left space-y-1">
-                <div className="text-xs font-bold text-yellow-800 dark:text-yellow-300 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping" />
-                  Payment Processing — Awaiting Confirmation
-                </div>
-                <p className="text-[11px] text-yellow-700 dark:text-yellow-400">
-                  Your payment is currently processing. If it was successful, your transit pass will automatically unlock shortly.
-                </p>
-              </div>
-            ) : (
-              <div className="p-4 bg-gray-50 dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 text-left space-y-2">
-                <div className="text-xs font-bold text-gray-700 dark:text-gray-300">
-                  How to Unlock Your Transit Pass:
-                </div>
-                <ol className="text-[11px] text-gray-500 space-y-1 list-decimal list-inside">
-                  <li>Click on "Pass Activation & Fees" in the sidebar.</li>
-                  <li>Click "Instant Account Activation" to securely pay via Razorpay.</li>
-                  <li>Upon successful payment, your pass will instantly unlock automatically!</li>
-                </ol>
-              </div>
-            )}
-
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                href="/portal/payments"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm shadow-lg shadow-blue-500/25 transition-transform active:scale-95"
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>Go to Pass & Fee Payment Gateway →</span>
-              </Link>
-              <Link
-                href="/portal/onboarding"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold text-sm transition-all"
-              >
-                <User className="w-4 h-4" />
-                <span>Edit Profile Details</span>
-              </Link>
-            </div>
+          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 animate-in fade-in">
+            <div className="w-8 h-8 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" />
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Launching Pass Onboarding & Activation...
+            </p>
           </div>
         ) : (
           children

@@ -13,7 +13,7 @@ import {
   MapPin, Plus, Trash2, ArrowUp, ArrowDown, Users, Check, X,
   Maximize2, Minimize2, Building2, Truck, Navigation, Sliders,
   RotateCcw, Sparkles, Layers, ShieldCheck, HelpCircle, Eye, EyeOff,
-  Route as RouteIcon, ChevronDown
+  Route as RouteIcon, ChevronDown, ChevronUp, ChevronRight, Edit3
 } from "lucide-react";
 
 export interface TransitStudioMapProps {
@@ -141,6 +141,22 @@ export default function TransitStudioMap({
   const [studioMode, setStudioMode] = useState<"ADD_STOP" | "INSPECT" | "VIEW">("VIEW");
   const [isDemandVisible, setIsDemandVisible] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Minimization toggles for HUD elements - all points can minimize to a button and toggle
+  const [isHubExpanded, setIsHubExpanded] = useState(false);
+  const [isToolsExpanded, setIsToolsExpanded] = useState(true);
+
+  // Theme observer: light in light mode, black in dark mode
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const updateTheme = () => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Active Route ID selected from the dropdown
   const [activeRouteId, setActiveRouteId] = useState<string | null>(selectedRouteId || null);
@@ -377,6 +393,7 @@ export default function TransitStudioMap({
 
     const controller = new TransitStudioMapController({
       zoom: 13,
+      tileTheme: isDark ? "CARTO_DARK" : "GOOGLE_STREETS",
       onStopClick: (stop) => {
         setInspectedStop(stop);
       },
@@ -443,6 +460,13 @@ export default function TransitStudioMap({
       controllerRef.current = null;
     };
   }, [campus.id]);
+
+  // Sync Dark Mode dynamically with Google Maps
+  useEffect(() => {
+    if (controllerRef.current) {
+      controllerRef.current.setDarkMode(isDark);
+    }
+  }, [isDark]);
 
   // Sync Campus Anchor Updates
   useEffect(() => {
@@ -669,147 +693,301 @@ export default function TransitStudioMap({
   };
 
   return (
-    <div className={`relative w-full overflow-hidden bg-gray-900 text-white rounded-3xl border border-gray-800 shadow-2xl flex flex-col ${
+    <div className={`relative w-full overflow-hidden bg-slate-100 dark:bg-gray-950 text-gray-900 dark:text-white rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xl flex flex-col ${
       isFullscreen ? "fixed inset-0 z-[9999] rounded-none border-none h-screen w-screen" : "h-[85vh] min-h-[680px]"
     }`}>
-      {/* ── Top Floating Studio Toolbar ── */}
-      <div className="absolute top-4 inset-x-4 z-20 flex items-center justify-between pointer-events-none gap-3">
-        {/* Left: Campus Terminal & Rest Zone Indicator */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-gray-900/90 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-gray-700/80 shadow-xl">
-          <div className="w-8 h-8 rounded-xl bg-emerald-600/30 text-emerald-400 flex items-center justify-center font-bold text-xs border border-emerald-500/40">
-            <Building2 className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-white">{campus.name}</span>
-              <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.2 rounded">
-                ANCHOR 1
-              </span>
+      {/* ── Unified Top Command Dock ── */}
+      <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between pointer-events-none gap-2">
+        {/* Left: Corridor Hub Pill & Stations Pipeline Toggle */}
+        <div className="pointer-events-auto flex items-center gap-2 relative">
+          {/* Corridor Hub Pill (Minimizes to compact button, toggles full Hub Popover) */}
+          <button
+            type="button"
+            onClick={() => setIsHubExpanded(prev => !prev)}
+            className={`px-3 py-2 backdrop-blur-md rounded-2xl border text-xs font-black flex items-center gap-2 shadow-xl transition-all ${
+              isHubExpanded
+                ? "bg-blue-600 text-white border-blue-500 shadow-blue-600/30 ring-2 ring-blue-400/40"
+                : "bg-white/95 dark:bg-gray-900/95 text-gray-900 dark:text-white border-gray-200/90 dark:border-gray-700/80 hover:bg-gray-50 dark:hover:bg-gray-800"
+            }`}
+            title="Toggle Corridor & Fleet Anchors Configuration"
+          >
+            <div className={`w-5 h-5 rounded-lg flex items-center justify-center ${isHubExpanded ? "bg-white/20 text-white" : "bg-blue-600/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"}`}>
+              <RouteIcon className="w-3.5 h-3.5" />
             </div>
-            <p className="text-[10px] text-gray-400 font-mono">
-              Fixed Origin: {campusAnchor.landmark || "Campus Terminal"}
-            </p>
-          </div>
+            <span className="truncate max-w-[130px] sm:max-w-[200px]">
+              {name} ({code})
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+              {routeMetrics.distanceKm}km
+            </span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isHubExpanded ? "rotate-180 text-white" : "text-gray-400"}`} />
+          </button>
 
-          <div className="h-6 w-px bg-gray-700 mx-1" />
+          {/* Stations Pipeline Drawer Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(prev => !prev)}
+            className={`px-3 py-2 backdrop-blur-md rounded-2xl border text-xs font-bold flex items-center gap-1.5 shadow-xl transition-all ${
+              isSidebarOpen
+                ? "bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30"
+                : "bg-white/95 dark:bg-gray-900/95 text-gray-800 dark:text-gray-200 border-gray-200/90 dark:border-gray-700/80 hover:bg-gray-50 dark:hover:bg-gray-800"
+            }`}
+            title={isSidebarOpen ? "Collapse Stations Pipeline" : "Show Stations Pipeline"}
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>Stations ({studioStops.length})</span>
+          </button>
 
-          {/* Rest Zone Switcher & Database Depot Manager */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/40">
-              <Truck className="w-3.5 h-3.5" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase block">ANCHOR 2: REST ZONE</span>
+          {/* Corridor Hub Popover (Only drops down when isHubExpanded is true) */}
+          {isHubExpanded && (
+            <div className="absolute top-full left-0 mt-2 z-50 w-84 sm:w-96 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-3xl border border-gray-200 dark:border-gray-700/80 shadow-2xl p-4 space-y-3 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-600/10 dark:bg-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs">
+                    <RouteIcon className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-black text-gray-900 dark:text-white">Corridor &amp; Anchors Hub</span>
+                </div>
                 <button
-                  onClick={() => {
-                    setDepotModalTab("LIST");
-                    setIsDepotManagerOpen(true);
-                  }}
-                  className="text-[9px] font-bold text-indigo-300 hover:text-white px-1 bg-indigo-950/80 rounded border border-indigo-800/60"
-                  title="Open Database Depot Manager"
+                  type="button"
+                  onClick={() => setIsHubExpanded(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
-                  Manage
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex items-center gap-1 mt-0.5">
+
+              {/* 1. Select Route Dropdown */}
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-1">
+                  Corridor Route ({routes.length} Available)
+                </label>
+                <select
+                  value={activeRouteId || "__NEW__"}
+                  onChange={(e) => handleSelectRoute(e.target.value)}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 dark:text-white outline-none cursor-pointer focus:border-blue-500"
+                >
+                  <option value="__NEW__" className="text-blue-600 dark:text-blue-400 font-bold">
+                    + [ Build New Corridor ]
+                  </option>
+                  {routes.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.code}) {r.totalDistanceKm ? `• ${r.totalDistanceKm}km` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Corridor Name & Code */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-1">
+                    Corridor Name
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-1">
+                    Route Code
+                  </label>
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={e => setCode(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-gray-900 dark:text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* 3. Anchor 1: Campus Terminal */}
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+                    <Building2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-mono font-black uppercase text-emerald-600 dark:text-emerald-400">
+                        ANCHOR 1: ORIGIN
+                      </span>
+                      <span className="text-[9px] font-mono font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-1 py-0.2 rounded">
+                        Fixed
+                      </span>
+                    </div>
+                    <span className="text-xs font-black text-gray-900 dark:text-white block truncate max-w-[200px]">
+                      {campus.name}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Anchor 2: Rest Zone Depot */}
+              <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+                      <Truck className="w-3 h-3" />
+                    </div>
+                    <span className="text-[9px] font-mono font-black uppercase text-indigo-600 dark:text-indigo-400">
+                      ANCHOR 2: REST ZONE DEPOT
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDepotModalTab("LIST");
+                        setIsDepotManagerOpen(true);
+                      }}
+                      className="text-[9px] font-bold text-indigo-700 dark:text-indigo-300 hover:underline px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-950 rounded border border-indigo-200 dark:border-indigo-800"
+                    >
+                      Manage
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateDepot}
+                      className="p-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px]"
+                      title="Add New Staging Depot"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
                 <select
                   value={selectedRestZone?.id}
                   onChange={e => {
                     const rz = depotList.find(d => d.id === e.target.value);
                     if (rz) setSelectedRestZone(rz);
                   }}
-                  className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer max-w-[155px] truncate"
+                  className="w-full bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800/80 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 dark:text-white outline-none cursor-pointer focus:border-indigo-500"
                 >
                   {depotList.map(rz => (
-                    <option key={rz.id} value={rz.id} className="bg-gray-900 text-white">
-                      {rz.name}
+                    <option key={rz.id} value={rz.id}>
+                      {rz.name} ({rz.code})
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="flex justify-end pt-1">
                 <button
-                  onClick={handleOpenCreateDepot}
-                  className="p-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] font-bold"
-                  title="Add New Fleet Depot to Database"
+                  type="button"
+                  onClick={() => setIsHubExpanded(false)}
+                  className="px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-xs font-bold hover:opacity-90"
                 >
-                  <Plus className="w-2.5 h-2.5" />
+                  Done
                 </button>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Center: Mode Toggles & Demand KPI HUD */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-gray-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-gray-700/80 shadow-xl">
-          {/* Add Stop Mode Toggle */}
-          <button
-            onClick={() => setStudioMode(prev => prev === "ADD_STOP" ? "VIEW" : "ADD_STOP")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
-              studioMode === "ADD_STOP"
-                ? "bg-blue-600 text-white shadow-lg shadow-blue-600/40 animate-pulse"
-                : "bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-            title="Click anywhere on the map road to drop a stop"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{studioMode === "ADD_STOP" ? "Click Map Road to Place Stop" : "Place Stops"}</span>
-          </button>
+        {/* Center: Collapsible GIS & Demand Tools */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200/90 dark:border-gray-700/80 shadow-xl">
+          {!isToolsExpanded ? (
+            <button
+              type="button"
+              onClick={() => setIsToolsExpanded(true)}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-1.5"
+              title="Expand GIS Tools"
+            >
+              <Sliders className="w-3.5 h-3.5 text-blue-500" />
+              <span>GIS Tools</span>
+              <ChevronDown className="w-3 h-3 text-gray-400" />
+            </button>
+          ) : (
+            <>
+              {/* Add Stop Mode Toggle */}
+              <button
+                type="button"
+                onClick={() => setStudioMode(prev => prev === "ADD_STOP" ? "VIEW" : "ADD_STOP")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                  studioMode === "ADD_STOP"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-400/30"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`}
+                title="Click anywhere on the map road to drop a stop"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{studioMode === "ADD_STOP" ? "Click Map Road to Place Stop" : "Place Stops"}</span>
+              </button>
 
-          {/* Demand Heatmap Toggle */}
-          <button
-            onClick={() => setIsDemandVisible(prev => !prev)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-              isDemandVisible
-                ? "bg-emerald-950/80 text-emerald-300 border border-emerald-700/60"
-                : "bg-gray-800 text-gray-400 hover:text-gray-200"
-            }`}
-            title="Show/hide student home walkability pins"
-          >
-            {isDemandVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-gray-500" />}
-            <span>Student Demand</span>
-          </button>
+              {/* Demand Heatmap Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsDemandVisible(prev => !prev)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  isDemandVisible
+                    ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+                title="Show/hide student home walkability pins"
+              >
+                {isDemandVisible ? <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">Demand</span>
+              </button>
 
-          {/* Walkability Summary Pill */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-gray-800/80 rounded-xl text-[11px] font-mono border border-gray-700/60">
-            <span className="flex items-center gap-1 text-emerald-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              {demandMetrics.walkable} Walkable (&lt;500m)
-            </span>
-            <span className="text-gray-600">•</span>
-            <span className="flex items-center gap-1 text-amber-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              {demandMetrics.moderate}
-            </span>
-            <span className="text-gray-600">•</span>
-            <span className="flex items-center gap-1 text-red-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              {demandMetrics.underserved} Far
-            </span>
-          </div>
+              {/* Walkability Summary Pill */}
+              <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 bg-gray-50 dark:bg-gray-800/80 rounded-xl text-[11px] font-mono border border-gray-200 dark:border-gray-700/60">
+                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  {demandMetrics.walkable} Walkable (&lt;500m)
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">•</span>
+                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  {demandMetrics.moderate}
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">•</span>
+                <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  {demandMetrics.underserved} Far
+                </span>
+              </div>
+
+              {/* Minimize Tools Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsToolsExpanded(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Minimize Tools"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Right: Fullscreen, Reverse, Save Corridor */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        {/* Right: Actions Suite */}
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           <button
+            type="button"
             onClick={handleReverseRoute}
-            className="p-2 bg-gray-900/90 hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-700/80 text-gray-300 hover:text-white transition-all shadow-xl"
+            className="p-2 bg-white/95 dark:bg-gray-900/95 hover:bg-gray-50 dark:hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-200/90 dark:border-gray-700/80 text-gray-700 dark:text-gray-300 shadow-xl transition-all"
             title="Reverse Route Sequence"
           >
-            <RotateCcw className="w-4 h-4 text-blue-400" />
+            <RotateCcw className="w-4 h-4 text-blue-500" />
           </button>
 
           <button
+            type="button"
             onClick={() => setIsFullscreen(prev => !prev)}
-            className="p-2 bg-gray-900/90 hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-700/80 text-gray-300 hover:text-white transition-all shadow-xl"
+            className="p-2 bg-white/95 dark:bg-gray-900/95 hover:bg-gray-50 dark:hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-200/90 dark:border-gray-700/80 text-gray-700 dark:text-gray-300 shadow-xl transition-all"
             title={isFullscreen ? "Exit Fullscreen" : "Fullscreen GIS Studio"}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
 
           <button
+            type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black rounded-2xl shadow-xl shadow-blue-600/30 flex items-center gap-1.5 transition-all hover:scale-102"
+            className="px-3.5 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black rounded-2xl shadow-xl shadow-blue-600/30 flex items-center gap-1.5 transition-all hover:scale-102"
           >
             <Check className="w-4 h-4" />
             <span>{isSaving ? "Deploying..." : "Deploy Corridor"}</span>
@@ -817,8 +995,9 @@ export default function TransitStudioMap({
 
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 bg-gray-900/90 hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-700/80 text-gray-400 hover:text-white transition-all shadow-xl"
+              className="p-2 bg-white/95 dark:bg-gray-900/95 hover:bg-gray-50 dark:hover:bg-gray-800 backdrop-blur-md rounded-2xl border border-gray-200/90 dark:border-gray-700/80 text-gray-500 hover:text-gray-800 dark:hover:text-white shadow-xl transition-all"
               title="Close Studio"
             >
               <X className="w-4 h-4" />
@@ -830,94 +1009,48 @@ export default function TransitStudioMap({
       {/* ── Main Map Canvas (Underneath) ── */}
       <div ref={containerRef} className="w-full h-full relative isolate" />
 
-      {/* ── Route Selector Dropdown & Pipeline Toggle Widget ── */}
-      <div className="absolute top-20 left-4 z-30 flex items-center gap-2 max-w-[calc(100vw-2rem)] flex-wrap pointer-events-auto">
-        <div className="bg-gray-900/95 backdrop-blur-md rounded-2xl border border-gray-700/80 shadow-2xl p-2 flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/40 shrink-0">
-            <RouteIcon className="w-4 h-4" />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-mono font-bold uppercase text-gray-400 tracking-wider">
-                Corridor Route
-              </span>
-              <span className="text-[9px] font-bold text-blue-400 font-mono">
-                ({routes.length} Available)
-              </span>
-            </div>
-            <select
-              value={activeRouteId || "__NEW__"}
-              onChange={(e) => handleSelectRoute(e.target.value)}
-              className="bg-transparent text-xs font-black text-white outline-none cursor-pointer max-w-[200px] sm:max-w-[270px] truncate"
-            >
-              <option value="__NEW__" className="bg-gray-900 text-blue-400 font-bold">
-                + [ Build New Corridor ]
-              </option>
-              {routes.map(r => (
-                <option key={r.id} value={r.id} className="bg-gray-900 text-white">
-                  {r.name} ({r.code}) {r.totalDistanceKm ? `• ${r.totalDistanceKm}km` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Stations Pipeline Drawer Toggle Button */}
-        <button
-          onClick={() => setIsSidebarOpen(prev => !prev)}
-          className={`px-3.5 py-2.5 backdrop-blur-md rounded-2xl border text-xs font-bold flex items-center gap-2 shadow-2xl transition-all ${
-            isSidebarOpen
-              ? "bg-blue-600 text-white border-blue-500 shadow-blue-600/30"
-              : "bg-gray-900/95 text-gray-300 hover:text-white border-gray-700/80 hover:bg-gray-800"
-          }`}
-          title={isSidebarOpen ? "Collapse Stations Pipeline Drawer" : "Show Stations Pipeline Drawer"}
-        >
-          <Navigation className="w-4 h-4 text-blue-400" />
-          <span>Stations Pipeline ({studioStops.length})</span>
-        </button>
-      </div>
-
       {/* ── Left Station Progression Flowchart Drawer ── */}
-      <div className={`absolute top-36 bottom-4 left-4 z-20 w-80 sm:w-96 bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${
-        isSidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+24px)]"
+      <div className={`absolute top-14 bottom-3 left-3 z-20 w-80 sm:w-96 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-200/90 dark:border-gray-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${
+        isSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-[calc(100%+24px)] opacity-0 pointer-events-none"
       }`}>
         {/* Drawer Header */}
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+        <div className="p-3.5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <div>
-            <h3 className="font-black text-sm text-white flex items-center gap-2">
+            <h3 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2">
               <Navigation className="w-4 h-4 text-blue-500" />
               <span>Corridor Pipeline</span>
             </h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
               {routeMetrics.distanceKm} km • ~{routeMetrics.durationMins} mins • {studioStops.length} stops
             </p>
           </div>
           <button
+            type="button"
             onClick={() => setIsSidebarOpen(false)}
-            className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800"
+            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Basic Route Form */}
-        <div className="p-3 bg-gray-950/60 border-b border-gray-800 grid grid-cols-2 gap-2 text-xs">
+        <div className="p-3 bg-gray-50/80 dark:bg-gray-950/60 border-b border-gray-200 dark:border-gray-800 grid grid-cols-2 gap-2 text-xs">
           <div>
-            <label className="text-[9px] uppercase font-bold text-gray-500 block mb-0.5">Corridor Name</label>
+            <label className="text-[9px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Corridor Name</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-800 rounded-xl px-2.5 py-1.5 text-xs font-bold text-white outline-none focus:border-blue-500"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-blue-500"
             />
           </div>
           <div>
-            <label className="text-[9px] uppercase font-bold text-gray-500 block mb-0.5">Route Code</label>
+            <label className="text-[9px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Route Code</label>
             <input
               type="text"
               value={code}
               onChange={e => setCode(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-800 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-white outline-none focus:border-blue-500"
+              className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-gray-900 dark:text-white outline-none focus:border-blue-500"
             />
           </div>
         </div>
@@ -925,19 +1058,19 @@ export default function TransitStudioMap({
         {/* Stations Sequence List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
           {/* Anchor 1: Campus Terminal */}
-          <div className="p-3 bg-emerald-950/30 border border-emerald-800/60 rounded-2xl flex items-center justify-between">
+          <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
                 A1
               </div>
               <div>
-                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 block">
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
                   ORIGIN CAMPUS TERMINAL
                 </span>
-                <span className="text-xs font-bold text-white">{campus.name}</span>
+                <span className="text-xs font-bold text-gray-900 dark:text-white">{campus.name}</span>
               </div>
             </div>
-            <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded">
               0.0 km
             </span>
           </div>
@@ -946,9 +1079,9 @@ export default function TransitStudioMap({
           {studioStops.map((stop, idx) => {
             const isSelected = inspectedStop?.id === stop.id;
             const zoneColor =
-              stop.zoneCode === "ZONE_A" ? "bg-emerald-950 text-emerald-400 border-emerald-800" :
-              stop.zoneCode === "ZONE_B" ? "bg-sky-950 text-sky-400 border-sky-800" :
-              "bg-purple-950 text-purple-400 border-purple-800";
+              stop.zoneCode === "ZONE_A" ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800" :
+              stop.zoneCode === "ZONE_B" ? "bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-800" :
+              "bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border-purple-300 dark:border-purple-800";
 
             return (
               <div
@@ -956,8 +1089,8 @@ export default function TransitStudioMap({
                 onClick={() => setInspectedStop(stop)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-blue-950/40 border-blue-500 ring-1 ring-blue-500 shadow-md"
-                    : "bg-gray-800/40 border-gray-800 hover:border-gray-700"
+                    ? "bg-blue-50/90 dark:bg-blue-950/40 border-blue-500 ring-1 ring-blue-500 shadow-md"
+                    : "bg-gray-50/80 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -967,12 +1100,12 @@ export default function TransitStudioMap({
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-white">{stop.name}</span>
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">{stop.name}</span>
                         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${zoneColor}`}>
                           {stop.zoneCode || "ZONE_A"}
                         </span>
                       </div>
-                      <span className="text-[10px] text-gray-400 block mt-0.5 truncate max-w-[150px]">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 block mt-0.5 truncate max-w-[150px]">
                         {stop.landmark || "Transit Boarding Point"}
                       </span>
                     </div>
@@ -980,24 +1113,27 @@ export default function TransitStudioMap({
 
                   <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                     <button
+                      type="button"
                       disabled={idx === 0}
                       onClick={() => handleMoveStopUp(idx)}
-                      className="p-1 hover:bg-gray-700 disabled:opacity-20 rounded text-gray-300"
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 rounded text-gray-500 dark:text-gray-300"
                       title="Move Earlier in Route"
                     >
                       <ArrowUp className="w-3.5 h-3.5" />
                     </button>
                     <button
+                      type="button"
                       disabled={idx === studioStops.length - 1}
                       onClick={() => handleMoveStopDown(idx)}
-                      className="p-1 hover:bg-gray-700 disabled:opacity-20 rounded text-gray-300"
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 rounded text-gray-500 dark:text-gray-300"
                       title="Move Later in Route"
                     >
                       <ArrowDown className="w-3.5 h-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDeleteStop(stop.id)}
-                      className="p-1 hover:bg-red-950/60 text-red-400 rounded"
+                      className="p-1 hover:bg-red-100 dark:hover:bg-red-950/60 text-red-500 dark:text-red-400 rounded"
                       title="Delete Stop"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1009,45 +1145,45 @@ export default function TransitStudioMap({
           })}
 
           {/* Anchor 2: Rest Zone Depot */}
-          <div className="p-3 bg-indigo-950/30 border border-indigo-800/60 rounded-2xl flex items-center justify-between">
+          <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
                 A2
               </div>
               <div>
-                <span className="text-[9px] font-black uppercase tracking-wider text-indigo-400 block">
+                <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
                   DESTINATION REST DEPOT
                 </span>
-                <span className="text-xs font-bold text-white">{selectedRestZone.name}</span>
+                <span className="text-xs font-bold text-gray-900 dark:text-white">{selectedRestZone.name}</span>
               </div>
             </div>
-            <span className="text-[10px] font-mono text-indigo-400 font-bold bg-indigo-950 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-400 font-bold bg-indigo-100 dark:bg-indigo-950 px-2 py-0.5 rounded">
               {routeMetrics.distanceKm} km
             </span>
           </div>
         </div>
 
         {/* Drawer Footer Guide */}
-        <div className="p-3 border-t border-gray-800 bg-gray-950/80 text-[10px] text-gray-400 flex items-center gap-2">
-          <HelpCircle className="w-4 h-4 text-blue-400 shrink-0" />
+        <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50/90 dark:bg-gray-950/80 text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-2">
+          <HelpCircle className="w-4 h-4 text-blue-500 shrink-0" />
           <span>Click on the map road or drag pins to optimize coverage near student clusters.</span>
         </div>
       </div>
 
-
       {/* ── Floating Stop Inspector Card (When Stop is Clicked) ── */}
       {inspectedStop && (
-        <div className="absolute bottom-6 right-6 z-20 w-80 bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-700/80 shadow-2xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+        <div className="absolute bottom-4 right-4 z-20 w-80 sm:w-88 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-3xl border border-gray-200/90 dark:border-gray-700/80 shadow-2xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
                 {inspectedStop.order}
               </div>
-              <h4 className="text-xs font-black text-white">Stop Inspector</h4>
+              <h4 className="text-xs font-black text-gray-900 dark:text-white">Stop Inspector</h4>
             </div>
             <button
+              type="button"
               onClick={() => setInspectedStop(null)}
-              className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800"
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1055,40 +1191,40 @@ export default function TransitStudioMap({
 
           <div className="space-y-2 text-xs">
             <div>
-              <label className="text-[10px] uppercase font-bold text-gray-500 block mb-0.5">Stop Station Name</label>
+              <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Stop Station Name</label>
               <input
                 type="text"
                 value={inspectedStop.name}
                 onChange={e => handleUpdateInspectedStop({ name: e.target.value })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-2.5 py-1.5 font-bold text-white outline-none focus:border-blue-500"
+                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 font-bold text-gray-900 dark:text-white outline-none focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="text-[10px] uppercase font-bold text-gray-500 block mb-0.5">Station Landmark</label>
+              <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Station Landmark</label>
               <input
                 type="text"
                 value={inspectedStop.landmark || ""}
                 onChange={e => handleUpdateInspectedStop({ landmark: e.target.value })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-2.5 py-1.5 text-gray-300 outline-none focus:border-blue-500"
+                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2.5 py-1.5 text-gray-700 dark:text-gray-300 outline-none focus:border-blue-500"
               />
             </div>
 
             {/* Zone Assignment Selection */}
             <div>
-              <label className="text-[10px] uppercase font-bold text-gray-500 block mb-0.5">Assigned Transit Fare Zone</label>
+              <label className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 block mb-0.5">Assigned Transit Fare Zone</label>
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { code: "ZONE_A", label: "Zone A", color: "border-emerald-600 bg-emerald-950/60 text-emerald-300" },
-                  { code: "ZONE_B", label: "Zone B", color: "border-sky-600 bg-sky-950/60 text-sky-300" },
-                  { code: "ZONE_C", label: "Zone C", color: "border-purple-600 bg-purple-950/60 text-purple-300" },
+                  { code: "ZONE_A", label: "Zone A", color: "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300" },
+                  { code: "ZONE_B", label: "Zone B", color: "border-sky-500 bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300" },
+                  { code: "ZONE_C", label: "Zone C", color: "border-purple-500 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300" },
                 ].map(z => (
                   <button
                     key={z.code}
                     type="button"
                     onClick={() => handleUpdateInspectedStop({ zoneCode: z.code })}
                     className={`py-1 rounded-xl text-[11px] font-bold border transition-all ${
-                      inspectedStop.zoneCode === z.code ? `${z.color} ring-1 ring-white/50` : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+                      inspectedStop.zoneCode === z.code ? `${z.color} ring-1 ring-blue-500 dark:ring-white/50` : "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                     }`}
                   >
                     {z.label}
@@ -1101,7 +1237,7 @@ export default function TransitStudioMap({
               <button
                 type="button"
                 onClick={() => handleDeleteStop(inspectedStop.id)}
-                className="text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1"
+                className="text-[11px] text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-bold flex items-center gap-1"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Delete Stop
               </button>
@@ -1109,7 +1245,7 @@ export default function TransitStudioMap({
               <button
                 type="button"
                 onClick={() => setInspectedStop(null)}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs"
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs"
               >
                 Done
               </button>
@@ -1120,45 +1256,48 @@ export default function TransitStudioMap({
 
       {/* ── Fleet Depot & Rest Zone Database Manager Modal ── */}
       {isDepotManagerOpen && (
-        <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700/80 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700/80 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95">
             {/* Modal Header */}
-            <div className="p-4 border-b border-gray-800 flex items-center justify-between bg-gray-950/60">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-950/60">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center border border-indigo-500/40">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-600/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/40">
                   <Truck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm text-white">Fleet Staging &amp; Overnight Depots</h3>
-                  <p className="text-[10px] text-gray-400 font-mono">PostgreSQL database entity: rest_zones • Corridor Anchor 2</p>
+                  <h3 className="font-black text-sm text-gray-900 dark:text-white">Fleet Staging &amp; Overnight Depots</h3>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">PostgreSQL database entity: rest_zones • Corridor Anchor 2</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsDepotManagerOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800"
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Subtabs */}
-            <div className="flex border-b border-gray-800 bg-gray-900/50 p-2 gap-2">
+            <div className="flex border-b border-gray-200 dark:border-gray-800 bg-gray-100/60 dark:bg-gray-900/50 p-2 gap-2">
               <button
+                type="button"
                 onClick={() => setDepotModalTab("LIST")}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   depotModalTab === "LIST"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
-                    : "text-gray-400 hover:text-white"
+                    : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                 }`}
               >
                 Depots Catalog ({depotList.length})
               </button>
               <button
+                type="button"
                 onClick={handleOpenCreateDepot}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                   depotModalTab === "FORM" && !editingDepot
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
-                    : "text-gray-400 hover:text-white"
+                    : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                 }`}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1177,55 +1316,58 @@ export default function TransitStudioMap({
                         key={depot.id}
                         className={`p-3.5 rounded-2xl border transition-all ${
                           isSelected
-                            ? "bg-indigo-950/40 border-indigo-500 ring-1 ring-indigo-500 shadow-md"
-                            : "bg-gray-800/40 border-gray-800 hover:border-gray-700"
+                            ? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-500 ring-1 ring-indigo-500 shadow-md"
+                            : "bg-gray-50/80 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-white">{depot.name}</span>
-                              <span className="font-mono text-[9px] font-bold bg-indigo-950 text-indigo-400 px-1.5 py-0.2 rounded border border-indigo-800">
+                              <span className="text-xs font-black text-gray-900 dark:text-white">{depot.name}</span>
+                              <span className="font-mono text-[9px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.2 rounded border border-indigo-200 dark:border-indigo-800">
                                 {depot.code}
                               </span>
                               {isSelected && (
-                                <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800 flex items-center gap-0.5">
+                                <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
                                   <Check className="w-2.5 h-2.5" /> Active Anchor
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-gray-400 mt-1">
+                            <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
                               {depot.landmark || "Overnight fleet parking & workshop depot"}
                             </p>
-                            <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500 font-mono">
-                              <span>Capacity: <strong className="text-gray-300">{depot.fleetCapacity || 25} buses</strong></span>
+                            <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500 dark:text-gray-400 font-mono">
+                              <span>Capacity: <strong className="text-gray-800 dark:text-gray-300">{depot.fleetCapacity || 25} buses</strong></span>
                               <span>•</span>
-                              <span>GPS: <strong className="text-gray-300">{Number(depot.latitude).toFixed(4)}, {Number(depot.longitude).toFixed(4)}</strong></span>
+                              <span>GPS: <strong className="text-gray-800 dark:text-gray-300">{Number(depot.latitude).toFixed(4)}, {Number(depot.longitude).toFixed(4)}</strong></span>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
                             {!isSelected && (
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedRestZone(depot);
                                   setIsDepotManagerOpen(false);
                                 }}
-                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors"
+                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors"
                               >
                                 Select
                               </button>
                             )}
                             <button
+                              type="button"
                               onClick={() => handleOpenEditDepot(depot)}
-                              className="p-1 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg"
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white rounded-lg"
                               title="Edit Depot"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteDepot(depot)}
-                              className="p-1 hover:bg-red-950/60 text-red-400 hover:text-red-300 rounded-lg"
+                              className="p-1 hover:bg-red-100 dark:hover:bg-red-950/60 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 rounded-lg"
                               title="Delete Depot from Database"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1239,7 +1381,7 @@ export default function TransitStudioMap({
               ) : (
                 <form onSubmit={handleSaveDepot} className="space-y-3 text-xs">
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                    <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                       Depot Name *
                     </label>
                     <input
@@ -1248,13 +1390,13 @@ export default function TransitStudioMap({
                       placeholder="e.g. Haldwani Central Bus Depot & Overnight Rest Area"
                       value={depotFormData.name}
                       onChange={e => setDepotFormData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-indigo-500"
+                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white font-bold outline-none focus:border-indigo-500"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                         Depot Code *
                       </label>
                       <input
@@ -1263,11 +1405,11 @@ export default function TransitStudioMap({
                         placeholder="e.g. HLD-DEPOT-01"
                         value={depotFormData.code}
                         onChange={e => setDepotFormData(prev => ({ ...prev, code: e.target.value }))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white font-mono font-bold outline-none focus:border-indigo-500"
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white font-mono font-bold outline-none focus:border-indigo-500"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                         Fleet Capacity (Vehicles)
                       </label>
                       <input
@@ -1275,14 +1417,14 @@ export default function TransitStudioMap({
                         min="1"
                         value={depotFormData.fleetCapacity}
                         onChange={e => setDepotFormData(prev => ({ ...prev, fleetCapacity: Number(e.target.value) }))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-indigo-500"
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white font-bold outline-none focus:border-indigo-500"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                         Latitude
                       </label>
                       <input
@@ -1291,11 +1433,11 @@ export default function TransitStudioMap({
                         required
                         value={depotFormData.latitude}
                         onChange={e => setDepotFormData(prev => ({ ...prev, latitude: Number(e.target.value) }))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-indigo-500"
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white font-mono outline-none focus:border-indigo-500"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                         Longitude
                       </label>
                       <input
@@ -1304,7 +1446,7 @@ export default function TransitStudioMap({
                         required
                         value={depotFormData.longitude}
                         onChange={e => setDepotFormData(prev => ({ ...prev, longitude: Number(e.target.value) }))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-indigo-500"
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white font-mono outline-none focus:border-indigo-500"
                       />
                     </div>
                   </div>
@@ -1317,14 +1459,14 @@ export default function TransitStudioMap({
                         setDepotFormData(prev => ({ ...prev, latitude: center.lat, longitude: center.lng }));
                       }
                     }}
-                    className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-indigo-300 font-bold rounded-xl flex items-center justify-center gap-1.5 text-[11px]"
+                    className="w-full py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-indigo-600 dark:text-indigo-300 font-bold rounded-xl flex items-center justify-center gap-1.5 text-[11px]"
                   >
-                    <MapPin className="w-3 h-3 text-indigo-400" />
+                    <MapPin className="w-3 h-3 text-indigo-500" />
                     <span>Sync Coordinates from Current Map View Center</span>
                   </button>
 
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                    <label className="text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 block mb-1">
                       Landmark &amp; Facilities
                     </label>
                     <input
@@ -1332,15 +1474,15 @@ export default function TransitStudioMap({
                       placeholder="e.g. Near Haldwani Main Bus Terminal & Maintenance Yard"
                       value={depotFormData.landmark}
                       onChange={e => setDepotFormData(prev => ({ ...prev, landmark: e.target.value }))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500"
+                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white outline-none focus:border-indigo-500"
                     />
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-800">
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
                     <button
                       type="button"
                       onClick={() => setDepotModalTab("LIST")}
-                      className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold rounded-xl"
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold rounded-xl"
                     >
                       Cancel
                     </button>

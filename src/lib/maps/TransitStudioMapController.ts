@@ -452,6 +452,16 @@ export class TransitStudioMapController extends BaseMapController {
   }
 
   /**
+   * Updates map styles to match light/dark theme dynamically
+   */
+  public setDarkMode(isDark: boolean): void {
+    if (!this.mapInstance || !this.googleMaps) return;
+    this.mapInstance.setOptions({
+      styles: isDark ? DARK_MAP_STYLES : [],
+    });
+  }
+
+  /**
    * Sets Studio mode (ADD_STOP, INSPECT, VIEW)
    */
   public setStudioMode(mode: "ADD_STOP" | "INSPECT" | "VIEW"): void {

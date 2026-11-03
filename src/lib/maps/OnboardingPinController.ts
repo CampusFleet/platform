@@ -1,11 +1,12 @@
 /**
  * CampusFleet Object-Oriented Onboarding Pin Map Controller
  * Specialized subclass of BaseMapController for Commuter Doorstep Pin Drop
- * Displays:
- * 1. Always-on draggable doorstep Home pin (Source)
- * 2. Assigned Transit Route Corridor line on the road
+ * 
+ * Standards & Road Snapping:
+ * 1. Doorstep Home pin (Source) - Draggable & tap-to-teleport
+ * 2. Assigned Transit Route Corridor on the road - Snapped to Google Maps Roads
  * 3. Designated Pickup / Boarding Stop on that route (Destination)
- * 4. Pedestrian walking dashed path connecting Home ➔ Pickup Stop with distance/time pill
+ * 4. Pedestrian walking dashed path connecting Home ➔ Pickup Stop snapped to Google Maps sidewalks/streets
  * 5. Intelligent auto-framing (fitBounds) keeping walk & corridor in view
  */
 
@@ -31,6 +32,15 @@ export class OnboardingPinController extends BaseMapController {
   private currentAssignedRoute: Route | null = null;
   private stopsCatalog: Stop[] = [];
   private hasInitiallyFittedBounds = false;
+
+  // AbortControllers and In-Memory Route Geometry Cache
+  private walkingAbortController: AbortController | null = null;
+  private routeAbortController: AbortController | null = null;
+  private walkingRoadCache = new Map<
+    string,
+    { points: [number, number][]; distanceMeters: number; durationSeconds: number }
+  >();
+  private routeRoadCache = new Map<string, [number, number][]>();
 
   constructor(private config: OnboardingPinControllerConfig) {
     super({ zoom: config.zoom ?? 15 });
@@ -160,7 +170,7 @@ export class OnboardingPinController extends BaseMapController {
   }
 
   /**
-   * Sets the assigned transit route and draws the bus corridor path on the road
+   * Sets the assigned transit route and draws the Google Road-snapped bus corridor on the map
    */
   public setAssignedRoute(route?: Route | null, allStops?: Stop[]): void {
     if (this.isDestroyed || !this.mapInstance || !this.leafletModule) return;
@@ -202,18 +212,17 @@ export class OnboardingPinController extends BaseMapController {
 
     if (orderedPoints.length < 2) return;
 
-    // 3. Render High-Contrast Google/Apple Transit Style Corridor
-    // White/Slate casing underneath for road contrast
+    // 3. Render High-Contrast Google Transit Style Corridor Base (Immediate display)
+    const corridorColor = route.color || "#2563EB";
+
     this.routeCasingPolyline = L.polyline(orderedPoints, {
       color: "#ffffff",
       weight: 7,
-      opacity: 0.85,
+      opacity: 0.9,
       lineCap: "round",
       lineJoin: "round",
     }).addTo(this.mapInstance);
 
-    // Core transit corridor line
-    const corridorColor = route.color || "#2563EB";
     this.routePolyline = L.polyline(orderedPoints, {
       color: corridorColor,
       weight: 4.5,
@@ -260,6 +269,49 @@ export class OnboardingPinController extends BaseMapController {
         this.routeStopMarkers.push(dotMarker);
       }
     }
+
+    // 5. Asynchronously Snap Transit Bus Route to Google Maps Roadway Curves
+    const routeKey = orderedPoints.map((p) => `${p[0]},${p[1]}`).join(";");
+    const cachedRoadRoute = this.routeRoadCache.get(routeKey);
+
+    if (cachedRoadRoute && cachedRoadRoute.length >= 2) {
+      this.routeCasingPolyline.setLatLngs(cachedRoadRoute);
+      this.routePolyline.setLatLngs(cachedRoadRoute);
+      return;
+    }
+
+    if (this.routeAbortController) {
+      this.routeAbortController.abort();
+    }
+    const ac = new AbortController();
+    this.routeAbortController = ac;
+
+    fetch(`/api/geo/directions?mode=drive&coords=${encodeURIComponent(routeKey)}`, {
+      signal: ac.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (
+          !this.isDestroyed &&
+          !ac.signal.aborted &&
+          data.success &&
+          Array.isArray(data.coordinates) &&
+          data.coordinates.length >= 2
+        ) {
+          this.routeRoadCache.set(routeKey, data.coordinates);
+          if (this.routeCasingPolyline) {
+            this.routeCasingPolyline.setLatLngs(data.coordinates);
+          }
+          if (this.routePolyline) {
+            this.routePolyline.setLatLngs(data.coordinates);
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.warn("Google road routing for bus route:", err);
+        }
+      });
   }
 
   /**
@@ -394,7 +446,8 @@ export class OnboardingPinController extends BaseMapController {
   }
 
   /**
-   * Draws/updates the pedestrian walking path between Home Pin (Source) and Assigned Stop (Destination)
+   * Draws and updates the pedestrian walking path between Home Pin (Source) and Assigned Stop (Destination)
+   * Exclusively using Google Maps Road / Pedestrian sidewalks & streets
    */
   private updateWalkingLine(
     stop?: Stop | null,
@@ -419,48 +472,100 @@ export class OnboardingPinController extends BaseMapController {
       return;
     }
 
-    this.clearWalkingLine();
+    const homePoint: [number, number] = [
+      this.currentHomeCoords.latitude,
+      this.currentHomeCoords.longitude,
+    ];
+    const stopPoint: [number, number] = [targetStop.latitude, targetStop.longitude];
 
-    const line = L.polyline(
-      [
-        [this.currentHomeCoords.latitude, this.currentHomeCoords.longitude],
-        [targetStop.latitude, targetStop.longitude],
-      ],
-      {
+    // 1. Initial draft polyline to guarantee instant zero-lag visual feedback
+    if (!this.walkingPolyline) {
+      this.walkingPolyline = L.polyline([homePoint, stopPoint], {
         color: "#10B981",
         weight: 3.5,
         dashArray: "6, 8",
         opacity: 0.9,
         lineCap: "round",
         lineJoin: "round",
-      }
-    ).addTo(this.mapInstance);
-
-    // Compute distance if not provided
-    let labelDist = distMeters;
-    let labelMins = walkMins;
-    if (!labelDist) {
-      // Rough Haversine estimate in meters
-      const R = 6371e3;
-      const φ1 = (this.currentHomeCoords.latitude * Math.PI) / 180;
-      const φ2 = (targetStop.latitude * Math.PI) / 180;
-      const Δφ = ((targetStop.latitude - this.currentHomeCoords.latitude) * Math.PI) / 180;
-      const Δλ = ((targetStop.longitude - this.currentHomeCoords.longitude) * Math.PI) / 180;
-      const a =
-        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      labelDist = Math.round(R * c);
-      labelMins = Math.max(1, Math.round((labelDist / 1000 / 4.8) * 60));
+      }).addTo(this.mapInstance);
+    } else {
+      this.walkingPolyline.setLatLngs([homePoint, stopPoint]);
     }
 
-    line.bindTooltip(`🚶 ${labelDist}m • ~${labelMins}m walk`, {
-      permanent: true,
-      direction: "center",
-      className: "custom-walking-tooltip",
-    });
+    const defaultDist = distMeters || 450;
+    const defaultMins = walkMins || Math.max(1, Math.round(defaultDist / 80));
+    this.walkingPolyline.bindTooltip(
+      `🚶 ${defaultDist}m • ~${defaultMins}m walk`,
+      {
+        permanent: true,
+        direction: "center",
+        className: "custom-walking-tooltip",
+      }
+    );
 
-    this.walkingPolyline = line;
+    // 2. Asynchronously Query Google Maps Roadway Pedestrian Routing
+    const walkKey = `${homePoint[0]},${homePoint[1]};${stopPoint[0]},${stopPoint[1]}`;
+    const cachedWalk = this.walkingRoadCache.get(walkKey);
+
+    if (cachedWalk && cachedWalk.points.length >= 2) {
+      this.walkingPolyline.setLatLngs(cachedWalk.points);
+      const mins = Math.max(1, Math.round(cachedWalk.durationSeconds / 60));
+      this.walkingPolyline.bindTooltip(`🚶 ${cachedWalk.distanceMeters}m • ~${mins}m walk`, {
+        permanent: true,
+        direction: "center",
+        className: "custom-walking-tooltip",
+      });
+      return;
+    }
+
+    if (this.walkingAbortController) {
+      this.walkingAbortController.abort();
+    }
+    const ac = new AbortController();
+    this.walkingAbortController = ac;
+
+    fetch(`/api/geo/directions?mode=walk&coords=${encodeURIComponent(walkKey)}`, {
+      signal: ac.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (
+          !this.isDestroyed &&
+          !ac.signal.aborted &&
+          data.success &&
+          Array.isArray(data.coordinates) &&
+          data.coordinates.length >= 2
+        ) {
+          const roadPoints = data.coordinates as [number, number][];
+          this.walkingRoadCache.set(walkKey, {
+            points: roadPoints,
+            distanceMeters: data.distanceMeters || defaultDist,
+            durationSeconds: data.durationSeconds || defaultMins * 60,
+          });
+
+          if (this.walkingPolyline) {
+            this.walkingPolyline.setLatLngs(roadPoints);
+            const accurateMins = Math.max(
+              1,
+              Math.round((data.durationSeconds || defaultMins * 60) / 60)
+            );
+            const accurateDist = data.distanceMeters || defaultDist;
+            this.walkingPolyline.bindTooltip(
+              `🚶 ${accurateDist}m • ~${accurateMins}m walk`,
+              {
+                permanent: true,
+                direction: "center",
+                className: "custom-walking-tooltip",
+              }
+            );
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.warn("Google road walking route:", err);
+        }
+      });
   }
 
   private clearWalkingLine(): void {
@@ -474,6 +579,14 @@ export class OnboardingPinController extends BaseMapController {
    * Clean destruction
    */
   public override destroy(): void {
+    if (this.walkingAbortController) {
+      this.walkingAbortController.abort();
+      this.walkingAbortController = null;
+    }
+    if (this.routeAbortController) {
+      this.routeAbortController.abort();
+      this.routeAbortController = null;
+    }
     this.clearWalkingLine();
     if (this.routePolyline && this.mapInstance) {
       this.mapInstance.removeLayer(this.routePolyline);

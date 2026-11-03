@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+// In-memory cache to guarantee sub-millisecond route response and save Google Maps quota
+const directionsCache = new Map<string, {
+  coordinates: [number, number][];
+  distanceMeters: number;
+  durationSeconds: number;
+  timestamp: number;
+}>();
+
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours (roads don't change frequently)
+
 /**
  * Decodes Google's Encoded Polyline format into [latitude, longitude] pairs
  */
@@ -34,30 +44,49 @@ function decodeGooglePolyline(encoded: string): [number, number][] {
     const dlng = ((result & 1) !== 0 ? ~(result >> 1) : (result >> 1));
     lng += dlng;
 
-    points.push([lat / 1e5, lng / 1e5]);
+    points.push([Number((lat / 1e5).toFixed(6)), Number((lng / 1e5).toFixed(6))]);
   }
 
   return points;
 }
 
 /**
- * GET /api/geo/directions?coords=lat1,lng1;lat2,lng2...
- * Returns authentic road-following coordinates:
- * 1. Google Routes API (if GOOGLE_MAPS_API_KEY is configured)
- * 2. High-speed OSRM driving engine mirrors
+ * GET /api/geo/directions?coords=lat1,lng1;lat2,lng2...&mode=walk|drive
+ * Exclusively uses Google Maps Routes API (Directions v2) with official Google Roads snapping.
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const coordsParam = searchParams.get("coords");
+    const modeParam = (searchParams.get("mode") || "drive").toLowerCase();
+    const isWalk = modeParam === "walk" || modeParam === "foot" || modeParam === "pedestrian";
 
     if (!coordsParam) {
-      return NextResponse.json({ success: false, message: "Missing coords query parameter" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "Missing coords query parameter" },
+        { status: 400 }
+      );
+    }
+
+    const cacheKey = `${coordsParam}:${isWalk ? "WALK" : "DRIVE"}`;
+    const cached = directionsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return NextResponse.json({
+        success: true,
+        provider: "google_cache",
+        mode: isWalk ? "walk" : "drive",
+        coordinates: cached.coordinates,
+        distanceMeters: cached.distanceMeters,
+        durationSeconds: cached.durationSeconds,
+      });
     }
 
     const rawPairs = coordsParam.split(";").map((p) => p.trim()).filter(Boolean);
     if (rawPairs.length < 2) {
-      return NextResponse.json({ success: false, message: "At least 2 coordinate points required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "At least 2 coordinate points required" },
+        { status: 400 }
+      );
     }
 
     const waypoints: [number, number][] = [];
@@ -73,95 +102,128 @@ export async function GET(req: NextRequest) {
     }
 
     if (waypoints.length < 2) {
-      return NextResponse.json({ success: false, message: "Invalid coordinate pairs" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "Invalid coordinate pairs" },
+        { status: 400 }
+      );
     }
 
-    // 1. Try Google Routes API if key is present
-    const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (googleKey) {
-      try {
-        const intermediates = waypoints.slice(1, -1).map((w) => ({
-          location: { latLng: { latitude: w[0], longitude: w[1] } },
-        }));
+    const googleKey =
+      process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-        const payload = {
-          origin: { location: { latLng: { latitude: waypoints[0][0], longitude: waypoints[0][1] } } },
-          destination: { location: { latLng: { latitude: waypoints[waypoints.length - 1][0], longitude: waypoints[waypoints.length - 1][1] } } },
-          intermediates,
-          travelMode: "DRIVE",
-        };
+    if (!googleKey) {
+      console.warn("[/api/geo/directions] GOOGLE_MAPS_API_KEY not set");
+      return NextResponse.json({
+        success: true,
+        provider: "fallback_waypoints",
+        mode: isWalk ? "walk" : "drive",
+        coordinates: waypoints,
+      });
+    }
 
-        const gRes = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": googleKey,
-            "X-Goog-FieldMask": "routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration",
+    const referer =
+      req.headers.get("referer") ||
+      req.headers.get("origin") ||
+      "https://campusfleet.vercel.app/";
+
+    // Google Routes API limits intermediate stops to 25
+    const maxIntermediates = 25;
+    let intermediates = waypoints.slice(1, -1);
+    if (intermediates.length > maxIntermediates) {
+      const step = Math.ceil(intermediates.length / maxIntermediates);
+      intermediates = intermediates
+        .filter((_, idx) => idx % step === 0)
+        .slice(0, maxIntermediates);
+    }
+
+    const payload = {
+      origin: {
+        location: {
+          latLng: { latitude: waypoints[0][0], longitude: waypoints[0][1] },
+        },
+      },
+      destination: {
+        location: {
+          latLng: {
+            latitude: waypoints[waypoints.length - 1][0],
+            longitude: waypoints[waypoints.length - 1][1],
           },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(8000),
-        });
+        },
+      },
+      intermediates: intermediates.map((w) => ({
+        location: { latLng: { latitude: w[0], longitude: w[1] } },
+      })),
+      travelMode: isWalk ? "WALK" : "DRIVE",
+      routingPreference: isWalk ? undefined : "TRAFFIC_UNAWARE",
+    };
 
-        if (gRes.ok) {
-          const gData = await gRes.json();
-          const encoded = gData?.routes?.[0]?.polyline?.encodedPolyline;
-          if (encoded) {
-            const decoded = decodeGooglePolyline(encoded);
-            if (decoded.length >= 2) {
-              return NextResponse.json({
-                success: true,
-                provider: "google",
-                coordinates: decoded,
-                distanceMeters: gData.routes[0].distanceMeters,
-                duration: gData.routes[0].duration,
-              });
-            }
-          }
-        }
-      } catch (gErr) {
-        console.warn("[/api/geo/directions] Google API failed or timed out:", gErr);
+    const gRes = await fetch(
+      "https://routes.googleapis.com/directions/v2:computeRoutes",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": googleKey,
+          "X-Goog-FieldMask":
+            "routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration",
+          Referer: referer,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(9000),
       }
+    );
+
+    if (gRes.ok) {
+      const gData = await gRes.json();
+      const encoded = gData?.routes?.[0]?.polyline?.encodedPolyline;
+      if (encoded) {
+        const decoded = decodeGooglePolyline(encoded);
+        if (decoded.length >= 2) {
+          const distanceMeters = Number(gData.routes[0].distanceMeters) || 0;
+          const durSeconds =
+            typeof gData.routes[0].duration === "string"
+              ? parseInt(gData.routes[0].duration.replace(/\D/g, ""), 10) || 0
+              : Number(gData.routes[0].duration) || 0;
+
+          // Save to LRU cache
+          if (directionsCache.size > 200) {
+            const firstKey = directionsCache.keys().next().value;
+            if (firstKey) directionsCache.delete(firstKey);
+          }
+          directionsCache.set(cacheKey, {
+            coordinates: decoded,
+            distanceMeters,
+            durationSeconds: durSeconds,
+            timestamp: Date.now(),
+          });
+
+          return NextResponse.json({
+            success: true,
+            provider: "google",
+            mode: isWalk ? "walk" : "drive",
+            coordinates: decoded,
+            distanceMeters,
+            durationSeconds: durSeconds,
+          });
+        }
+      }
+    } else {
+      const errBody = await gRes.text().catch(() => "");
+      console.warn(`[/api/geo/directions] Google API returned ${gRes.status}:`, errBody);
     }
 
-    // 2. OSRM driving engine mirrors
-    const osrmString = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(";");
-    const endpoints = [
-      `https://router.project-osrm.org/route/v1/driving/${osrmString}?overview=full&geometries=geojson`,
-      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${osrmString}?overview=full&geometries=geojson`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.routes?.[0]?.geometry?.coordinates) {
-            const snapped: [number, number][] = data.routes[0].geometry.coordinates.map(
-              ([lng, lat]: [number, number]) => [lat, lng]
-            );
-            if (snapped.length >= 2) {
-              return NextResponse.json({
-                success: true,
-                provider: "osrm",
-                coordinates: snapped,
-                distanceMeters: data.routes[0].distance,
-                durationSeconds: data.routes[0].duration,
-              });
-            }
-          }
-        }
-      } catch {
-        // try next endpoint
-      }
-    }
-
-    // Return input waypoints as fallback
+    // Direct fallback to waypoints if Google API encounters any network error
     return NextResponse.json({
       success: true,
       provider: "fallback_waypoints",
+      mode: isWalk ? "walk" : "drive",
       coordinates: waypoints,
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, message: error?.message || "Internal error" }, { status: 500 });
+    console.error("[/api/geo/directions] Error:", error);
+    return NextResponse.json(
+      { success: false, message: error?.message || "Internal error" },
+      { status: 500 }
+    );
   }
 }

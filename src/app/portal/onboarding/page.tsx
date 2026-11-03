@@ -148,9 +148,20 @@ export default function StudentOnboardingPage() {
 
   const availableSections = useMemo(() => {
     if (!selectedYear) return [];
+
+    const isSemesterMatch = (c: any) => {
+      if (!c) return false;
+      if (c.semester === selectedYear) return true;
+      const semNum = parseInt(selectedYear.replace(/\D/g, ""), 10);
+      if (!isNaN(semNum) && (c.semester_num === semNum || parseInt(String(c.semester).replace(/\D/g, ""), 10) === semNum)) {
+        return true;
+      }
+      return false;
+    };
+
     if (selectedSpecializationId) {
       const matched = academicData.classes.filter(
-        c => c.specialization_id === selectedSpecializationId && c.semester === selectedYear
+        c => c.specialization_id === selectedSpecializationId && isSemesterMatch(c)
       );
       if (matched.length > 0) {
         return matched.map(m => ({
@@ -163,7 +174,7 @@ export default function StudentOnboardingPage() {
     }
     if (selectedBranchId) {
       const matched = academicData.classes.filter(
-        c => c.branch_id === selectedBranchId && c.semester === selectedYear
+        c => c.branch_id === selectedBranchId && isSemesterMatch(c)
       );
       if (matched.length > 0) {
         return matched.map(m => ({
@@ -174,10 +185,17 @@ export default function StudentOnboardingPage() {
         }));
       }
     }
-    return (academicData.sections || []).map(s => ({
-      id: s.id,
-      code: s.code,
-      name: s.name,
+    if (academicData.sections && academicData.sections.length > 0) {
+      return academicData.sections.map(s => ({
+        id: s.id,
+        code: s.code,
+        name: s.name,
+      }));
+    }
+    return ["A", "B", "C", "D", "E", "F"].map(sec => ({
+      id: sec,
+      code: sec,
+      name: `Section ${sec}`,
     }));
   }, [academicData.classes, academicData.sections, selectedSpecializationId, selectedBranchId, selectedYear]);
 
@@ -185,17 +203,27 @@ export default function StudentOnboardingPage() {
     if (selectedClassId) {
       return academicData.classes.find(c => c.id === selectedClassId) || null;
     }
+    const isSemesterMatch = (c: any) => {
+      if (!c || !selectedYear) return false;
+      if (c.semester === selectedYear) return true;
+      const semNum = parseInt(selectedYear.replace(/\D/g, ""), 10);
+      if (!isNaN(semNum) && (c.semester_num === semNum || parseInt(String(c.semester).replace(/\D/g, ""), 10) === semNum)) {
+        return true;
+      }
+      return false;
+    };
+
     if (selectedSpecializationId && selectedYear && selectedSection) {
       return academicData.classes.find(
         c => c.specialization_id === selectedSpecializationId &&
-             c.semester === selectedYear &&
+             isSemesterMatch(c) &&
              c.section === selectedSection
       ) || null;
     }
     if (selectedBranchId && selectedYear && selectedSection) {
       return academicData.classes.find(
         c => c.branch_id === selectedBranchId &&
-             c.semester === selectedYear &&
+             isSemesterMatch(c) &&
              c.section === selectedSection
       ) || null;
     }

@@ -18,14 +18,14 @@ import {
 } from "lucide-react";
 import { StepHomeAndRouteProps } from "./types";
 
-// Dynamically load the high-performance Leaflet/Google CampusFleetMap client-side
-const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+// Dynamically load the dedicated OOP Onboarding Pin Map client-side (Zero route data leak)
+const OnboardingPinMap = dynamic(() => import("@/components/maps/OnboardingPinMap"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
       <div className="flex flex-col items-center gap-2 text-zinc-400">
         <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-        <span className="text-xs font-medium">Initializing Interactive Transit Map...</span>
+        <span className="text-xs font-medium">Initializing Onboarding Pin Map...</span>
       </div>
     </div>
   ),
@@ -252,16 +252,15 @@ export function StepHomeAndRoute({
         </div>
 
         <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-zinc-800 shadow-sm relative z-0">
-          <CampusFleetMap
-            interactiveMode="PIN_DROP"
-            draftPinLocation={[homeLat, homeLng]}
-            onMapClick={onMapLocationSelect}
-            stops={stopsForMap}
-            selectedStopId={assignedStop?.id}
+          <OnboardingPinMap
+            latitude={homeLat}
+            longitude={homeLng}
+            onLocationChange={onMapLocationSelect}
+            assignedStop={assignedStop}
+            walkingDistanceMeters={walkingDistanceMeters}
+            walkingTimeMins={walkingTimeMins}
             height="340px"
             zoom={15}
-            showUserLocation={true}
-            tileTheme="GOOGLE_STREETS"
           />
         </div>
       </div>

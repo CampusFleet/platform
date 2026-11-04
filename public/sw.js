@@ -1,5 +1,5 @@
 // CampusFleet PWA Service Worker
-const CACHE_NAME = 'campusfleet-v3';
+const CACHE_NAME = 'campusfleet-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -31,15 +31,32 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first policy for HTML navigation documents & API routes
-  // Guarantees immediate delivery of new builds with zero stale bundle lockouts
-  const isHtml = event.request.headers.get('accept')?.includes('text/html') || event.request.mode === 'navigate';
-  const isApi = event.request.url.includes('/api/');
+  // Never intercept API routes, Next.js server actions, or external APIs (Google Maps, Supabase)
+  if (
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('_next/data') ||
+    !event.request.url.startsWith(self.location.origin)
+  ) {
+    return;
+  }
 
-  if (isHtml || isApi) {
+  // Network-first policy for HTML navigation documents
+  const isHtml = event.request.headers.get('accept')?.includes('text/html') || event.request.mode === 'navigate';
+
+  if (isHtml) {
     event.respondWith(
       fetch(event.request)
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/')))
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          const rootCached = await caches.match('/');
+          if (rootCached) return rootCached;
+          return new Response('Network offline. Please reconnect when network is available.', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: new Headers({ 'Content-Type': 'text/plain' }),
+          });
+        })
     );
     return;
   }
@@ -56,7 +73,11 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response('', { status: 404 });
+      })
   );
 });
 

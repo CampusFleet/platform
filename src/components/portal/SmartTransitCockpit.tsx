@@ -407,7 +407,7 @@ export default function SmartTransitCockpit({
       list.push(campusTerminal);
     }
     return list;
-  }, [assignedRoute, stops]);
+  }, [assignedRoute?.id, stops]);
 
   const sourceStop = orderedCorridorStops[0] || null;
   const terminalStop = orderedCorridorStops[orderedCorridorStops.length - 1] || null;

@@ -76,6 +76,9 @@ export default function GoogleTransitMap({
 
   const initialFitDoneRef = useRef(false);
   const lastWaypointsKeyRef = useRef<string>("");
+  const lastStopsKeyRef = useRef<string>("");
+  const lastWalkKeyRef = useRef<string>("");
+  const lastBusHeadingRef = useRef<number>(0);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -265,7 +268,6 @@ export default function GoogleTransitMap({
         });
       } else {
         traveledPolylineRef.current.setPath(traveledCoords);
-        traveledPolylineRef.current.setMap(map);
       }
 
       // Upcoming Polyline (Vibrant Google Blue)
@@ -288,9 +290,7 @@ export default function GoogleTransitMap({
         });
       } else {
         upcomingGlowPolylineRef.current?.setPath(upcomingCoords);
-        upcomingGlowPolylineRef.current?.setMap(map);
         upcomingPolylineRef.current.setPath(upcomingCoords);
-        upcomingPolylineRef.current.setMap(map);
       }
     },
     [tripStatus]
@@ -442,8 +442,15 @@ export default function GoogleTransitMap({
         walkingPolylineRef.current.setMap(null);
         walkingPolylineRef.current = null;
       }
+      lastWalkKeyRef.current = "";
       return;
     }
+
+    const walkCoordParam = walkingCoordinates.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";");
+    if (walkCoordParam === lastWalkKeyRef.current) {
+      return;
+    }
+    lastWalkKeyRef.current = walkCoordParam;
 
     let isMounted = true;
     const drawWalkingPath = (coords: [number, number][]) => {
@@ -460,7 +467,6 @@ export default function GoogleTransitMap({
         });
       } else {
         walkingPolylineRef.current.setPath(walkingPath);
-        walkingPolylineRef.current.setMap(mapRef.current);
       }
     };
 
@@ -470,7 +476,6 @@ export default function GoogleTransitMap({
     }
 
     // Try snapping pedestrian road walk via server
-    const walkCoordParam = walkingCoordinates.map(([lat, lng]) => `${lat},${lng}`).join(";");
     fetch(`/api/geo/directions?coords=${walkCoordParam}&mode=walk`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -494,9 +499,6 @@ export default function GoogleTransitMap({
     const map = mapRef.current;
     if (!map || !mapLoaded || typeof window === "undefined" || !window.google) return;
 
-    stopMarkersRef.current.forEach((m) => m.setMap(null));
-    stopMarkersRef.current = [];
-
     const stopsToRender = isPinDrop
       ? (selectedStopId ? stops.filter((s) => s.id === selectedStopId) : [])
       : stops;
@@ -507,6 +509,15 @@ export default function GoogleTransitMap({
         : busLocation?.currentStopId
         ? Math.max(0, stops.findIndex((s) => s.id === busLocation.currentStopId))
         : 0;
+
+    const stopsKey = `${stopsToRender.map((s) => s.id).join(",")}:${selectedStopId}:${userPickupStopId}:${campusDestinationId}:${effectiveStopIndex}`;
+    if (stopsKey === lastStopsKeyRef.current && stopMarkersRef.current.length > 0) {
+      return;
+    }
+    lastStopsKeyRef.current = stopsKey;
+
+    stopMarkersRef.current.forEach((m) => m.setMap(null));
+    stopMarkersRef.current = [];
 
     stopsToRender.forEach((stop, idx) => {
       const isSelected = Boolean(selectedStopId && stop.id === selectedStopId);
@@ -606,13 +617,17 @@ export default function GoogleTransitMap({
           title: `${busName || "Campus Bus"} (Live GPS)`,
           zIndex: 500,
         });
+        lastBusHeadingRef.current = heading;
       } else {
         busMarkerRef.current.setPosition(latLng);
-        busMarkerRef.current.setIcon({
-          url: busSvgUri,
-          scaledSize: new google.maps.Size(48, 48),
-          anchor: new google.maps.Point(24, 24),
-        });
+        if (Math.abs((lastBusHeadingRef.current || 0) - heading) >= 5) {
+          lastBusHeadingRef.current = heading;
+          busMarkerRef.current.setIcon({
+            url: busSvgUri,
+            scaledSize: new google.maps.Size(48, 48),
+            anchor: new google.maps.Point(24, 24),
+          });
+        }
       }
 
       updateTraveledAndUpcoming(posObj);

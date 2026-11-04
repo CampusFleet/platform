@@ -116,7 +116,13 @@ export function CommuteConfirmedStage({
       }
     }
     return undefined;
-  }, [firstMileMetrics?.walkingCoordinates, userCoords, assignedStop]);
+  }, [
+    firstMileMetrics?.walkingCoordinates?.[0]?.[0],
+    firstMileMetrics?.walkingCoordinates?.[0]?.[1],
+    userCoords?.latitude,
+    userCoords?.longitude,
+    assignedStop?.id,
+  ]);
 
   // Clean formatted seat label (strips any duplicate "Seat " prefix)
   const cleanSeatNumber = useMemo(() => {

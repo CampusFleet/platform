@@ -27,6 +27,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "CampusFleet",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",

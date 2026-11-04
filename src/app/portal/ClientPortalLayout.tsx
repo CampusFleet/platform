@@ -28,6 +28,8 @@ import {
   Radio,
   Clock,
   PhoneCall,
+  MessageSquare,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import BusDepartureAlertModal from "@/components/portal/BusDepartureAlertModal";
 import { ContactCrewModal } from "@/components/portal/ContactCrewModal";
@@ -242,14 +244,16 @@ export default function ClientPortalLayout({
   // 2. If Paid & Active: Show Commute Cockpit, Live Radar, Seat Booking, Digital Pass
   const navLinks = isSubscriptionActive
     ? [
-        { href: "/portal", label: t('commutePortal'), icon: Navigation, requiresPayment: false },
-        { href: "/portal/radar", label: "Live Radar", icon: Radio, requiresPayment: false },
-        { href: "/portal/late", label: t('tripUpdates'), icon: Clock, requiresPayment: false },
-        { href: "/portal/settings", label: t('settings'), icon: User, requiresPayment: false },
+        { href: "/portal", label: "My Commute", icon: BusFront, requiresPayment: false },
+        { href: "/portal/qr", label: "QR Connect", icon: QrCode, requiresPayment: false },
+        { href: "/portal/radar", label: "Radar", icon: Radio, requiresPayment: false },
+        { href: "/chat", label: "Chat", icon: MessageSquare, requiresPayment: false },
+        { href: "/portal/payments", label: "Pass & Fees", icon: CreditCard, requiresPayment: false },
+        { href: "/portal/settings", label: "Settings", icon: SettingsIcon, requiresPayment: false },
       ]
     : [
         { href: "/portal/onboarding", label: "Pass Activation", icon: CreditCard, requiresPayment: false },
-        { href: "/portal/settings", label: t('settings'), icon: User, requiresPayment: false },
+        { href: "/portal/settings", label: "Settings", icon: SettingsIcon, requiresPayment: false },
       ];
 
   const processedNavLinks = navLinks.map(link => ({

@@ -1124,8 +1124,8 @@ export default function FullScreenLiveRadarView({
       </div>
 
       {/* ─── 3. GOOGLE MAPS EXPANDABLE BOTTOM JOURNEY SHEET (Clean Solid Surfaces) ─── */}
-      <div className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 ease-in-out ${isDrawerExpanded ? "max-h-[75vh]" : "max-h-[140px]"
-        } bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}>
+      <div className={`absolute inset-x-0 bottom-0 z-20 transition-all duration-300 ease-in-out ${isDrawerExpanded ? "max-h-[75vh]" : "max-h-[160px]"
+        } pb-16 md:pb-0 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col rounded-t-3xl text-zinc-900 dark:text-white`}>
 
         {/* Drag Handle & Collapsed Summary */}
         <div

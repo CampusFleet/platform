@@ -8,6 +8,7 @@ import {
   Sun, Moon, Bell, Shield, Database, Download, RefreshCw, MessageSquare, Trash, 
   ChevronDown, Check, Globe, Loader2, Type, MapPin, ArrowLeftRight, Navigation, CheckCircle2, AlertCircle, Clock, Bus,
   Users, BusFront, QrCode, Settings as SettingsIcon, GraduationCap, GitBranch, Layers,
+  Radio, CreditCard,
   X, AlertTriangle, Info, Save
 } from "lucide-react";
 import { usePWAInstall } from "@/lib/usePWAInstall";
@@ -72,6 +73,9 @@ export function SettingsView() {
     return [
       { href: "/portal", label: "My Commute" },
       { href: "/portal/qr", label: "QR Connect" },
+      { href: "/portal/radar", label: "Radar" },
+      { href: "/chat", label: "Chat" },
+      { href: "/portal/payments", label: "Pass & Fees" },
       { href: "/portal/settings", label: "Settings" },
     ];
   }, [detectedRole]);
@@ -100,6 +104,9 @@ export function SettingsView() {
     return [
       { href: "/portal", label: "My Commute", icon: BusFront },
       { href: "/portal/qr", label: "QR Connect", icon: QrCode },
+      { href: "/portal/radar", label: "Radar", icon: Radio },
+      { href: "/chat", label: "Chat", icon: MessageSquare },
+      { href: "/portal/payments", label: "Pass & Fees", icon: CreditCard },
       { href: "/portal/settings", label: "Settings", icon: SettingsIcon, active: true },
     ];
   }, [detectedRole]);

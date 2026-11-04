@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   Building2,
   Navigation,
+  Radio,
   FileCheck2,
   Home,
   CheckCircle2,
@@ -361,7 +362,9 @@ export function UnifiedAppHeader({
       ? [
           { href: "/portal", label: "My Commute" },
           { href: "/portal/qr", label: "QR Connect" },
+          { href: "/portal/radar", label: "Radar" },
           { href: "/chat", label: "Chat" },
+          { href: "/portal/payments", label: "Pass & Fees" },
           { href: "/portal/settings", label: "Settings" },
         ]
       : [];
@@ -498,6 +501,24 @@ export function UnifiedAppHeader({
                       </span>
                       <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
                         Boarding pass
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsAppsOpen(false);
+                        router.push("/portal/radar");
+                      }}
+                      className="flex flex-col items-start gap-1 p-2.5 rounded-xl hover:bg-cyan-50 dark:hover:bg-cyan-950/40 border border-transparent hover:border-cyan-100 dark:hover:border-cyan-900/50 transition-all text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <Radio className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-900 dark:text-white">
+                        Radar
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                        Live corridor
                       </span>
                     </button>
 
@@ -851,8 +872,8 @@ export function UnifiedAppHeader({
                     onClick={() => setIsDrawerOpen(false)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
                   >
-                    <Home className="w-4 h-4 text-blue-600" />
-                    <span>My Commute Hub</span>
+                    <BusFront className="w-4 h-4 text-blue-600" />
+                    <span>My Commute</span>
                   </Link>
 
                   <Link
@@ -861,7 +882,16 @@ export function UnifiedAppHeader({
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
                   >
                     <QrCode className="w-4 h-4 text-emerald-600" />
-                    <span>QR Pass Connect</span>
+                    <span>QR Connect</span>
+                  </Link>
+
+                  <Link
+                    href="/portal/radar"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
+                  >
+                    <Radio className="w-4 h-4 text-blue-600" />
+                    <span>Radar</span>
                   </Link>
 
                   <Link
@@ -870,7 +900,7 @@ export function UnifiedAppHeader({
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
                   >
                     <MessageSquare className="w-4 h-4 text-indigo-600" />
-                    <span>Messages & Channels</span>
+                    <span>Chat</span>
                   </Link>
 
                   <Link
@@ -880,15 +910,6 @@ export function UnifiedAppHeader({
                   >
                     <CreditCard className="w-4 h-4 text-amber-600" />
                     <span>Pass & Fees</span>
-                  </Link>
-
-                  <Link
-                    href="/portal/late"
-                    onClick={() => setIsDrawerOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
-                  >
-                    <Clock className="w-4 h-4 text-purple-600" />
-                    <span>Late SOS</span>
                   </Link>
                 </div>
               </div>

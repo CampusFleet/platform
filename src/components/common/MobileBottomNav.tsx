@@ -82,8 +82,8 @@ export function MobileBottomNav({
     setIsMoreOpen(false);
   }, [pathname]);
 
-  // Hide on onboarding and fullscreen in-ride radar to avoid navigation dock overlap
-  if (pathname?.startsWith("/portal/onboarding") || pathname === "/portal/radar" || pathname === "/portal/tracker") {
+  // Hide on onboarding to avoid navigation dock overlap
+  if (pathname?.startsWith("/portal/onboarding")) {
     return null;
   }
 
@@ -436,7 +436,7 @@ export function MobileBottomNav({
           {
             id: "commute",
             href: "/portal",
-            label: "Commute",
+            label: "My Commute",
             icon: BusFront,
             highlight: true,
           },
@@ -445,6 +445,12 @@ export function MobileBottomNav({
             href: "/portal/qr",
             label: "QR Connect",
             icon: QrCode,
+          },
+          {
+            id: "radar",
+            href: "/portal/radar",
+            label: "Radar",
+            icon: Radio,
           },
           {
             id: "chat",
@@ -458,12 +464,6 @@ export function MobileBottomNav({
             href: "/portal/payments",
             label: "Pass & Fees",
             icon: CreditCard,
-          },
-          {
-            id: "late",
-            href: "/portal/late",
-            label: "Late SOS",
-            icon: Clock,
           },
           {
             id: "settings",

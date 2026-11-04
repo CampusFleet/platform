@@ -325,13 +325,24 @@ export default function FullScreenLiveRadarView({
     );
 
     if (!candidate || isCampusTerminalStop) {
-      if (orderedDestinations.length > 0) {
-        // Return first non-campus boarding stop on the corridor
-        const corridorPickup = orderedDestinations.find(
-          s => !(s as any).isCampusTerminal && !(s as any).is_campus_terminal && s.id !== "stop-bhimtal-campus" && !s.name.toLowerCase().includes("campus")
-        );
-        if (corridorPickup) return corridorPickup;
-        return orderedDestinations[0];
+      const studentLat = (student as any)?.homeLatitude ?? (student as any)?.home_latitude ?? 29.220936;
+      const studentLng = (student as any)?.homeLongitude ?? (student as any)?.home_longitude ?? 79.514496;
+
+      const nonCampusStops = stops.filter(
+        s => !(s as any).isCampusTerminal && !(s as any).is_campus_terminal && s.id !== "stop-bhimtal-campus" && !s.name.toLowerCase().includes("campus")
+      );
+
+      if (nonCampusStops.length > 0) {
+        let closest = nonCampusStops[0];
+        let minDist = Infinity;
+        for (const s of nonCampusStops) {
+          const d = calculateHaversineDistanceKm(studentLat, studentLng, s.latitude, s.longitude);
+          if (d < minDist) {
+            minDist = d;
+            closest = s;
+          }
+        }
+        return closest;
       }
     }
 

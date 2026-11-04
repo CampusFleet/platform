@@ -57,6 +57,7 @@ export function CommuteWalkingStage({
   onSelectSeatAheadOfTime,
 }: CommuteWalkingStageProps) {
   const radarBusParam = assignedBusId || assignedBusNumber;
+  const isReasonableWalkingDist = metrics.userToStopDistMeters !== null && metrics.userToStopDistMeters <= 2500;
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-7 border border-zinc-200/90 dark:border-zinc-800 shadow-sm space-y-6 animate-in fade-in duration-300">
@@ -72,7 +73,7 @@ export function CommuteWalkingStage({
                 First-Mile Guidance
               </span>
               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                {metrics.userToStopDistMeters ? `${metrics.userToStopDistMeters}m to stop` : "Walking Mode"}
+                {isReasonableWalkingDist ? `${metrics.userToStopDistMeters}m to stop` : "Corridor Boarding Stop"}
               </span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white mt-0.5">
@@ -160,10 +161,10 @@ export function CommuteWalkingStage({
             <span>Your Walk Time</span>
           </div>
           <div className="text-base font-black text-zinc-900 dark:text-white font-mono">
-            ~{metrics.walkingEtaMins} mins
+            {isReasonableWalkingDist ? `~${metrics.walkingEtaMins} mins` : "Walking Mode"}
           </div>
           <p className="text-[11px] text-zinc-500">
-            {metrics.userToStopDistMeters ? `${metrics.userToStopDistMeters}m at 4.8 km/h` : "Standard walking pace"}
+            {isReasonableWalkingDist && metrics.userToStopDistMeters ? `${metrics.userToStopDistMeters}m at 4.8 km/h` : "Designated boarding point"}
           </p>
         </div>
 

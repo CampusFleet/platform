@@ -332,8 +332,22 @@ export default function SmartTransitCockpit({
   }, [assignedBus?.id, reservation?.bus_id, assignedShift?.id, reservation?.shift_id, fetchSeatPartnerData]);
 
   // ─── 5. Google Maps Routes API Road Distance Fetcher ──────────────
-  const effectiveUserLat = userGeoCoords?.lat ?? (student as any)?.home_latitude ?? (student as any)?.homeLatitude ?? 29.220936;
-  const effectiveUserLng = userGeoCoords?.lng ?? (student as any)?.home_longitude ?? (student as any)?.homeLongitude ?? 79.514496;
+  const isCoordInTransitRegion = (lat?: number | null, lng?: number | null) => {
+    if (!lat || !lng) return false;
+    return lat >= 28.5 && lat <= 30.0 && lng >= 78.5 && lng <= 80.5;
+  };
+
+  const effectiveUserLat =
+    (userGeoCoords && isCoordInTransitRegion(userGeoCoords.lat, userGeoCoords.lng) ? userGeoCoords.lat : null) ??
+    (student as any)?.home_latitude ??
+    (student as any)?.homeLatitude ??
+    (assignedStop?.latitude ? assignedStop.latitude - 0.0025 : 29.220936);
+
+  const effectiveUserLng =
+    (userGeoCoords && isCoordInTransitRegion(userGeoCoords.lat, userGeoCoords.lng) ? userGeoCoords.lng : null) ??
+    (student as any)?.home_longitude ??
+    (student as any)?.homeLongitude ??
+    (assignedStop?.longitude ? assignedStop.longitude - 0.0020 : 79.514496);
 
   // Asynchronously query Google Maps Routes API for actual road distance
   useEffect(() => {

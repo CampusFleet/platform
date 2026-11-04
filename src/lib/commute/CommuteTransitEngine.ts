@@ -221,13 +221,29 @@ export class CommuteTransitEngine {
       (candidate as any).isCampusTerminal ||
       (candidate as any).is_campus_terminal ||
       candidate.id === "stop-bhimtal-campus" ||
-      candidate.name.toLowerCase().includes("campus main gate") ||
+      candidate.name.toLowerCase().includes("campus") ||
       candidate.name.toLowerCase().includes("university")
     )) {
-      const nonCampusStop = stops.find(
+      const studentLat = (student as any)?.home_latitude ?? (student as any)?.homeLatitude ?? 29.220936;
+      const studentLng = (student as any)?.home_longitude ?? (student as any)?.homeLongitude ?? 79.514496;
+
+      const nonCampusStops = stops.filter(
         s => !(s as any).isCampusTerminal && !(s as any).is_campus_terminal && s.id !== "stop-bhimtal-campus" && !s.name.toLowerCase().includes("campus")
       );
-      if (nonCampusStop) return nonCampusStop;
+
+      if (nonCampusStops.length > 0) {
+        // Find the stop closest to the student's residential coordinates
+        let closest = nonCampusStops[0];
+        let minDist = Infinity;
+        for (const s of nonCampusStops) {
+          const d = this.calculateStraightLineDistanceMeters(studentLat, studentLng, s.latitude, s.longitude);
+          if (d < minDist) {
+            minDist = d;
+            closest = s;
+          }
+        }
+        return closest;
+      }
     }
 
     return candidate;
@@ -376,7 +392,8 @@ export class CommuteTransitEngine {
       busToUserDistMeters = this.getCachedRoadDistance(userLat, userLng, busLat, busLng, "drive");
     }
 
-    const walkingEtaMins = userToStopDistMeters ? Math.max(1, Math.round(userToStopDistMeters / 80)) : 5;
+    const isWithinWalkingRange = userToStopDistMeters !== null && userToStopDistMeters <= 3500;
+    const walkingEtaMins = isWithinWalkingRange ? Math.max(1, Math.round(userToStopDistMeters! / 80)) : 5;
     const busEtaMins = busToStopDistMeters ? Math.max(1, Math.round(busToStopDistMeters / 416)) : null;
     const arrivalCushionMins = busEtaMins !== null ? busEtaMins - walkingEtaMins : null;
 
@@ -401,12 +418,12 @@ export class CommuteTransitEngine {
     }
 
     const walkingCoordinates: [number, number][] =
-      userLat && userLng && stopLat && stopLng
+      userLat && userLng && stopLat && stopLng && isWithinWalkingRange
         ? [[userLat, userLng], [stopLat, stopLng]]
         : [];
 
     return {
-      userToStopDistMeters,
+      userToStopDistMeters: isWithinWalkingRange ? userToStopDistMeters : null,
       busToStopDistMeters,
       busToUserDistMeters,
       walkingEtaMins,
@@ -437,21 +454,7 @@ export class CommuteTransitEngine {
     if (params.isAllShiftsOver) return "SHIFTS_CONCLUDED";
     if (!params.assignedBus) return "NO_BUS_ASSIGNED";
 
-    if (params.isAttendanceMarked) {
-      return "RIDE_CONFIRMED";
-    }
-
-    // Walking mode if not at stop and not confirmed
-    const isWalking =
-      !params.isAtPickupStop &&
-      !params.hasArrivedAtStopManually &&
-      params.hasStopCoordinates &&
-      !params.showSeatGridWhileWalking;
-
-    if (isWalking) {
-      return "WALKING_TO_STOP";
-    }
-
-    return "SEAT_SELECTION";
+    // When an active fleet vehicle is assigned, always maintain the unified Commute Cockpit
+    return "RIDE_CONFIRMED";
   }
 }

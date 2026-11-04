@@ -93,12 +93,21 @@ export function CommuteConfirmedStage({
   const speed = telematicsLocation?.speed ? Math.round(telematicsLocation.speed) : 0;
   const isMoving = speed > 2;
 
-  // Build corridor walking coordinates
-  const walkingCoords = firstMileMetrics?.walkingCoordinates || (
-    userCoords && assignedStop?.latitude && assignedStop?.longitude
-      ? [[userCoords.latitude, userCoords.longitude], [assignedStop.latitude, assignedStop.longitude]]
-      : undefined
-  );
+  // Only render walking line if within reasonable pedestrian walking distance (<= 2.5 km)
+  const walkingCoords = React.useMemo(() => {
+    if (firstMileMetrics?.walkingCoordinates && firstMileMetrics.walkingCoordinates.length >= 2) {
+      return firstMileMetrics.walkingCoordinates;
+    }
+    if (userCoords && assignedStop?.latitude && assignedStop?.longitude) {
+      const dLat = (userCoords.latitude - assignedStop.latitude) * 111000;
+      const dLng = (userCoords.longitude - assignedStop.longitude) * 96000;
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+      if (dist <= 2500) {
+        return [[userCoords.latitude, userCoords.longitude], [assignedStop.latitude, assignedStop.longitude]] as [number, number][];
+      }
+    }
+    return undefined;
+  }, [firstMileMetrics?.walkingCoordinates, userCoords, assignedStop]);
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-7 border border-zinc-200/90 dark:border-zinc-800 shadow-sm space-y-5 animate-in fade-in duration-300">

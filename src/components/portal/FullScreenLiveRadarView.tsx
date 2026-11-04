@@ -36,12 +36,15 @@ import {
   UserCheck,
   PhoneCall,
   Footprints,
+  Hand,
+  X,
 } from "lucide-react";
 import type { Bus, Route, Stop, Trip, Staff, Student, Booking, Campus, LiveBusLocation } from "@/lib/types";
 import { ContactCrewModal } from "@/components/portal/ContactCrewModal";
+import type { CommuterCorridorMapHandle } from "@/components/maps/CommuterCorridorMap";
 
-// Dynamic import for Leaflet GIS Map with no SSR
-const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+// Dynamic import for Rock-Solid High-Performance Commuter Corridor Map with no SSR
+const CommuterCorridorMap = dynamic(() => import("@/components/maps/CommuterCorridorMap"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full min-h-[400px] bg-zinc-100 dark:bg-black flex flex-col items-center justify-center text-zinc-500 gap-3">
@@ -108,9 +111,13 @@ export default function FullScreenLiveRadarView({
   const [isNavCardMinimized, setIsNavCardMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
+  const mapRef = useRef<CommuterCorridorMapHandle>(null);
   const [mapFocusTarget, setMapFocusTarget] = useState<"BUS" | "MY_STOP" | "CORRIDOR">("BUS");
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null);
   const [isSOSOpen, setIsSOSOpen] = useState(false);
+  const [haltStatus, setHaltStatus] = useState<"IDLE" | "PENDING" | "APPROVED" | "REJECTED">("IDLE");
+  const [isRequestingHalt, setIsRequestingHalt] = useState(false);
+  const [haltRemainingSeconds, setHaltRemainingSeconds] = useState(120);
   const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
   const [manualBoardedState, setManualBoardedState] = useState<boolean | null>(null);
   const [userLiveCoords, setUserLiveCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -406,6 +413,101 @@ export default function FullScreenLiveRadarView({
     return staff.find((s) => s.role === "transport_manager" || s.role === "transport_admin") || null;
   }, [staff]);
 
+  // 5. Late SOS Request & Status Polling
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("action") === "sos") {
+        setIsSOSOpen(true);
+      }
+    }
+  }, []);
+
+  // Check initial halt request state
+  useEffect(() => {
+    const tripIdToUse = activeTrip?.id || (assignedBus?.id ? String(assignedBus.id) : "");
+    const studentIdToUse = currentUser?.studentId || currentUser?.id || student?.id;
+    if (!tripIdToUse || !studentIdToUse) return;
+
+    fetch(`/api/dispatch/halt-requests?tripId=${tripIdToUse}&studentId=${studentIdToUse}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.request?.status) {
+          setHaltStatus(data.request.status);
+          if (data.request.status === "PENDING") {
+            setHaltRemainingSeconds(120);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [activeTrip?.id, assignedBus?.id, currentUser?.studentId, currentUser?.id, student?.id]);
+
+  // Halt request polling when pending
+  useEffect(() => {
+    if (haltStatus !== "PENDING") return;
+    const tripIdToUse = activeTrip?.id || (assignedBus?.id ? String(assignedBus.id) : "");
+    const studentIdToUse = currentUser?.studentId || currentUser?.id || student?.id;
+    if (!tripIdToUse || !studentIdToUse) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/dispatch/halt-requests?tripId=${tripIdToUse}&studentId=${studentIdToUse}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.request?.status && data.request.status !== "PENDING") {
+            setHaltStatus(data.request.status);
+          }
+        }
+      } catch {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [haltStatus, activeTrip?.id, assignedBus?.id, currentUser?.studentId, currentUser?.id, student?.id]);
+
+  // Countdown timer for 2-minute hold
+  useEffect(() => {
+    if (haltStatus !== "PENDING" && haltStatus !== "APPROVED") return;
+    if (haltRemainingSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setHaltRemainingSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [haltStatus, haltRemainingSeconds]);
+
+  // Dispatch 2-Minute Emergency Halt Request
+  const handleRequestHalt = async () => {
+    if (!assignedBus?.id && !activeTrip?.id) return;
+    setIsRequestingHalt(true);
+    try {
+      const tripIdToUse = activeTrip?.id || String(assignedBus.id);
+      const studentIdToUse = currentUser?.studentId || currentUser?.id || student?.id || "student-commuter";
+      const studentNameToUse = currentUser?.fullName || currentUser?.name || student?.fullName || (student as any)?.name || "Student Commuter";
+      const studentPhotoToUse = currentUser?.avatarUrl || (student as any)?.profilePhotoUrl || "";
+
+      const res = await fetch("/api/dispatch/halt-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tripId: tripIdToUse,
+          studentId: studentIdToUse,
+          studentName: studentNameToUse,
+          studentPhoto: studentPhotoToUse,
+          latitude: resolvedUserCoords.latitude,
+          longitude: resolvedUserCoords.longitude,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.request) {
+        setHaltStatus(data.request.status || "PENDING");
+        setHaltRemainingSeconds(120);
+      }
+    } catch (e) {
+      console.error("Halt request error:", e);
+    } finally {
+      setIsRequestingHalt(false);
+    }
+  };
+
 
   // 6. Real-time telematics synchronization (HTML5 BroadcastChannel + Redis/Mongo polling)
   useEffect(() => {
@@ -638,6 +740,28 @@ export default function FullScreenLiveRadarView({
           </Link>
 
           <div className="flex items-center gap-2 pointer-events-auto">
+            {/* Running Late 2-Min Hold Quick Trigger */}
+            <button
+              onClick={() => setIsSOSOpen(true)}
+              className={`px-3 py-1.5 rounded-2xl border text-[11px] font-bold flex items-center gap-1.5 shadow-lg transition-all active:scale-95 cursor-pointer ${
+                haltStatus === "PENDING"
+                  ? "bg-amber-500 text-zinc-950 border-amber-600 animate-pulse"
+                  : haltStatus === "APPROVED"
+                  ? "bg-emerald-600 text-white border-emerald-700"
+                  : "bg-white dark:bg-black text-rose-600 dark:text-rose-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              }`}
+              title="Running Late? Request a 2-Minute Bus Hold"
+            >
+              <Hand className={`w-3.5 h-3.5 ${haltStatus === "PENDING" ? "animate-bounce" : "text-rose-500"}`} />
+              <span>
+                {haltStatus === "PENDING"
+                  ? `Hold (${Math.floor(haltRemainingSeconds / 60)}:${(haltRemainingSeconds % 60).toString().padStart(2, "0")})`
+                  : haltStatus === "APPROVED"
+                  ? "Holding ✓"
+                  : "Hold Bus (2m)"}
+              </span>
+            </button>
+
             {/* Live GPS / Operational Status Pill */}
             <div className="px-3 py-1.5 rounded-2xl border text-[11px] font-mono font-bold flex items-center gap-2 bg-white dark:bg-black text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 shadow-lg">
               <span className={`w-2 h-2 rounded-full shrink-0 ${telematicsStatus.dotClass}`} />
@@ -847,6 +971,28 @@ export default function FullScreenLiveRadarView({
 
                 <button
                   type="button"
+                  onClick={() => setIsSOSOpen(true)}
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-md border ${
+                    haltStatus === "PENDING"
+                      ? "bg-amber-500 hover:bg-amber-600 text-zinc-950 border-amber-600 animate-pulse"
+                      : haltStatus === "APPROVED"
+                      ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
+                      : "bg-rose-600 hover:bg-rose-700 text-white border-rose-700"
+                  }`}
+                  title="Running Late? Request a 2-minute bus hold"
+                >
+                  <Hand className="w-3.5 h-3.5" />
+                  <span>
+                    {haltStatus === "PENDING"
+                      ? `Holding (${Math.floor(haltRemainingSeconds / 60)}:${(haltRemainingSeconds % 60).toString().padStart(2, "0")})`
+                      : haltStatus === "APPROVED"
+                      ? "Hold Approved ✓"
+                      : "Hold Bus (2 min)"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setIsContactCrewOpen(true)}
                   className="px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-black dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-sm border border-zinc-700"
                   title="Contact Bus Conductor or Transport Manager"
@@ -862,28 +1008,27 @@ export default function FullScreenLiveRadarView({
 
       {/* ─── 2. FULLSCREEN INTERACTIVE LEAFLET GIS CANVAS (With Google Maps Streets) ─── */}
       <div className="relative w-full flex-1 h-full min-h-[400px]">
-        <CampusFleetMap
+        <CommuterCorridorMap
+          ref={mapRef}
           busLocation={liveLocation || fallbackBusLocation}
           busName={displayBusNumber}
-          tripStatus="IN_PROGRESS"
-          stops={orderedDestinations}
-          campuses={campuses}
-          walkingCoordinates={isUserBoarded ? [] : walkingCoordinates}
-          activeStopIndex={nextDestination?.index ?? 0}
-          selectedStopId={commuterStop?.id || selectedDestinationId || nextDestination?.id}
-          userPickupStopId={commuterStop?.id}
-          campusDestinationId={terminalStop?.id}
-          userCoords={resolvedUserCoords}
-          userAddress={student?.homeAddress || "Your Origin"}
+          assignedStop={commuterStop}
+          assignedRoute={assignedRoute}
+          allStops={orderedDestinations}
+          homeCoords={resolvedUserCoords}
+          homeAddress={student?.homeAddress || "Your Origin"}
+          deviceGpsCoords={userLiveCoords}
+          walkingDistanceMeters={walkingMetrics.distanceMeters}
+          walkingTimeMins={walkingMetrics.durationMins}
+          isTelematicsLive={isTelematicsLive}
           tileTheme={tileTheme}
           height="100%"
           zoom={15}
-          showUserLocation={true}
-          showCampusLandmark={true}
-          onRouteMetricsCalculated={setRouteMetrics}
+          hideInlineControls={true}
           onStopClick={(clickedStop) => {
             setSelectedDestinationId(clickedStop.id);
             setIsDrawerExpanded(true);
+            mapRef.current?.recenterOnStop(clickedStop);
           }}
         />
 
@@ -894,6 +1039,7 @@ export default function FullScreenLiveRadarView({
             <button
               onClick={() => {
                 setMapFocusTarget("MY_STOP");
+                mapRef.current?.recenterOnGps();
               }}
               className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
               title="Focus Your Live Location (Source)"
@@ -904,7 +1050,10 @@ export default function FullScreenLiveRadarView({
 
           {/* Re-center Bus Button */}
           <button
-            onClick={() => setMapFocusTarget("BUS")}
+            onClick={() => {
+              setMapFocusTarget("BUS");
+              mapRef.current?.recenterOnBus();
+            }}
             className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Track Live Bus Location"
           >
@@ -917,6 +1066,7 @@ export default function FullScreenLiveRadarView({
               onClick={() => {
                 setSelectedDestinationId(commuterStop.id);
                 setMapFocusTarget("MY_STOP");
+                mapRef.current?.recenterOnStop(commuterStop);
               }}
               className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
               title="Focus My Destination Stop"
@@ -932,6 +1082,7 @@ export default function FullScreenLiveRadarView({
               if (campusTerminal) {
                 setSelectedDestinationId(campusTerminal.id);
                 setMapFocusTarget("MY_STOP");
+                mapRef.current?.recenterOnStop(campusTerminal);
               }
             }}
             className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
@@ -942,7 +1093,10 @@ export default function FullScreenLiveRadarView({
 
           {/* Full Corridor View */}
           <button
-            onClick={() => setMapFocusTarget("CORRIDOR")}
+            onClick={() => {
+              setMapFocusTarget("CORRIDOR");
+              mapRef.current?.fitCorridorBounds();
+            }}
             className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
             title="Fit Entire Source-to-Destination Corridor"
           >
@@ -1009,7 +1163,10 @@ export default function FullScreenLiveRadarView({
               return (
                 <div
                   key={dest.id || idx}
-                  onClick={() => setSelectedDestinationId(dest.id)}
+                  onClick={() => {
+                    setSelectedDestinationId(dest.id);
+                    mapRef.current?.recenterOnStop(dest);
+                  }}
                   className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer ${isCommuterTarget
                     ? "bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500/80 shadow-sm text-zinc-900 dark:text-white"
                     : isNext
@@ -1118,6 +1275,128 @@ export default function FullScreenLiveRadarView({
         transportManager={transportManagerStaff}
         stopName={commuterStop?.name}
       />
+
+      {/* ─── 5. LATE SOS 2-MINUTE HOLD REQUEST MODAL ─── */}
+      {isSOSOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center justify-center font-bold">
+                  <Hand className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 dark:text-white">Running Late?</h3>
+                  <p className="text-xs text-zinc-500">Request a 2-Minute Bus Hold</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSOSOpen(false)}
+                className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Status Information */}
+            {haltStatus === "PENDING" ? (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-2">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                  <span>2-Minute Hold Requested</span>
+                </div>
+                <div className="text-xs text-amber-900/80 dark:text-amber-300/80 leading-relaxed">
+                  Driver & Conductor console alerted. Please hurry to your boarding stop at{" "}
+                  <strong>{commuterStop?.name || "your stop"}</strong>.
+                </div>
+                <div className="pt-2 flex items-center justify-between text-xs font-mono font-bold text-amber-950 dark:text-amber-200">
+                  <span>Hold Window Remaining:</span>
+                  <span className="text-sm">
+                    {Math.floor(haltRemainingSeconds / 60)}:{(haltRemainingSeconds % 60).toString().padStart(2, "0")}
+                  </span>
+                </div>
+              </div>
+            ) : haltStatus === "APPROVED" ? (
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 space-y-1.5">
+                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Hold Approved by Conductor!</span>
+                </div>
+                <div className="text-xs text-emerald-900/80 dark:text-emerald-300/80 leading-relaxed">
+                  The driver is holding at <strong>{commuterStop?.name}</strong>. Proceed safely to board.
+                </div>
+              </div>
+            ) : haltStatus === "REJECTED" ? (
+              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/60 space-y-1.5">
+                <div className="flex items-center gap-2 text-rose-800 dark:text-rose-300 font-bold text-sm">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span>Unable to Hold</span>
+                </div>
+                <div className="text-xs text-rose-900/80 dark:text-rose-300/80 leading-relaxed">
+                  The bus is operating on strict corridor schedule deadlines and could not pause.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  If you are walking to <strong>{commuterStop?.name || "your pickup stop"}</strong> and running slightly late, our dispatch system allows a <strong>one-time 2-minute emergency pause</strong>.
+                </p>
+                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 text-xs space-y-1">
+                  <div className="flex justify-between text-zinc-500">
+                    <span>Vehicle:</span>
+                    <strong className="text-zinc-900 dark:text-white font-mono">{displayBusNumber}</strong>
+                  </div>
+                  <div className="flex justify-between text-zinc-500">
+                    <span>Your Pickup Stop:</span>
+                    <strong className="text-zinc-900 dark:text-white truncate max-w-[200px]">{commuterStop?.name}</strong>
+                  </div>
+                  <div className="flex justify-between text-zinc-500">
+                    <span>Walking Distance:</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400 font-mono">
+                      {walkingMetrics.distanceMeters}m (~{walkingMetrics.durationMins}m walk)
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2 pt-2">
+              {haltStatus === "IDLE" && (
+                <button
+                  type="button"
+                  disabled={isRequestingHalt}
+                  onClick={handleRequestHalt}
+                  className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Hand className="w-4 h-4" />
+                  <span>{isRequestingHalt ? "Sending Hold Request..." : "✋ Request 2-Minute Hold"}</span>
+                </button>
+              )}
+
+              <div className="flex items-center gap-2">
+                {assignedConductor?.phone && (
+                  <a
+                    href={`tel:${assignedConductor.phone}`}
+                    className="flex-1 py-2.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all text-center"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Call Conductor</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsSOSOpen(false)}
+                  className="flex-1 py-2.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 font-bold text-xs transition-all text-center cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

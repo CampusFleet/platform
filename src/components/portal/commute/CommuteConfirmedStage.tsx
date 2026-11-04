@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,21 +21,9 @@ import {
   RefreshCw,
   Lock,
   Compass,
+  Hand,
 } from "lucide-react";
 import type { Bus, Stop, Route, Student, Staff } from "@/lib/types";
-
-// Dynamic import for CommuterCorridorMap (Settings-inspired high performance map)
-const CommuterCorridorMap = dynamic(() => import("@/components/maps/CommuterCorridorMap"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-80 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
-      <div className="flex flex-col items-center gap-2 text-zinc-400">
-        <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
-        <span className="text-xs font-medium">Loading Live Transit Corridor...</span>
-      </div>
-    </div>
-  ),
-});
 
 export interface CommuteConfirmedStageProps {
   assignedBus: Bus;
@@ -179,23 +166,75 @@ export function CommuteConfirmedStage({
         )}
       </div>
 
-      {/* ─── 2. Embedded Interactive Transit Corridor Map (Settings Inspired) ─── */}
-      <CommuterCorridorMap
-        height="350px"
-        zoom={15}
-        homeCoords={userCoords}
-        homeAddress={userAddress}
-        assignedStop={assignedStop}
-        assignedRoute={assignedRoute}
-        allStops={stops}
-        walkingDistanceMeters={firstMileMetrics?.userToStopDistMeters}
-        walkingTimeMins={firstMileMetrics?.walkingEtaMins}
-        busLocation={telematicsLocation}
-        busName={displayBusNumber}
-        isTelematicsLive={isTelematicsLive}
-        deviceGpsCoords={deviceGpsCoords}
-        radarHref={`/portal/radar?busId=${assignedBus.id}`}
-      />
+      {/* ─── 2. High-Performance Live Transit Corridor & Radar Status Card (Uber/Transit Standard) ─── */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-slate-900 to-zinc-950 text-white p-5 sm:p-6 shadow-xl border border-indigo-500/20 space-y-4">
+        {/* Glow backdrop decorative effect */}
+        <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
+        <div className="absolute -left-16 -bottom-16 w-56 h-56 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 flex items-center gap-1.5">
+                <Radio className="w-3 h-3 text-cyan-400 animate-pulse" />
+                <span>Transit Corridor Live</span>
+              </span>
+
+              {isTelematicsLive ? (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>{isMoving ? `In Motion • ${speed} km/h` : "Live Telematics Active"}</span>
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10">
+                  On Scheduled Run
+                </span>
+              )}
+            </div>
+
+            <div className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+              <span>{displayBusNumber}</span>
+              <span className="text-zinc-400 font-normal text-xs sm:text-sm">
+                • {assignedRoute?.name || "Campus Transit Corridor"}
+              </span>
+            </div>
+
+            <p className="text-xs text-zinc-300 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+              <span>
+                Boarding Point: <strong className="text-white">{assignedStop?.name || "Campus Corridor Stop"}</strong>
+              </span>
+              {firstMileMetrics?.walkingEtaMins && (
+                <span className="text-emerald-300 font-mono font-semibold">
+                  (~{firstMileMetrics.walkingEtaMins}m walk)
+                </span>
+              )}
+            </p>
+          </div>
+
+          {/* Action CTAs: Full Radar Launcher & Emergency Hold */}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <Link
+              href={`/portal/radar?busId=${assignedBus.id}&action=sos`}
+              className="px-4 py-2.5 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 active:scale-95 text-rose-200 border border-rose-400/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm group"
+              title="Running Late? Request a 2-minute bus hold"
+            >
+              <Hand className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
+              <span>Hold Bus (2 min)</span>
+            </Link>
+
+            <Link
+              href={`/portal/radar?busId=${assignedBus.id}`}
+              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer group border border-white/20"
+              title="Open full-screen live radar map"
+            >
+              <Navigation className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+              <span>Open Live Radar & Corridor Map</span>
+              <ArrowRight className="w-3.5 h-3.5 opacity-80 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </div>
+        </div>
+      </div>
 
       {/* ─── 3. Anti-Proxy Attendance Verification Shield ─── */}
       {!isAttendanceVerified ? (

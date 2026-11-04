@@ -19,6 +19,7 @@ import { Stop, Route } from "@/lib/types";
 
 export interface CommuterCorridorControllerConfig {
   zoom?: number;
+  tileTheme?: "GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK";
   onStopClick?: (stop: Stop) => void;
   onBusClick?: () => void;
 }
@@ -27,6 +28,8 @@ export class CommuterCorridorController extends BaseMapController {
   private leafletModule: any = null;
 
   // Layer references
+  private tileLayerInstance: any = null;
+  private currentTileTheme: "GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK" = "GOOGLE_STREETS";
   private homeMarker: any = null;
   private stopMarker: any = null;
   private walkingPolyline: any = null;
@@ -93,13 +96,10 @@ export class CommuterCorridorController extends BaseMapController {
       attributionControl: false,
     });
 
-    // High-speed Google Maps Streets tile layer
-    L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
-      maxZoom: 20,
-      subdomains: ["mt0", "mt1", "mt2", "mt3"],
-    }).addTo(map);
-
     this.mapInstance = map;
+
+    // Apply configured raster tile theme
+    this.setTileTheme(this.config.tileTheme || "GOOGLE_STREETS");
 
     // Immediately render doorstep home marker
     this.createOrUpdateHomeMarker();
@@ -589,6 +589,59 @@ export class CommuterCorridorController extends BaseMapController {
       16,
       { animate: true }
     );
+  }
+
+  /**
+   * Pans directly to Designated Pickup Stop or Target Corridor Stop
+   */
+  public recenterOnStop(stop?: Stop | null): void {
+    const target = stop || this.pickupStop;
+    if (!this.mapInstance || !target || isNaN(target.latitude) || isNaN(target.longitude) || this.isDestroyed) return;
+    this.mapInstance.setView([target.latitude, target.longitude], 16, { animate: true });
+  }
+
+  /**
+   * Pans to custom coordinates (e.g. campus terminal landmark)
+   */
+  public recenterOnCoords(coords: { latitude: number; longitude: number } | null, zoom = 16): void {
+    if (!this.mapInstance || !coords || isNaN(coords.latitude) || isNaN(coords.longitude) || this.isDestroyed) return;
+    this.mapInstance.setView([coords.latitude, coords.longitude], zoom, { animate: true });
+  }
+
+  /**
+   * Switches map tile layer theme on the fly (Google Streets, Satellite Hybrid, Carto Dark)
+   */
+  public setTileTheme(theme: "GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK"): void {
+    if (!this.mapInstance || !this.leafletModule || this.isDestroyed) return;
+    if (this.currentTileTheme === theme && this.tileLayerInstance) return;
+    this.currentTileTheme = theme;
+    const L = this.leafletModule;
+
+    if (this.tileLayerInstance) {
+      this.mapInstance.removeLayer(this.tileLayerInstance);
+      this.tileLayerInstance = null;
+    }
+
+    let tileUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+    let subdomains = ["mt0", "mt1", "mt2", "mt3"];
+    let maxZoom = 20;
+
+    if (theme === "GOOGLE_HYBRID") {
+      tileUrl = "https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
+      subdomains = ["mt0", "mt1", "mt2", "mt3"];
+    } else if (theme === "CARTO_DARK") {
+      tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+      subdomains = ["a", "b", "c", "d"];
+    }
+
+    this.tileLayerInstance = L.tileLayer(tileUrl, {
+      maxZoom,
+      subdomains,
+    }).addTo(this.mapInstance);
+
+    if (typeof this.tileLayerInstance.bringToBack === "function") {
+      this.tileLayerInstance.bringToBack();
+    }
   }
 
   /**

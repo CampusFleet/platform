@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import Link from "next/link";
 import {
   Crosshair,
@@ -20,6 +20,18 @@ import {
 import { Stop, Route } from "@/lib/types";
 import { CommuterCorridorController } from "@/lib/maps/CommuterCorridorController";
 
+export interface CommuterCorridorMapHandle {
+  recenterOnBus: () => void;
+  recenterOnGps: () => void;
+  recenterOnHome: () => void;
+  recenterOnStop: (stop?: Stop | null) => void;
+  recenterOnCoords: (coords: { latitude: number; longitude: number } | null, zoom?: number) => void;
+  fitCorridorBounds: () => void;
+  fitWalkingBounds: () => void;
+  setTileTheme: (theme: "GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK") => void;
+  invalidateSize: () => void;
+}
+
 export interface CommuterCorridorMapProps {
   homeCoords?: { latitude: number; longitude: number } | null;
   homeAddress?: string | null;
@@ -36,6 +48,9 @@ export interface CommuterCorridorMapProps {
   height?: string;
   className?: string;
   zoom?: number;
+  tileTheme?: "GOOGLE_STREETS" | "GOOGLE_HYBRID" | "CARTO_DARK";
+  hideInlineControls?: boolean;
+  onStopClick?: (stop: Stop) => void;
 }
 
 /**
@@ -52,7 +67,7 @@ function calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-export default function CommuterCorridorMap({
+const CommuterCorridorMap = forwardRef<CommuterCorridorMapHandle, CommuterCorridorMapProps>(function CommuterCorridorMap({
   homeCoords,
   homeAddress,
   assignedStop,
@@ -68,7 +83,10 @@ export default function CommuterCorridorMap({
   height = "360px",
   className = "",
   zoom = 15,
-}: CommuterCorridorMapProps) {
+  tileTheme = "GOOGLE_STREETS",
+  hideInlineControls = false,
+  onStopClick,
+}: CommuterCorridorMapProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<CommuterCorridorController | null>(null);
 
@@ -98,7 +116,11 @@ export default function CommuterCorridorMap({
   useEffect(() => {
     if (!containerRef.current || controllerRef.current) return;
 
-    const controller = new CommuterCorridorController({ zoom });
+    const controller = new CommuterCorridorController({
+      zoom,
+      tileTheme,
+      onStopClick,
+    });
 
     controller
       .initialize(containerRef.current, { latitude: initLat, longitude: initLng })
@@ -123,6 +145,29 @@ export default function CommuterCorridorMap({
       controllerRef.current = null;
     };
   }, [zoom]);
+
+  // Expose Imperative Methods to Parents (e.g. FullScreenLiveRadarView)
+  useImperativeHandle(
+    ref,
+    () => ({
+      recenterOnBus: () => controllerRef.current?.recenterOnBus(),
+      recenterOnGps: () => controllerRef.current?.recenterOnGps(),
+      recenterOnHome: () => controllerRef.current?.recenterOnHome(),
+      recenterOnStop: (stop?: Stop | null) => controllerRef.current?.recenterOnStop(stop),
+      recenterOnCoords: (coords, z) => controllerRef.current?.recenterOnCoords(coords, z),
+      fitCorridorBounds: () => controllerRef.current?.fitCorridorBounds(),
+      fitWalkingBounds: () => controllerRef.current?.fitWalkingBounds(),
+      setTileTheme: (theme) => controllerRef.current?.setTileTheme(theme),
+      invalidateSize: () => controllerRef.current?.invalidateSize(),
+    }),
+    []
+  );
+
+  // Sync Tile Theme
+  useEffect(() => {
+    if (!controllerRef.current || !mapReady || !tileTheme) return;
+    controllerRef.current.setTileTheme(tileTheme);
+  }, [tileTheme, mapReady]);
 
   // Sync Home Location
   useEffect(() => {
@@ -335,161 +380,166 @@ export default function CommuterCorridorMap({
         </div>
       )}
 
-      {/* ─── 1. Top-Left Callouts: Route & Live Status Badges ─── */}
-      <div
-        className={`absolute left-3 z-10 pointer-events-none flex flex-col gap-1.5 max-w-[calc(100%-120px)] sm:max-w-md ${
-          isFullscreen ? "top-16" : "top-3"
-        }`}
-      >
-        {assignedRoute && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/95 dark:bg-blue-950/95 backdrop-blur-md text-white text-[11px] font-bold shadow-md border border-blue-400/40 w-fit pointer-events-auto">
-            <RouteIcon className="w-3.5 h-3.5 text-blue-300 shrink-0" />
-            <span className="truncate">Route: {assignedRoute.name}</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/90 dark:bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold shadow-md border border-white/10 w-fit pointer-events-auto">
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              isTelematicsLive ? "bg-emerald-400 animate-pulse" : "bg-blue-400"
+      {/* ─── Inline Overlays (Hidden when embedded in dedicated FullScreenLiveRadarView) ─── */}
+      {!hideInlineControls && (
+        <>
+          {/* ─── 1. Top-Left Callouts: Route & Live Status Badges ─── */}
+          <div
+            className={`absolute left-3 z-10 pointer-events-none flex flex-col gap-1.5 max-w-[calc(100%-120px)] sm:max-w-md ${
+              isFullscreen ? "top-16" : "top-3"
             }`}
-          />
-          <span className="text-[11px] font-bold">
-            {isTelematicsLive ? "Live GPS Connected" : "Scheduled Dispatch"}
-          </span>
-        </div>
-      </div>
-
-      {/* ─── 2. Top-Right Radar Shortcut (if radarHref provided) ─── */}
-      {radarHref && !isFullscreen && (
-        <div className="absolute top-3 right-14 z-10">
-          <Link
-            href={radarHref}
-            className="px-3 py-1.5 rounded-xl bg-indigo-600/95 hover:bg-indigo-700 active:scale-95 text-white text-[11px] font-bold backdrop-blur-md shadow-lg border border-white/20 flex items-center gap-1.5 transition-all group cursor-pointer"
-            title="Launch Full-Screen Live Radar"
           >
-            <Radio className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
-            <span>Full Radar</span>
-            <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
-          </Link>
-        </div>
-      )}
-
-      {/* ─── 3. Right-Side Map Controls ─── */}
-      <div
-        className={`absolute right-3 z-10 flex flex-col gap-1.5 shadow-md ${
-          isFullscreen ? "top-16" : "top-3"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={handleRecenterLocation}
-          title="Recenter on My Location / Home"
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
-        >
-          <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        </button>
-
-        <button
-          type="button"
-          onClick={handleFitWalkView}
-          title="Fit Walking Path in View"
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
-        >
-          <Footprints className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        </button>
-
-        {busLocation && (
-          <button
-            type="button"
-            onClick={handleFocusBus}
-            title="Focus on Live Bus"
-            className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
-          >
-            <BusFront className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={handleFitCorridor}
-          title="View Entire Corridor"
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
-        >
-          <RouteIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-        </button>
-
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          title={isFullscreen ? "Exit Fullscreen" : "Expand Fullscreen Map"}
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
-        >
-          {isFullscreen ? (
-            <Minimize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          ) : (
-            <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          )}
-        </button>
-
-        <div className="flex flex-col rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 overflow-hidden divide-y divide-gray-100 dark:divide-zinc-700 shadow-sm mt-0.5">
-          <button
-            type="button"
-            onClick={() => controllerRef.current?.zoomIn()}
-            title="Zoom In"
-            className="w-9 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => controllerRef.current?.zoomOut()}
-            title="Zoom Out"
-            className="w-9 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* ─── 4. Bottom Assigned Stop & Walking Path Pill Card (Direct from Settings) ─── */}
-      {assignedStop && (
-        <div className="absolute bottom-3 left-3 right-3 sm:right-auto z-10 pointer-events-none">
-          <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-gray-200 dark:border-zinc-700 shadow-xl text-gray-800 dark:text-white pointer-events-auto max-w-sm sm:max-w-md">
-            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
-              <Footprints className="w-4.5 h-4.5" />
-            </div>
-            <div className="min-w-0 pr-2">
-              <div className="text-[10px] uppercase font-extrabold text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-1.5">
-                <span>Assigned Boarding Stop</span>
+            {assignedRoute && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/95 dark:bg-blue-950/95 backdrop-blur-md text-white text-[11px] font-bold shadow-md border border-blue-400/40 w-fit pointer-events-auto">
+                <RouteIcon className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                <span className="truncate">Route: {assignedRoute.name}</span>
               </div>
-              <div className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                {assignedStop.name}
-              </div>
-            </div>
-            <div className="ml-auto pl-2 border-l border-gray-200 dark:border-zinc-800 text-right shrink-0 flex items-center gap-2">
-              <div>
-                <div className="text-xs font-black text-emerald-600 dark:text-emerald-400">
-                  {effectiveWalkDist}m
-                </div>
-                <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
-                  ~{effectiveWalkMins} min walk
-                </div>
-              </div>
-              {directionsUrl && (
-                <a
-                  href={directionsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center transition-colors cursor-pointer"
-                  title="Open Walking Navigation in Google Maps"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                </a>
-              )}
+            )}
+
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/90 dark:bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold shadow-md border border-white/10 w-fit pointer-events-auto">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  isTelematicsLive ? "bg-emerald-400 animate-pulse" : "bg-blue-400"
+                }`}
+              />
+              <span className="text-[11px] font-bold">
+                {isTelematicsLive ? "Live GPS Connected" : "Scheduled Dispatch"}
+              </span>
             </div>
           </div>
-        </div>
+
+          {/* ─── 2. Top-Right Radar Shortcut (if radarHref provided) ─── */}
+          {radarHref && !isFullscreen && (
+            <div className="absolute top-3 right-14 z-10">
+              <Link
+                href={radarHref}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600/95 hover:bg-indigo-700 active:scale-95 text-white text-[11px] font-bold backdrop-blur-md shadow-lg border border-white/20 flex items-center gap-1.5 transition-all group cursor-pointer"
+                title="Launch Full-Screen Live Radar"
+              >
+                <Radio className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+                <span>Full Radar</span>
+                <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+          )}
+
+          {/* ─── 3. Right-Side Map Controls ─── */}
+          <div
+            className={`absolute right-3 z-10 flex flex-col gap-1.5 shadow-md ${
+              isFullscreen ? "top-16" : "top-3"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={handleRecenterLocation}
+              title="Recenter on My Location / Home"
+              className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
+            >
+              <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleFitWalkView}
+              title="Fit Walking Path in View"
+              className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
+            >
+              <Footprints className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            </button>
+
+            {busLocation && (
+              <button
+                type="button"
+                onClick={handleFocusBus}
+                title="Focus on Live Bus"
+                className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
+              >
+                <BusFront className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleFitCorridor}
+              title="View Entire Corridor"
+              className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
+            >
+              <RouteIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit Fullscreen" : "Expand Fullscreen Map"}
+              className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
+            >
+              {isFullscreen ? (
+                <Minimize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              )}
+            </button>
+
+            <div className="flex flex-col rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 overflow-hidden divide-y divide-gray-100 dark:divide-zinc-700 shadow-sm mt-0.5">
+              <button
+                type="button"
+                onClick={() => controllerRef.current?.zoomIn()}
+                title="Zoom In"
+                className="w-9 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => controllerRef.current?.zoomOut()}
+                title="Zoom Out"
+                className="w-9 h-7 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-xs cursor-pointer"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* ─── 4. Bottom Assigned Stop & Walking Path Pill Card (Direct from Settings) ─── */}
+          {assignedStop && (
+            <div className="absolute bottom-3 left-3 right-3 sm:right-auto z-10 pointer-events-none">
+              <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-gray-200 dark:border-zinc-700 shadow-xl text-gray-800 dark:text-white pointer-events-auto max-w-sm sm:max-w-md">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+                  <Footprints className="w-4.5 h-4.5" />
+                </div>
+                <div className="min-w-0 pr-2">
+                  <div className="text-[10px] uppercase font-extrabold text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-1.5">
+                    <span>Assigned Boarding Stop</span>
+                  </div>
+                  <div className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                    {assignedStop.name}
+                  </div>
+                </div>
+                <div className="ml-auto pl-2 border-l border-gray-200 dark:border-zinc-800 text-right shrink-0 flex items-center gap-2">
+                  <div>
+                    <div className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                      {effectiveWalkDist}m
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
+                      ~{effectiveWalkMins} min walk
+                    </div>
+                  </div>
+                  {directionsUrl && (
+                    <a
+                      href={directionsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center transition-colors cursor-pointer"
+                      title="Open Walking Navigation in Google Maps"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Global Tooltip & Node Styles */}
@@ -593,4 +643,6 @@ export default function CommuterCorridorMap({
       `}</style>
     </div>
   );
-}
+});
+
+export default CommuterCorridorMap;

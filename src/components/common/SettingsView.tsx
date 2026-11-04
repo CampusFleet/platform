@@ -19,6 +19,8 @@ import { UserRole } from "@/lib/types";
 
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
+import { CommuterHomeLocationCard } from "@/components/common/CommuterHomeLocationCard";
+import { CommuterSeatPreferencesCard } from "@/components/common/CommuterSeatPreferencesCard";
 
 export function SettingsView() {
   const pathname = usePathname();
@@ -688,58 +690,6 @@ export function SettingsView() {
     }
   };
 
-  const handleSubmitSwitchRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const user = store.getCurrentUser();
-    const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-    const studentId = activeStudent?.id || user?.id;
-    if (!studentId) return;
-
-    const currentBusId = activeReservation?.bus_id || activeReservation?.busId || (availableBuses[0]?.id || "");
-    const currentStopId = activeReservation?.boarding_stop_id || activeReservation?.boardingStopId || activeStudent?.primaryStopId || (availableStops[0]?.id || "");
-
-    if (!targetBusId && !targetStopId) {
-      showToast("warning", "Please select either a requested bus or requested stop.", "Selection Required");
-      return;
-    }
-
-    setIsSubmittingSwitch(true);
-    setSwitchStatusMsg(null);
-    try {
-      const res = await fetch("/api/students/switch-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          currentBusId,
-          currentStopId,
-          requestedBusId: targetBusId || undefined,
-          requestedStopId: targetStopId || undefined,
-          requestType: switchType,
-          reason: switchReason.trim(),
-          effectiveFrom: switchDate,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Failed to submit request");
-      const isAuto = data.evaluation?.overallDecision === "AUTO_APPROVED";
-      const statusText = data.message || "Switch request submitted.";
-      setSwitchStatusMsg({
-        type: isAuto ? "success" : "error",
-        text: statusText,
-      });
-      showToast(isAuto ? "success" : "info", statusText, isAuto ? "Transfer Auto-Approved" : "Switch Submitted");
-      if (data.request) {
-        setSwitchRequests(prev => [data.request, ...prev]);
-      }
-      setSwitchReason("");
-    } catch (err: any) {
-      showToast("error", err.message || "Error submitting switch request", "Switch Request Error");
-    } finally {
-      setIsSubmittingSwitch(false);
-    }
-  };
-
   const courseOptions = useMemo(() => {
     return (academicData.courses || []).map(crs => ({
       value: crs.id,
@@ -1260,360 +1210,67 @@ export function SettingsView() {
           </div>
         </div>
         
-        {/* Commute Transit Settings (Home Location & Nearest Stops) */}
+        {/* Commute Transit Settings: Interactive Onboarding Pin Drop & Seat Preferences */}
         {isCommuter && (
-          <div className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-none">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800/60">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Home Location & Commute Stops</h2>
-                <p className="text-xs text-gray-500 mt-1">Configure your residential GPS coordinates for automatic nearest stop assignment</p>
-              </div>
-              <div className="p-2 border border-gray-100 dark:border-gray-800 rounded-none text-gray-500">
-                <MapPin className="w-5 h-5" />
-              </div>
-            </div>
+          <>
+            <CommuterHomeLocationCard
+              studentId={
+                store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                store.getStaff().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                currentUser?.id ||
+                ""
+              }
+              initialAddress={homeAddress}
+              initialLat={parseFloat(homeLat) || 29.220936}
+              initialLng={parseFloat(homeLng) || 79.514496}
+              onLocationSaved={({ address, latitude, longitude, autoAssignedStopId }) => {
+                setHomeAddress(address);
+                setHomeLat(String(latitude));
+                setHomeLng(String(longitude));
+                if (autoAssignedStopId) setAutoAssignedStopId(autoAssignedStopId);
+                const sId =
+                  store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                  currentUser?.id;
+                if (sId) {
+                  fetch(`/api/students/attendance?studentId=${sId}`)
+                    .then(r => r.json())
+                    .then(resData => {
+                      if (resData.success && resData.reservation) {
+                        setActiveReservation(resData.reservation);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              }}
+              showToast={showToast}
+            />
 
-            <div className="p-6 space-y-6">
-              {homeStatusMsg && (
-                <div className="p-3 text-sm border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 text-green-800 dark:text-green-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                  <span>{homeStatusMsg}</span>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Street / Area Address</label>
-                    {isResolvingAddress && (
-                      <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 font-medium animate-pulse">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Fetching street address from map...
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={homeAddress}
-                    onChange={e => setHomeAddress(e.target.value)}
-                    placeholder={
-                      isResolvingAddress
-                        ? "Resolving street address from map provider..."
-                        : "E.g. Flat 402, Sunrise Residency, Main Ring Road"
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Latitude</label>
-                    <input
-                      type="text"
-                      value={homeLat}
-                      onChange={e => setHomeLat(e.target.value)}
-                      placeholder="E.g. 29.220849"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Longitude</label>
-                    <input
-                      type="text"
-                      value={homeLng}
-                      onChange={e => setHomeLng(e.target.value)}
-                      placeholder="E.g. 79.514651"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleDetectGPS}
-                    disabled={isDetectingGPS || isResolvingAddress}
-                    className="px-4 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200 font-medium rounded-none transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
-                  >
-                    <Navigation className={`w-4 h-4 ${isDetectingGPS ? "animate-spin text-green-600" : "text-gray-500"}`} />
-                    <span>
-                      {isDetectingGPS
-                        ? "Acquiring GPS..."
-                        : isResolvingAddress
-                        ? "Resolving Address..."
-                        : "Detect Current Location"}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveHomeLocation}
-                    disabled={isSavingHome || isResolvingAddress || !homeLat || !homeLng}
-                    className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-none transition-colors text-sm shadow-sm active:scale-95 cursor-pointer text-center"
-                  >
-                    {isSavingHome ? "Saving & Reserving Bus..." : "Save Coordinates & Calculate Stops"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Nearest Stops preview */}
-              {nearestStops && nearestStops.length > 0 && (
-                <div className="pt-4 border-t border-gray-100 dark:border-gray-800/60 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
-                        <BusFront className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-                        Nearby Stops & Boarding Selection
-                      </h3>
-                      <p className="text-[11px] text-gray-500">
-                        Choose your boarding stop from nearby corridor points
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-500 font-mono">OSRM / Road Distance</span>
-                  </div>
-
-                  <div className="divide-y divide-gray-100 dark:divide-gray-800/60 border border-gray-200 dark:border-gray-800">
-                    {nearestStops.map((stop: any, idx: number) => {
-                      const isAssigned = stop.id === autoAssignedStopId;
-                      return (
-                        <div key={stop.id || idx} className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isAssigned ? "bg-green-50/30 dark:bg-green-950/20" : "bg-white dark:bg-black"
-                        }`}>
-                          <div className="flex items-start gap-3">
-                            <span className={`text-xs font-mono px-2 py-0.5 border ${
-                              idx === 0
-                                ? "bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border-green-300 dark:border-green-800"
-                                : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400"
-                            }`}>
-                              #{idx + 1}
-                            </span>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                {stop.name}
-                                {idx === 0 && (
-                                  <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase bg-green-600 text-white">
-                                    Nearest
-                                  </span>
-                                )}
-                                {isAssigned && (
-                                  <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 border border-green-300 dark:border-green-800 flex items-center gap-1">
-                                    <Check className="w-3 h-3" /> Active Stop
-                                  </span>
-                                )}
-                              </p>
-                              {stop.landmark && (
-                                <p className="text-xs text-gray-500">Landmark: {stop.landmark}</p>
-                              )}
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] pt-1">
-                                {stop.routeName && (
-                                  <span className="px-1.5 py-0.5 border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-[10px]">
-                                    🚌 {stop.routeName}
-                                  </span>
-                                )}
-                                {stop.zoneCode && (
-                                  <span className="px-1.5 py-0.5 border border-purple-200 dark:border-purple-900/50 bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-[10px]">
-                                    🏷️ {stop.zoneCode}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100 dark:border-gray-800 gap-2 shrink-0">
-                            <div className="text-left sm:text-right">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">
-                                {stop.distanceKm !== undefined ? `${stop.distanceKm} km` : "Nearby"}
-                              </p>
-                              <p className="text-xs text-gray-500 flex items-center sm:justify-end gap-1">
-                                <Clock className="w-3 h-3" />
-                                {stop.walkTimeMins ? `~${stop.walkTimeMins} min walk` : "Walkable"}
-                              </p>
-                            </div>
-                            {!isAssigned && (
-                              <button
-                                type="button"
-                                disabled={isSelectingStop}
-                                onClick={() => handleSelectPickupStop(stop.id, stop.name)}
-                                className="px-3 py-1 bg-gray-100 dark:bg-zinc-800 hover:bg-green-600 hover:text-white text-xs font-semibold rounded-none border border-gray-300 dark:border-zinc-700 transition-colors cursor-pointer"
-                              >
-                                Select Stop
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Bus Switch & Transfer Request Card */}
-        {isCommuter && (
-          <div className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-none">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800/60">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Bus Switch & Route Transfer</h2>
-                <p className="text-xs text-gray-500 mt-1">Request a temporary swap or permanent bus transfer with automated capacity evaluation</p>
-              </div>
-              <div className="p-2 border border-gray-100 dark:border-gray-800 rounded-none text-gray-500">
-                <ArrowLeftRight className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {switchStatusMsg && (
-                <div
-                  className={`p-3 text-sm border flex items-center gap-2 ${
-                    switchStatusMsg.type === "success"
-                      ? "border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 text-green-800 dark:text-green-300"
-                      : "border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 text-amber-800 dark:text-amber-300"
-                  }`}
-                >
-                  {switchStatusMsg.type === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  )}
-                  <span>{switchStatusMsg.text}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmitSwitchRequest} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Request Type</label>
-                    <CustomDropdown
-                      value={switchType}
-                      onChange={val => setSwitchType(val as any)}
-                      options={[
-                        { value: "TEMPORARY_SWAP", label: "Temporary Swap (Today / Single Day)" },
-                        { value: "PERMANENT_TRANSFER", label: "Permanent Bus Transfer" },
-                        { value: "STOP_CHANGE", label: "Boarding Stop Change" },
-                      ]}
-                      placeholder="Select Request Type"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Effective Date</label>
-                    <input
-                      type="date"
-                      value={switchDate}
-                      onChange={e => setSwitchDate(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Requested Bus</label>
-                    <CustomDropdown
-                      value={targetBusId}
-                      onChange={val => setTargetBusId(val)}
-                      placeholder="-- Keep Current Bus / Auto-pick --"
-                      options={[
-                        { value: "", label: "-- Keep Current Bus / Auto-pick --" },
-                        ...availableBuses.map((b: any) => ({
-                          value: b.id,
-                          label: `${b.busNumber || b.bus_number} (${b.capacity || 40} seats)`,
-                        })),
-                      ]}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Requested Boarding Stop</label>
-                    <CustomDropdown
-                      value={targetStopId}
-                      onChange={val => setTargetStopId(val)}
-                      placeholder="-- Keep Current Stop --"
-                      options={[
-                        { value: "", label: "-- Keep Current Stop --" },
-                        ...availableStops.map((s: any) => ({
-                          value: s.id,
-                          label: `${s.name}${s.landmark ? ` (${s.landmark})` : ""}`,
-                        })),
-                      ]}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Reason for Request</label>
-                  <textarea
-                    rows={2}
-                    value={switchReason}
-                    onChange={e => setSwitchReason(e.target.value)}
-                    placeholder="E.g. Staying at relative's place near South Campus for exams this week"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-none focus:outline-none focus:border-green-500 text-sm"
-                  />
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmittingSwitch || (!targetBusId && !targetStopId)}
-                    className="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-none transition-colors text-sm"
-                  >
-                    {isSubmittingSwitch ? "Submitting..." : "Submit Switch Request"}
-                  </button>
-                </div>
-              </form>
-
-              {/* Switch History */}
-              <div className="pt-4 border-t border-gray-100 dark:border-gray-800/60 space-y-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Request History & Decisions
-                </h3>
-
-                {switchRequests.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-3">No switch requests submitted yet.</p>
-                ) : (
-                  <div className="divide-y divide-gray-100 dark:divide-gray-800/60 border border-gray-200 dark:border-gray-800">
-                    {switchRequests.map((req: any) => {
-                      const isApproved = req.status === "AUTO_APPROVED" || req.status === "APPROVED";
-                      const isDenied = req.status === "AUTO_DENIED" || req.status === "DENIED";
-                      return (
-                        <div key={req.id} className="p-3.5 space-y-1.5 bg-white dark:bg-black">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium text-gray-900 dark:text-white">
-                              {req.request_type ? req.request_type.replace(/_/g, " ") : "Switch Request"}
-                            </span>
-                            <span
-                              className={`text-[11px] font-semibold px-2 py-0.5 border ${
-                                isApproved
-                                  ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800"
-                                  : isDenied
-                                  ? "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"
-                                  : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                              }`}
-                            >
-                              {req.status}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-gray-500">
-                            Effective: <span className="text-gray-700 dark:text-gray-300">{req.effective_from || "Today"}</span>
-                            {req.reason && ` • "${req.reason}"`}
-                          </p>
-
-                          {req.ai_reasoning && (
-                            <p className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 border border-gray-100 dark:border-gray-800">
-                              <span className="font-medium text-gray-700 dark:text-gray-300">Decision details: </span>
-                              {req.ai_reasoning}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+            <CommuterSeatPreferencesCard
+              studentId={
+                store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                store.getStaff().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                currentUser?.id ||
+                ""
+              }
+              activeReservation={activeReservation}
+              onPreferencesUpdated={() => {
+                const sId =
+                  store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
+                  currentUser?.id;
+                if (sId) {
+                  fetch(`/api/students/attendance?studentId=${sId}`)
+                    .then(r => r.json())
+                    .then(resData => {
+                      if (resData.success && resData.reservation) {
+                        setActiveReservation(resData.reservation);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              }}
+              showToast={showToast}
+            />
+          </>
         )}
         
         {/* Appearance Card */}

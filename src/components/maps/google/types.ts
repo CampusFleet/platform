@@ -51,6 +51,10 @@ export interface GoogleTransitMapProps {
   interactiveMode?: "VIEW" | "PIN_DROP";
   showUserLocation?: boolean;
   showCampusLandmark?: boolean;
+  userCoords?: { latitude: number; longitude: number } | null;
+  userAddress?: string | null;
+  userPickupStopId?: string | null;
+  campusDestinationId?: string | null;
   tileTheme?: "GOOGLE_STREETS" | "CARTO_VOYAGER" | "CARTO_DARK" | "GOOGLE_HYBRID" | "AUTO";
   onRouteMetricsCalculated?: (metrics: RouteMetrics) => void;
   onError?: (err: any) => void;

@@ -46,3 +46,4 @@ export interface SeatPartnerState {
   partnerSeat: string | null;
   partnerName: string | null;
 }
+

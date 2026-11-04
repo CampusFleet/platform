@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { Stop } from "@/lib/types";
 import { getCampusStopFromDatabase } from "./CampusFleetMap";
@@ -10,6 +10,9 @@ import {
   createStopMarkerSvgUri,
   createBusMarkerSvgUri,
   createHomePinMarkerSvgUri,
+  createSourceUserMarkerSvgUri,
+  createPickupStopMarkerSvgUri,
+  createCampusDestinationMarkerSvgUri,
 } from "./google/markerIcons";
 import { MapOverlays } from "./google/MapOverlays";
 
@@ -32,6 +35,10 @@ export default function GoogleTransitMap({
   walkingCoordinates = [],
   activeStopIndex = 0,
   selectedStopId,
+  userPickupStopId,
+  campusDestinationId,
+  userCoords,
+  userAddress,
   isExpressDirect,
   height = "400px",
   zoom = 14,
@@ -48,7 +55,8 @@ export default function GoogleTransitMap({
 }: GoogleTransitMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  const onRouteMetricsCalculatedRef = useRef(onRouteMetricsCalculated);
+  onRouteMetricsCalculatedRef.current = onRouteMetricsCalculated;
 
   // Persistent Google Native Polylines
   const fullOverviewPathRef = useRef<google.maps.LatLng[]>([]);
@@ -72,6 +80,14 @@ export default function GoogleTransitMap({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
+
+  // Effective user source location: either passed userCoords or browser GPS
+  const effectiveUserLoc = useMemo(() => {
+    if (userCoords?.latitude && userCoords?.longitude) {
+      return { lat: userCoords.latitude, lng: userCoords.longitude, accuracy: 25 };
+    }
+    return userLocation;
+  }, [userCoords, userLocation]);
 
   // Transient Pin Helper: Shows for exactly 1 second, then auto-disappears
   const [showPinHint, setShowPinHint] = useState(false);
@@ -195,7 +211,6 @@ export default function GoogleTransitMap({
           });
 
           mapRef.current = map;
-          directionsServiceRef.current = new routesLib.DirectionsService();
           setMapLoaded(true);
         })
         .catch((err) => {
@@ -281,13 +296,12 @@ export default function GoogleTransitMap({
     [tripStatus]
   );
 
-  // ── 5. Directions Service Query (STRICT SECURITY ISOLATION: SKIPPED IN PIN_DROP MODE) ──
+  // ── 5. Authoritative Route Geometry Query (Server-side Google Routes API v2) ──
   useEffect(() => {
     const map = mapRef.current;
-    const directionsService = directionsServiceRef.current;
-    if (!map || !mapLoaded || !directionsService || typeof window === "undefined" || !window.google) return;
+    if (!map || !mapLoaded || typeof window === "undefined" || !window.google) return;
 
-    // SECURITY: In PIN_DROP mode, NEVER fetch or draw multi-stop transit route curves to prevent route data leaks
+    // In PIN_DROP mode, NEVER fetch or draw multi-stop transit route curves
     if (isPinDrop) {
       if (traveledPolylineRef.current) traveledPolylineRef.current.setMap(null);
       if (upcomingPolylineRef.current) upcomingPolylineRef.current.setMap(null);
@@ -310,11 +324,15 @@ export default function GoogleTransitMap({
 
     if (waypoints.length < 2) return;
 
-    const cacheKey = `cf_gdir_v4_${waypoints.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
+    const cacheKey = `cf_groutes_v5_${waypoints.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";")}`;
 
-    function applyRouteResult(result: google.maps.DirectionsResult) {
-      if (!isMounted || !result.routes?.[0]?.overview_path) return;
-      fullOverviewPathRef.current = result.routes[0].overview_path;
+    const applyRouteCoordinates = (
+      coords: [number, number][],
+      metrics?: { distanceKm: number; durationMins: number }
+    ) => {
+      if (!isMounted || !mapRef.current || coords.length < 2) return;
+      const path = coords.map(([lat, lng]) => new google.maps.LatLng(lat, lng));
+      fullOverviewPathRef.current = path;
 
       const currentBusPos =
         busLocation && typeof busLocation.latitude === "number"
@@ -322,97 +340,91 @@ export default function GoogleTransitMap({
           : null;
       updateTraveledAndUpcoming(currentBusPos);
 
-      // Route metrics
-      if (result.routes[0].legs) {
-        let totalDistMeters = 0;
-        let totalDurSec = 0;
-        const legs = result.routes[0].legs.map((leg) => {
-          totalDistMeters += leg.distance?.value || 0;
-          totalDurSec += leg.duration?.value || 0;
-          return {
-            distanceKm: Math.round(((leg.distance?.value || 0) / 1000) * 100) / 100,
-            durationMins: Math.round(((leg.duration?.value || 0) / 60) * 10) / 10,
-            distanceText: leg.distance?.text || "",
-            durationText: leg.duration?.text || "",
-          };
-        });
-
-        onRouteMetricsCalculated?.({
-          totalDistanceKm: Math.round((totalDistMeters / 1000) * 100) / 100,
-          totalDurationMins: Math.round((totalDurSec / 60) * 10) / 10,
+      if (metrics) {
+        onRouteMetricsCalculatedRef.current?.({
+          totalDistanceKm: metrics.distanceKm,
+          totalDurationMins: metrics.durationMins,
           sourceProvenance: "google_directions_api",
           isGoogleAuthoritative: true,
           isDegradedFallback: false,
-          legs,
+          legs: [
+            {
+              distanceKm: metrics.distanceKm,
+              durationMins: metrics.durationMins,
+              distanceText: `${metrics.distanceKm.toFixed(1)} km`,
+              durationText: `${Math.round(metrics.durationMins)} mins`,
+            },
+          ],
         });
       }
 
-      if (!initialFitDoneRef.current && mapRef.current && result.routes?.[0]?.bounds) {
-        mapRef.current.fitBounds(result.routes[0].bounds, { top: 60, right: 40, bottom: 60, left: 40 });
+      if (!initialFitDoneRef.current && mapRef.current) {
+        const bounds = new google.maps.LatLngBounds();
+        path.forEach((p) => bounds.extend(p));
+        if (effectiveUserLoc) {
+          bounds.extend(new google.maps.LatLng(effectiveUserLoc.lat, effectiveUserLoc.lng));
+        }
+        mapRef.current.fitBounds(bounds, { top: 70, right: 40, bottom: 80, left: 40 });
         initialFitDoneRef.current = true;
       }
-    }
+    };
 
-    const inMem = inMemoryGoogleDirectionsCache.get(cacheKey);
-    if (inMem) {
-      applyRouteResult(inMem);
-      return;
-    }
-
+    // Check memory or sessionStorage cache
     try {
-      const cachedRaw = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
-      if (cachedRaw) {
-        const envelope: AuthoritativeGoogleDirectionsEnvelope = JSON.parse(cachedRaw);
-        if (envelope?.version === "4.0" && envelope?.directionsResult?.routes?.length > 0) {
-          applyRouteResult(envelope.directionsResult);
-          inMemoryGoogleDirectionsCache.set(cacheKey, envelope.directionsResult);
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed.coordinates) && parsed.coordinates.length >= 2) {
+          applyRouteCoordinates(parsed.coordinates, {
+            distanceKm: parsed.distanceKm,
+            durationMins: parsed.durationMins,
+          });
           return;
         }
       }
     } catch {}
 
-    const origin = { lat: waypoints[0][0], lng: waypoints[0][1] };
-    const destination = { lat: waypoints[waypoints.length - 1][0], lng: waypoints[waypoints.length - 1][1] };
-    const intermediate = waypoints.slice(1, -1).slice(0, 23).map(([lat, lng]) => ({
-      location: new google.maps.LatLng(lat, lng),
-      stopover: true,
-    }));
+    // Fetch authoritative Google Routes API v2 via server endpoint
+    const fetchRoute = async () => {
+      try {
+        const coordParam = waypoints.map(([lat, lng]) => `${lat},${lng}`).join(";");
+        const res = await fetch(`/api/geo/directions?coords=${coordParam}&mode=drive`);
+        if (!res.ok) throw new Error("Directions endpoint response not ok");
+        const data = await res.json();
+        if (isMounted && data.success && Array.isArray(data.coordinates) && data.coordinates.length >= 2) {
+          const distKm = data.distanceMeters ? Number((data.distanceMeters / 1000).toFixed(2)) : 0;
+          const durMins = data.durationSeconds ? Number((data.durationSeconds / 60).toFixed(1)) : 0;
 
-    directionsService.route(
-      {
-        origin,
-        destination,
-        waypoints: intermediate,
-        travelMode: google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (!isMounted) return;
-        if (status === google.maps.DirectionsStatus.OK && result) {
-          inMemoryGoogleDirectionsCache.set(cacheKey, result);
-          applyRouteResult(result);
           try {
             sessionStorage.setItem(
               cacheKey,
               JSON.stringify({
-                version: "4.0",
-                provider: "google",
-                sourceProvenance: "google_directions_api",
-                isGoogleAuthoritative: true,
-                cachedAt: Date.now(),
-                directionsResult: result,
+                coordinates: data.coordinates,
+                distanceKm: distKm,
+                durationMins: durMins,
               })
             );
           } catch {}
+
+          applyRouteCoordinates(data.coordinates, { distanceKm: distKm, durationMins: durMins });
+        } else {
+          applyRouteCoordinates(waypoints);
+        }
+      } catch (err) {
+        if (isMounted) {
+          applyRouteCoordinates(waypoints);
         }
       }
-    );
+    };
+
+    fetchRoute();
 
     return () => {
       isMounted = false;
     };
-  }, [mapLoaded, stops, routeCoordinates, isPinDrop, onRouteMetricsCalculated, updateTraveledAndUpcoming, busLocation]);
+  }, [mapLoaded, stops, routeCoordinates, isPinDrop]);
 
-  // ── 6. First-Mile Walking Polyline ──
+  // ── 6. First-Mile Walking Polyline (Road-snapped pedestrian walk) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !window.google) return;
@@ -422,20 +434,49 @@ export default function GoogleTransitMap({
       walkingPolylineRef.current = null;
     }
 
-    if (walkingCoordinates && walkingCoordinates.length >= 2) {
-      const walkingPath = walkingCoordinates.map(([lat, lng]) => new google.maps.LatLng(lat, lng));
+    if (!walkingCoordinates || walkingCoordinates.length < 2) return;
+
+    let isMounted = true;
+    const drawWalkingPath = (coords: [number, number][]) => {
+      if (!isMounted || !mapRef.current) return;
+      if (walkingPolylineRef.current) walkingPolylineRef.current.setMap(null);
+      const walkingPath = coords.map(([lat, lng]) => new google.maps.LatLng(lat, lng));
       walkingPolylineRef.current = new google.maps.Polyline({
         path: walkingPath,
         strokeColor: "#10B981",
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        zIndex: 12,
-        map,
+        strokeOpacity: 0.95,
+        strokeWeight: 4.5,
+        zIndex: 16,
+        map: mapRef.current,
       });
+    };
+
+    if (walkingCoordinates.length > 2) {
+      drawWalkingPath(walkingCoordinates);
+      return;
     }
+
+    // Try snapping pedestrian road walk via server
+    const walkCoordParam = walkingCoordinates.map(([lat, lng]) => `${lat},${lng}`).join(";");
+    fetch(`/api/geo/directions?coords=${walkCoordParam}&mode=walk`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data?.success && Array.isArray(data.coordinates) && data.coordinates.length >= 2) {
+          drawWalkingPath(data.coordinates);
+        } else {
+          drawWalkingPath(walkingCoordinates);
+        }
+      })
+      .catch(() => {
+        if (isMounted) drawWalkingPath(walkingCoordinates);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [mapLoaded, walkingCoordinates]);
 
-  // ── 7. Render Station Stop Markers (DATA LEAK GUARD: In PIN_DROP mode, only render assigned stop) ──
+  // ── 7. Render Station Stop Markers with Pick-Up & Destination Highlights ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || typeof window === "undefined" || !window.google) return;
@@ -443,8 +484,6 @@ export default function GoogleTransitMap({
     stopMarkersRef.current.forEach((m) => m.setMap(null));
     stopMarkersRef.current = [];
 
-    // DATA PRIVACY: In PIN_DROP mode, NEVER render all system stops across towns!
-    // Only render the commuter's selected/allocated stop to prevent route data leaks.
     const stopsToRender = isPinDrop
       ? (selectedStopId ? stops.filter((s) => s.id === selectedStopId) : [])
       : stops;
@@ -458,9 +497,15 @@ export default function GoogleTransitMap({
 
     stopsToRender.forEach((stop, idx) => {
       const isSelected = Boolean(selectedStopId && stop.id === selectedStopId);
+      const isUserPickup = Boolean(
+        (userPickupStopId && stop.id === userPickupStopId) ||
+        (selectedStopId && stop.id === selectedStopId)
+      );
       const isNext = idx === effectiveStopIndex;
       const isPassed = idx < effectiveStopIndex;
-      const isTerminal = idx === stopsToRender.length - 1 && !isPinDrop;
+      const isTerminal =
+        (campusDestinationId && stop.id === campusDestinationId) ||
+        (idx === stopsToRender.length - 1 && !isPinDrop);
 
       const state: "passed" | "next" | "upcoming" | "selected" = isSelected
         ? "selected"
@@ -474,18 +519,29 @@ export default function GoogleTransitMap({
         index: isPinDrop ? 1 : idx + 1,
         state,
         isTerminal,
+        isPickupStop: isUserPickup,
       });
+
+      const isLargePin = isUserPickup || isTerminal;
+      const sizePx = isLargePin ? 48 : 34;
+      const anchorPx = isLargePin ? 24 : 17;
+
+      const titleLabel = isUserPickup
+        ? `📍 YOUR PICK-UP POINT: ${stop.name} (${stop.code})`
+        : isTerminal
+        ? `🏛️ DESTINATION: ${stop.name}`
+        : `${stop.name} (${stop.code})`;
 
       const marker = new google.maps.Marker({
         position: { lat: stop.latitude, lng: stop.longitude },
         map,
         icon: {
           url: iconUrl,
-          scaledSize: isTerminal ? new google.maps.Size(44, 44) : new google.maps.Size(34, 34),
-          anchor: isTerminal ? new google.maps.Point(22, 22) : new google.maps.Point(17, 17),
+          scaledSize: new google.maps.Size(sizePx, sizePx),
+          anchor: new google.maps.Point(anchorPx, anchorPx),
         },
-        title: `${stop.name} (${stop.code})`,
-        zIndex: isSelected ? 400 : 200 + idx,
+        title: titleLabel,
+        zIndex: isUserPickup ? 850 : isTerminal ? 800 : isSelected ? 400 : 200 + idx,
       });
 
       marker.addListener("click", () => {
@@ -494,7 +550,7 @@ export default function GoogleTransitMap({
 
       stopMarkersRef.current.push(marker);
     });
-  }, [mapLoaded, stops, activeStopIndex, selectedStopId, isPinDrop, onStopClick, busLocation?.currentStopId]);
+  }, [mapLoaded, stops, activeStopIndex, selectedStopId, userPickupStopId, campusDestinationId, isPinDrop, onStopClick, busLocation?.currentStopId]);
 
   // ── 8. Live Bus Vehicle Marker ──
   useEffect(() => {
@@ -608,40 +664,38 @@ export default function GoogleTransitMap({
     }
   }, [mapLoaded, draftPinLocation, draftGeofenceRadius, isPinDrop]);
 
-  // ── 10. User GPS Blue Dot Marker ──
+  // ── 10. User GPS Source Location Marker (Origin) ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !window.google || !userLocation) return;
+    if (!map || !mapLoaded || !window.google || !effectiveUserLoc) return;
 
     if (userCircleRef.current) userCircleRef.current.setMap(null);
     if (userMarkerRef.current) userMarkerRef.current.setMap(null);
 
     userCircleRef.current = new google.maps.Circle({
-      center: { lat: userLocation.lat, lng: userLocation.lng },
-      radius: userLocation.accuracy || 30,
+      center: { lat: effectiveUserLoc.lat, lng: effectiveUserLoc.lng },
+      radius: Math.min(effectiveUserLoc.accuracy || 30, 200),
       strokeColor: "#3B82F6",
       strokeOpacity: 0.5,
-      strokeWeight: 1,
+      strokeWeight: 1.5,
       fillColor: "#60A5FA",
-      fillOpacity: 0.15,
+      fillOpacity: 0.18,
       map,
     });
 
+    const userSvgUri = createSourceUserMarkerSvgUri();
     userMarkerRef.current = new google.maps.Marker({
-      position: { lat: userLocation.lat, lng: userLocation.lng },
+      position: { lat: effectiveUserLoc.lat, lng: effectiveUserLoc.lng },
       map,
       icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 7,
-        fillColor: "#2563EB",
-        fillOpacity: 1,
-        strokeColor: "#FFFFFF",
-        strokeWeight: 2.5,
+        url: userSvgUri,
+        scaledSize: new google.maps.Size(46, 46),
+        anchor: new google.maps.Point(23, 23),
       },
-      title: "Your GPS Location",
-      zIndex: 900,
+      title: userAddress ? `📍 Your Location (Source): ${userAddress}` : "📍 Your Live Location (Source)",
+      zIndex: 950,
     });
-  }, [mapLoaded, userLocation]);
+  }, [mapLoaded, effectiveUserLoc, userAddress]);
 
   return (
     <div

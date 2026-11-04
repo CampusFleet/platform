@@ -475,6 +475,21 @@ export default function FullScreenLiveRadarView({
   const currentBusLng = liveLocation?.longitude ?? sourceStop?.longitude ?? 79.5295;
   const busSpeedKmh = liveLocation?.speedKmh ?? 0;
 
+  const fallbackBusLocation = useMemo(
+    () => ({
+      busId: assignedBus?.id ?? -1,
+      latitude: currentBusLat,
+      longitude: currentBusLng,
+      speedKmh: busSpeedKmh,
+      headingDeg: 0,
+      lastPingAt: "",
+      tripId: initialReservation?.trip_id || "",
+      delayMinutes: 0,
+      estimatedArrivalNextStopMins: 3,
+    }),
+    [assignedBus?.id, currentBusLat, currentBusLng, busSpeedKmh, initialReservation?.trip_id]
+  );
+
   // Calculate distance & ETA to every destination along the corridor using real Google Maps road data
   const destinationsWithMetrics = useMemo(() => {
     // Strictly verify authoritative Google provenance
@@ -813,21 +828,7 @@ export default function FullScreenLiveRadarView({
       {/* ─── 2. FULLSCREEN INTERACTIVE LEAFLET GIS CANVAS (With Google Maps Streets) ─── */}
       <div className="relative w-full flex-1 h-full min-h-[400px]">
         <CampusFleetMap
-          busLocation={
-            liveLocation
-              ? liveLocation
-              : {
-                busId: assignedBus?.id ?? -1,
-                latitude: currentBusLat,
-                longitude: currentBusLng,
-                speedKmh: busSpeedKmh,
-                headingDeg: 0,
-                lastPingAt: new Date().toISOString(),
-                tripId: initialReservation?.trip_id || "",
-                delayMinutes: 0,
-                estimatedArrivalNextStopMins: 3,
-              }
-          }
+          busLocation={liveLocation || fallbackBusLocation}
           busName={displayBusNumber}
           tripStatus="IN_PROGRESS"
           stops={orderedDestinations}
@@ -835,11 +836,15 @@ export default function FullScreenLiveRadarView({
           walkingCoordinates={isUserBoarded ? [] : walkingCoordinates}
           activeStopIndex={nextDestination?.index ?? 0}
           selectedStopId={commuterStop?.id || selectedDestinationId || nextDestination?.id}
+          userPickupStopId={commuterStop?.id}
+          campusDestinationId={terminalStop?.id}
+          userCoords={resolvedUserCoords}
+          userAddress={student?.homeAddress || "Your Origin"}
           tileTheme={tileTheme}
           height="100%"
           zoom={15}
-          showUserLocation={false}
-          showCampusLandmark={false}
+          showUserLocation={true}
+          showCampusLandmark={true}
           onRouteMetricsCalculated={setRouteMetrics}
           onStopClick={(clickedStop) => {
             setSelectedDestinationId(clickedStop.id);
@@ -849,6 +854,19 @@ export default function FullScreenLiveRadarView({
 
         {/* ─── FLOATING GIS ACTION BUTTONS (Right Side) ─── */}
         <div className={`absolute right-3 sm:right-6 z-20 flex flex-col gap-2.5 transition-all duration-300 ${isNavCardMinimized ? "top-20 sm:top-20" : "top-52 sm:top-48"}`}>
+          {/* Focus My Location (Source) */}
+          {resolvedUserCoords && (
+            <button
+              onClick={() => {
+                setMapFocusTarget("MY_STOP");
+              }}
+              className="p-3 rounded-2xl bg-white dark:bg-black hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xl transition-all active:scale-90 cursor-pointer flex items-center justify-center group"
+              title="Focus Your Live Location (Source)"
+            >
+              <Compass className="w-5 h-5 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
+            </button>
+          )}
+
           {/* Re-center Bus Button */}
           <button
             onClick={() => setMapFocusTarget("BUS")}

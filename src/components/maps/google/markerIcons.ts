@@ -4,21 +4,18 @@ export function createStopMarkerSvgUri(params: {
   index: number;
   state: "passed" | "next" | "upcoming" | "selected";
   isTerminal: boolean;
+  isPickupStop?: boolean;
   label?: string;
 }): string {
-  const { index, state, isTerminal } = params;
+  const { index, state, isTerminal, isPickupStop } = params;
+
+  // Prominent Commuter Pick-Up Stop (Boarding Point)
+  if (isPickupStop) {
+    return createPickupStopMarkerSvgUri();
+  }
 
   if (isTerminal) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
-      <defs>
-        <filter id="ts" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2.5" stdDeviation="3" flood-opacity="0.4"/>
-        </filter>
-      </defs>
-      <circle cx="22" cy="22" r="19" fill="#4338CA" stroke="#C7D2FE" stroke-width="2.5" filter="url(#ts)"/>
-      <path d="M14 27h16M16 27v-8M22 27v-8M28 27v-8M13 19l9-6 9 6H13z" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    </svg>`;
-    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+    return createCampusDestinationMarkerSvgUri();
   }
 
   if (state === "passed") {
@@ -54,6 +51,72 @@ export function createStopMarkerSvgUri(params: {
     </defs>
     <circle cx="16" cy="16" r="12" fill="#FFFFFF" stroke="#1D4ED8" stroke-width="2.5" filter="url(#us)"/>
     <text x="16" y="20.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="12" fill="#1E40AF">${index}</text>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+}
+
+/**
+ * Commuter's Live Source Location (GPS or Doorstep Origin)
+ * Bright blue pulsating target beacon with white ring and center core
+ */
+export function createSourceUserMarkerSvgUri(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">
+    <defs>
+      <filter id="srcShadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#1D4ED8" flood-opacity="0.5"/>
+      </filter>
+    </defs>
+    <!-- Pulsing Radar Accuracy Ring -->
+    <circle cx="23" cy="23" r="21" fill="#3B82F6" fill-opacity="0.22" stroke="#60A5FA" stroke-width="1.8" stroke-dasharray="3,3"/>
+    <!-- Core Blue GPS Disc -->
+    <circle cx="23" cy="23" r="14" fill="#2563EB" stroke="#FFFFFF" stroke-width="3" filter="url(#srcShadow)"/>
+    <!-- Inner Core Dot -->
+    <circle cx="23" cy="23" r="5" fill="#FFFFFF"/>
+    <!-- Direction indicator / pulse pip -->
+    <circle cx="33" cy="13" r="3.5" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5"/>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+}
+
+/**
+ * Commuter's Allocated Pick-Up / Boarding Stop Marker
+ * Vivid Emerald pin with boarding badge and drop shadow
+ */
+export function createPickupStopMarkerSvgUri(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+    <defs>
+      <filter id="pkShadow" x="-25%" y="-25%" width="150%" height="150%">
+        <feDropShadow dx="0" dy="3.5" stdDeviation="3" flood-color="#047857" flood-opacity="0.45"/>
+      </filter>
+    </defs>
+    <!-- Outer halo -->
+    <circle cx="24" cy="24" r="22" fill="#10B981" fill-opacity="0.22" stroke="#34D399" stroke-width="2"/>
+    <!-- Emerald Core -->
+    <circle cx="24" cy="24" r="16" fill="#059669" stroke="#FFFFFF" stroke-width="3" filter="url(#pkShadow)"/>
+    <!-- Boarding Passenger Symbol -->
+    <path d="M24 13a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm-2 6.5v8.5h4v-8.5h2l-3-5a1.2 1.2 0 0 0-2 0l-3 5h2z" fill="#FFFFFF"/>
+    <circle cx="36" cy="12" r="4.5" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.5"/>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+}
+
+/**
+ * Institutional Campus Terminal / Destination Marker
+ * Royal Indigo badge with University Graduation Cap
+ */
+export function createCampusDestinationMarkerSvgUri(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+    <defs>
+      <filter id="campShadow" x="-25%" y="-25%" width="150%" height="150%">
+        <feDropShadow dx="0" dy="3.5" stdDeviation="3" flood-color="#312E81" flood-opacity="0.5"/>
+      </filter>
+    </defs>
+    <!-- Outer halo -->
+    <circle cx="24" cy="24" r="22" fill="#6366F1" fill-opacity="0.2" stroke="#818CF8" stroke-width="2"/>
+    <!-- Indigo Core -->
+    <circle cx="24" cy="24" r="16" fill="#4338CA" stroke="#FFFFFF" stroke-width="3" filter="url(#campShadow)"/>
+    <!-- University / Graduation Cap Icon -->
+    <path d="M24 13l-9 4.5 9 4.5 9-4.5-9-4.5zm-6 7.5v4c0 2.5 3 4.5 6 4.5s6-2 6-4.5v-4l-6 3-6-3z" fill="#FFFFFF"/>
   </svg>`;
   return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
 }

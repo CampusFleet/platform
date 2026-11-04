@@ -84,6 +84,10 @@ interface CampusFleetMapProps {
   activeStopIndex?: number;
   shortestPathStopIds?: string[];
   selectedStopId?: string;
+  userPickupStopId?: string | null;
+  campusDestinationId?: string | null;
+  userCoords?: { latitude: number; longitude: number } | null;
+  userAddress?: string | null;
   isExpressDirect?: boolean;
   expressReason?: string;
   height?: string;
@@ -230,6 +234,10 @@ function LeafletTransitMap({
   activeStopIndex = 0,
   shortestPathStopIds = [],
   selectedStopId,
+  userPickupStopId,
+  campusDestinationId,
+  userCoords,
+  userAddress,
   isExpressDirect,
   expressReason,
   height = "400px",
@@ -249,6 +257,14 @@ function LeafletTransitMap({
   const fleetMarkersMapRef = useRef<Map<number, any>>(new Map());
   const currentTileLayerRef = useRef<any>(null);
   const currentTileThemeRef = useRef<string>("");
+
+  // Effective user source location
+  const effectiveUserLocation = React.useMemo(() => {
+    if (userCoords?.latitude && userCoords?.longitude) {
+      return { lat: userCoords.latitude, lng: userCoords.longitude, accuracy: 25 };
+    }
+    return null;
+  }, [userCoords]);
 
   // Dual-color Google Maps path polylines (Completed = Gray, Upcoming = Blue)
   const polylineUpcomingGlowRef = useRef<any>(null);
@@ -777,15 +793,20 @@ function LeafletTransitMap({
       stopsToRender.forEach((stop, idx) => {
         const isPassed = idx < activeStopIndex;
         const isNext = idx === activeStopIndex;
-        const isStudentPickup = selectedStopId && stop.id === selectedStopId;
+        const isStudentPickup = Boolean(
+          (userPickupStopId && stop.id === userPickupStopId) ||
+          (selectedStopId && stop.id === selectedStopId)
+        );
         const isOnShortestPath = shortestPathSet.has(stop.id);
         const isStartOfPath = isCorridorSequence ? idx === 0 : hasSpecificRoute && shortestPathStopIds[0] === stop.id;
-        const isCampusTerminal =
+        const isCampusTerminal = Boolean(
+          (campusDestinationId && stop.id === campusDestinationId) ||
           stop.id === campusTerminalStop.id ||
           stop.id === campusTerminalStop.campusId ||
           stop.code === campusTerminalStop.code ||
           stop.name.toLowerCase().includes("campus terminal") ||
-          stop.name.toLowerCase().includes("university terminal");
+          stop.name.toLowerCase().includes("university terminal")
+        );
         const isEndOfPath = isCorridorSequence
           ? idx === stops.length - 1
           : (hasSpecificRoute && shortestPathStopIds[shortestPathStopIds.length - 1] === stop.id) ||
@@ -1238,7 +1259,8 @@ function LeafletTransitMap({
       }
 
       // Render User Live Location Marker (Google Maps Style Pulsing Blue Dot)
-      if (showUserLocation && userLocation) {
+      const activeUserPos = effectiveUserLocation || userLocation;
+      if (showUserLocation && activeUserPos) {
         const userIcon = L.divIcon({
           className: "custom-user-location-icon",
           html: `
@@ -1254,33 +1276,33 @@ function LeafletTransitMap({
         });
 
         if (!userMarkerRef.current) {
-          userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
+          userMarkerRef.current = L.marker([activeUserPos.lat, activeUserPos.lng], {
             icon: userIcon,
             zIndexOffset: 1600,
           }).addTo(map);
 
           userMarkerRef.current.bindPopup(`
             <div style="font-family: sans-serif; font-size: 12px; line-height: 1.4;">
-              <strong style="color: #1d4ed8; font-size: 13px; display: flex; align-items: center; gap: 4px;">📍 Your Live Location</strong>
-              <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Accurate within ±${Math.round(userLocation.accuracy)}m</div>
+              <strong style="color: #1d4ed8; font-size: 13px; display: flex; align-items: center; gap: 4px;">📍 Your Live Location (Source)</strong>
+              <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Accurate within ±${Math.round(activeUserPos.accuracy)}m</div>
             </div>
           `);
         } else {
-          userMarkerRef.current.setLatLng([userLocation.lat, userLocation.lng]);
+          userMarkerRef.current.setLatLng([activeUserPos.lat, activeUserPos.lng]);
           userMarkerRef.current.setIcon(userIcon);
         }
 
         if (!userAccuracyCircleRef.current) {
-          userAccuracyCircleRef.current = L.circle([userLocation.lat, userLocation.lng], {
-            radius: Math.min(userLocation.accuracy, 250),
+          userAccuracyCircleRef.current = L.circle([activeUserPos.lat, activeUserPos.lng], {
+            radius: Math.min(activeUserPos.accuracy, 250),
             color: "#3b82f6",
             weight: 1.5,
             fillColor: "#60a5fa",
             fillOpacity: 0.12,
           }).addTo(map);
         } else {
-          userAccuracyCircleRef.current.setLatLng([userLocation.lat, userLocation.lng]);
-          userAccuracyCircleRef.current.setRadius(Math.min(userLocation.accuracy, 250));
+          userAccuracyCircleRef.current.setLatLng([activeUserPos.lat, activeUserPos.lng]);
+          userAccuracyCircleRef.current.setRadius(Math.min(activeUserPos.accuracy, 250));
         }
       }
     });
@@ -1299,6 +1321,9 @@ function LeafletTransitMap({
     activeStopIndex,
     shortestPathStopIds,
     selectedStopId,
+    userPickupStopId,
+    campusDestinationId,
+    effectiveUserLocation,
     isExpressDirect,
     zoom,
     draftPinLocation,

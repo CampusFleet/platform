@@ -34,6 +34,8 @@ interface CommuteWalkingStageProps {
   metrics: FirstMileMetrics;
   telematicsLocation: any;
   assignedBusNumber: string;
+  userCoords?: { latitude: number; longitude: number } | null;
+  userAddress?: string | null;
   onArrivedAtStop: () => void;
   onSelectSeatAheadOfTime: () => void;
 }
@@ -44,6 +46,8 @@ export function CommuteWalkingStage({
   metrics,
   telematicsLocation,
   assignedBusNumber,
+  userCoords,
+  userAddress,
   onArrivedAtStop,
   onSelectSeatAheadOfTime,
 }: CommuteWalkingStageProps) {
@@ -99,8 +103,20 @@ export function CommuteWalkingStage({
             walkingCoordinates={metrics.walkingCoordinates}
             stops={stops}
             selectedStopId={assignedStop?.id}
+            userPickupStopId={assignedStop?.id}
+            userCoords={
+              userCoords ||
+              (metrics.walkingCoordinates?.[0]
+                ? {
+                    latitude: metrics.walkingCoordinates[0][0],
+                    longitude: metrics.walkingCoordinates[0][1],
+                  }
+                : null)
+            }
+            userAddress={userAddress || "Your Origin"}
             busLocation={telematicsLocation}
             showUserLocation={true}
+            showCampusLandmark={true}
             tileTheme="GOOGLE_STREETS"
           />
         </div>
@@ -184,3 +200,4 @@ export function CommuteWalkingStage({
     </div>
   );
 }
+

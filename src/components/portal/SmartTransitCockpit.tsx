@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 import { telematicsService } from "@/lib/telematicsService";
@@ -114,10 +114,15 @@ export default function SmartTransitCockpit({
   );
   const settingsHref = isTeacher ? "/teacher/settings" : "/portal/settings";
 
+  const reservationRef = useRef(reservation);
+  reservationRef.current = reservation;
+  const scheduleRef = useRef(schedule);
+  scheduleRef.current = schedule;
+
   // ─── 2. Server Sync & API Fetchers ─────────────────────────────────
   const fetchReservation = useCallback(async (silent = false) => {
     try {
-      if (!silent && !reservation && !schedule?.isTodayOff && !schedule?.isAllShiftsOver) {
+      if (!silent && !reservationRef.current && !scheduleRef.current?.isTodayOff && !scheduleRef.current?.isAllShiftsOver) {
         setIsLoadingReservation(true);
       }
       const url = studentId
@@ -142,7 +147,7 @@ export default function SmartTransitCockpit({
     } finally {
       setIsLoadingReservation(false);
     }
-  }, [studentId, reservation, schedule]);
+  }, [studentId]);
 
   const fetchSeatPartnerData = useCallback(async (bId?: string | number, sId?: string) => {
     if (!studentId) return;
@@ -576,6 +581,8 @@ export default function SmartTransitCockpit({
           metrics={firstMileMetrics}
           telematicsLocation={telematicsLocation}
           assignedBusNumber={assignedBus?.busNumber ? String(assignedBus.busNumber) : "Assigned"}
+          userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
+          userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           onArrivedAtStop={() => setHasArrivedAtStopManually(true)}
           onSelectSeatAheadOfTime={() => setShowSeatGridWhileWalking(true)}
         />

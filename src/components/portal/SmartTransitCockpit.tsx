@@ -267,6 +267,14 @@ export default function SmartTransitCockpit({
     [attendanceLockStatus, isRfidVerified, reservation]
   );
 
+  const isAttendanceVerified = useMemo(() => {
+    return Boolean(
+      isLockCleared ||
+      reservation?.status === "BOARDED" ||
+      (reservation as any)?.is_attendance_verified
+    );
+  }, [isLockCleared, reservation]);
+
   // ─── 4. Live Telematics & Location Watch ───────────────────────────
   useEffect(() => {
     const busId = assignedBus?.id;
@@ -581,6 +589,7 @@ export default function SmartTransitCockpit({
           metrics={firstMileMetrics}
           telematicsLocation={telematicsLocation}
           assignedBusNumber={assignedBus?.busNumber ? String(assignedBus.busNumber) : "Assigned"}
+          assignedBusId={assignedBus?.id}
           userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
           userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           onArrivedAtStop={() => setHasArrivedAtStopManually(true)}
@@ -634,16 +643,10 @@ export default function SmartTransitCockpit({
           student={student}
           displaySeatNumber={displaySeatNumber}
           isTripInProgress={isTripInProgress}
-          isCancellingSeat={isCancellingSeat}
+          isAttendanceVerified={isAttendanceVerified}
+          assignedConductor={assignedConductor}
+          transportManager={transportManager}
           settingsHref={settingsHref}
-          onSwitchSeat={() => setIsChangingSeat(true)}
-          onRequestCancelSeat={() => {
-            if (isTripInProgress) {
-              showToast("Bus has departed. Attendance is locked by transit dispatch.", "warning");
-              return;
-            }
-            setShowCancelConfirm(true);
-          }}
           onOpenDigitalPass={onOpenDigitalPass}
           onOpenContactCrew={() => setIsContactCrewOpen(true)}
           formatShiftTime={CommuteTransitEngine.formatShiftTime}

@@ -243,7 +243,7 @@ export class TransitStudioMapController extends BaseMapController {
 
     const map = new google.maps.Map(this.container, mapOptions);
     this.mapInstance = map;
-    this.directionsService = new google.maps.DirectionsService();
+    this.directionsService = null;
     this.infoWindow = new google.maps.InfoWindow();
 
     // Map Click Listener
@@ -768,46 +768,7 @@ export class TransitStudioMapController extends BaseMapController {
       console.warn("[TransitStudioMapController] Server road geometry error:", err);
     }
 
-    // 2. Secondary: Client-side DirectionsService fallback
-    if (this.directionsService) {
-      try {
-        this.directionsService.route(
-          {
-            origin: new this.googleMaps.maps.LatLng(origin.lat, origin.lng),
-            destination: new this.googleMaps.maps.LatLng(destination.lat, destination.lng),
-            waypoints: waypoints.slice(0, 23), // Google Directions API allows up to 25 total waypoints
-            travelMode: this.googleMaps.maps.TravelMode.DRIVING,
-          },
-          (result: any, status: any) => {
-            if (status === "OK" && result?.routes?.[0]?.overview_path) {
-              this.renderOverviewPath(result.routes[0].overview_path);
-
-              // Compute total road distance & duration
-              let totalMeters = 0;
-              let totalSecs = 0;
-              result.routes[0].legs?.forEach((leg: any) => {
-                totalMeters += leg.distance?.value || 0;
-                totalSecs += leg.duration?.value || 0;
-              });
-
-              const distanceKm = parseFloat((totalMeters / 1000).toFixed(1));
-              const durationMins = Math.round(totalSecs / 60) + (this.studioStops.length * 2);
-
-              if (this.config.onRouteMetricsCalculated) {
-                this.config.onRouteMetricsCalculated({ distanceKm, durationMins });
-              }
-            } else {
-              this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
-            }
-          }
-        );
-        return;
-      } catch (err) {
-        console.warn("[TransitStudioMapController] Client directions error:", err);
-      }
-    }
-
-    // 3. Last-resort fallback to points
+    // 2. Fallback to direct path if server route unavailable
     this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
   }
 

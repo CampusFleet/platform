@@ -304,7 +304,7 @@ export default function ClientPortalLayout({
           ? "p-0 max-w-none h-[calc(100dvh-4rem)] relative overflow-hidden"
           : isOnboardingPage
           ? "p-0 sm:p-6 lg:p-8 max-w-5xl"
-          : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6"
+          : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6 pb-28 sm:pb-12"
       }`}>
         {isAccessBlocked ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 animate-in fade-in">

@@ -1,0 +1,186 @@
+"use client";
+
+import React from "react";
+import dynamic from "next/dynamic";
+import {
+  Footprints,
+  CheckCircle2,
+  Navigation,
+  BusFront,
+  Zap,
+  ExternalLink,
+  UserCheck,
+  RefreshCw,
+} from "lucide-react";
+import type { Stop } from "@/lib/types";
+import type { FirstMileMetrics } from "@/lib/commute/types";
+
+// Dynamic import for CampusFleetMap with fallback
+const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-72 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
+      <div className="flex flex-col items-center gap-2 text-zinc-400">
+        <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+        <span className="text-xs font-medium">Loading Pedestrian Map...</span>
+      </div>
+    </div>
+  ),
+});
+
+interface CommuteWalkingStageProps {
+  assignedStop: Stop | null;
+  stops: Stop[];
+  metrics: FirstMileMetrics;
+  telematicsLocation: any;
+  assignedBusNumber: string;
+  onArrivedAtStop: () => void;
+  onSelectSeatAheadOfTime: () => void;
+}
+
+export function CommuteWalkingStage({
+  assignedStop,
+  stops,
+  metrics,
+  telematicsLocation,
+  assignedBusNumber,
+  onArrivedAtStop,
+  onSelectSeatAheadOfTime,
+}: CommuteWalkingStageProps) {
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6 animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+            <Footprints className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold uppercase text-emerald-600 dark:text-emerald-400 tracking-wider">
+                First-Mile Guidance
+              </span>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                {metrics.userToStopDistMeters ? `${metrics.userToStopDistMeters}m to stop` : "Walking Mode"}
+              </span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white mt-0.5">
+              Walk to {assignedStop?.name || "Designated Stop"}
+            </h2>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onArrivedAtStop}
+          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer self-start sm:self-auto"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          <span>I've Arrived at Stop</span>
+        </button>
+      </div>
+
+      {/* Interactive Map: Pedestrian Walking Path + Realtime Bus Pin */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span className="flex items-center gap-1.5 font-medium">
+            <Navigation className="w-3.5 h-3.5 text-blue-600" />
+            Live Pedestrian Walking Route to Boarding Point
+          </span>
+          <span className="font-mono text-[11px] bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+            ~{metrics.walkingEtaMins} min walk
+          </span>
+        </div>
+
+        <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative z-0">
+          <CampusFleetMap
+            height="320px"
+            zoom={15}
+            walkingCoordinates={metrics.walkingCoordinates}
+            stops={stops}
+            selectedStopId={assignedStop?.id}
+            busLocation={telematicsLocation}
+            showUserLocation={true}
+            tileTheme="GOOGLE_STREETS"
+          />
+        </div>
+      </div>
+
+      {/* Walking Metrics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+        <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+          <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+            <Footprints className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Your Walk Time</span>
+          </div>
+          <div className="text-base font-black text-zinc-900 dark:text-white font-mono">
+            ~{metrics.walkingEtaMins} mins
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            {metrics.userToStopDistMeters ? `${metrics.userToStopDistMeters}m at 4.8 km/h` : "Standard walking pace"}
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+          <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+            <BusFront className="w-3.5 h-3.5 text-blue-600" />
+            <span>Bus {assignedBusNumber} Arrival</span>
+          </div>
+          <div className="text-base font-black text-zinc-900 dark:text-white font-mono">
+            {metrics.busEtaMins ? `~${metrics.busEtaMins} mins` : "In Transit"}
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            {metrics.busToStopDistMeters ? `${metrics.busToStopDistMeters}m from your stop` : "Awaiting bus GPS"}
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-1">
+          <div className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>Walking Cushion</span>
+          </div>
+          <div className="text-base font-black text-zinc-900 dark:text-white font-mono">
+            {metrics.arrivalCushionMins !== null ? (
+              metrics.arrivalCushionMins >= 0 ? (
+                <span className="text-emerald-600 dark:text-emerald-400">+{metrics.arrivalCushionMins}m lead</span>
+              ) : (
+                <span className="text-rose-600 dark:text-rose-400">Hurry ({Math.abs(metrics.arrivalCushionMins)}m late)</span>
+              )
+            ) : (
+              "Synchronizing"
+            )}
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            {metrics.arrivalCushionMins !== null && metrics.arrivalCushionMins >= 0
+              ? "You will reach before the bus"
+              : "Bus may reach before you"}
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom Actions */}
+      <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800">
+        {metrics.googleMapsWalkingUrl ? (
+          <a
+            href={metrics.googleMapsWalkingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 text-zinc-700 dark:text-zinc-200 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+          >
+            <span>Open in Google Maps Navigation</span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+          </a>
+        ) : <div />}
+
+        <button
+          type="button"
+          onClick={onSelectSeatAheadOfTime}
+          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+        >
+          <UserCheck className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
+          <span>Select Bus Seat Ahead of Time ↓</span>
+        </button>
+      </div>
+    </div>
+  );
+}

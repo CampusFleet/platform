@@ -8,6 +8,7 @@ import { ContactCrewModal } from "./ContactCrewModal";
 import { SeatPartnerModal } from "./SeatPartnerModal";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, Staff } from "@/lib/types";
 import { CommuteTransitEngine } from "@/lib/commute/CommuteTransitEngine";
+import { getCampusStopFromDatabase } from "@/components/maps/CampusFleetMap";
 import type { SeatPartnerState } from "@/lib/commute/types";
 import {
   CommuteLiveRadarBanner,
@@ -385,6 +386,62 @@ export default function SmartTransitCockpit({
     [effectiveUserLat, effectiveUserLng, assignedStop, telematicsLocation, isTelematicsLive]
   );
 
+  // ─── 5b. Ordered Corridor Sequence & Resilient Map Geometry ──────────
+  const orderedCorridorStops = useMemo(() => {
+    const list: Stop[] = [];
+    if (assignedRoute?.stops && assignedRoute.stops.length > 0) {
+      const sorted = [...assignedRoute.stops].sort((a, b) => (a.stopOrder || 0) - (b.stopOrder || 0));
+      for (const item of sorted) {
+        const stopObj = item.stop || stops.find((s) => s.id === item.stopId);
+        if (stopObj && !list.some((s) => s.id === stopObj.id)) {
+          list.push(stopObj);
+        }
+      }
+    } else {
+      const matching = stops.slice(0, 8);
+      list.push(...matching);
+    }
+
+    const campusTerminal = getCampusStopFromDatabase(stops);
+    if (campusTerminal && !list.some((s) => s.id === campusTerminal.id || s.code === campusTerminal.code)) {
+      list.push(campusTerminal);
+    }
+    return list;
+  }, [assignedRoute, stops]);
+
+  const sourceStop = orderedCorridorStops[0] || null;
+  const terminalStop = orderedCorridorStops[orderedCorridorStops.length - 1] || null;
+
+  const corridorRouteCoordinates = useMemo(() => {
+    return orderedCorridorStops.map((s) => [s.latitude, s.longitude] as [number, number]);
+  }, [orderedCorridorStops]);
+
+  // Guaranteed non-null live bus location fallback so the map is never empty
+  const currentBusLat = telematicsLocation?.latitude ?? sourceStop?.latitude ?? 29.3750;
+  const currentBusLng = telematicsLocation?.longitude ?? sourceStop?.longitude ?? 79.5295;
+  const busSpeedKmh = telematicsLocation?.speedKmh ?? telematicsLocation?.speed ?? 0;
+
+  const effectiveBusLocation = useMemo(
+    () => ({
+      busId: assignedBus?.id ?? -1,
+      latitude: currentBusLat,
+      longitude: currentBusLng,
+      speedKmh: busSpeedKmh,
+      speed: busSpeedKmh,
+      headingDeg: telematicsLocation?.headingDeg ?? 0,
+      lastPingAt: telematicsLocation?.lastPingAt ?? "",
+      tripId: reservation?.trip_id || "",
+      delayMinutes: 0,
+      estimatedArrivalNextStopMins: 3,
+    }),
+    [assignedBus?.id, currentBusLat, currentBusLng, busSpeedKmh, telematicsLocation?.headingDeg, telematicsLocation?.lastPingAt, reservation?.trip_id]
+  );
+
+  const memoizedUserCoords = useMemo(
+    () => ({ latitude: effectiveUserLat, longitude: effectiveUserLng }),
+    [effectiveUserLat, effectiveUserLng]
+  );
+
   const isAtPickupStop = useMemo(() => {
     if (hasArrivedAtStopManually) return true;
     if (firstMileMetrics.userToStopDistMeters !== null && firstMileMetrics.userToStopDistMeters <= 70) return true;
@@ -660,11 +717,13 @@ export default function SmartTransitCockpit({
           isAttendanceVerified={isAttendanceVerified}
           assignedConductor={assignedConductor}
           transportManager={transportManager}
-          stops={stops}
-          telematicsLocation={telematicsLocation}
+          stops={orderedCorridorStops}
+          routeCoordinates={corridorRouteCoordinates}
+          campusDestinationId={terminalStop?.id}
+          telematicsLocation={effectiveBusLocation}
           isTelematicsLive={isTelematicsLive}
           firstMileMetrics={firstMileMetrics}
-          userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
+          userCoords={memoizedUserCoords}
           userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           settingsHref={settingsHref}
           onOpenDigitalPass={onOpenDigitalPass}

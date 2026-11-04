@@ -75,6 +75,7 @@ export default function GoogleTransitMap({
   const userCircleRef = useRef<google.maps.Circle | null>(null);
 
   const initialFitDoneRef = useRef(false);
+  const lastWaypointsKeyRef = useRef<string>("");
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -175,10 +176,9 @@ export default function GoogleTransitMap({
 
       Promise.all([
         importLibrary("maps"),
-        importLibrary("routes"),
         importLibrary("geometry"),
       ])
-        .then(([mapsLib, routesLib]) => {
+        .then(([mapsLib]) => {
           if (!isMounted || !containerRef.current) return;
 
           const defaultCenter = draftPinLocation
@@ -369,6 +369,14 @@ export default function GoogleTransitMap({
       }
     };
 
+    // Immediately render waypoints on first paint so map is NEVER blank and fits bounds instantly
+    applyRouteCoordinates(waypoints);
+
+    if (lastWaypointsKeyRef.current === cacheKey) {
+      return;
+    }
+    lastWaypointsKeyRef.current = cacheKey;
+
     // Check memory or sessionStorage cache
     try {
       const cached = sessionStorage.getItem(cacheKey);
@@ -429,26 +437,31 @@ export default function GoogleTransitMap({
     const map = mapRef.current;
     if (!map || !mapLoaded || !window.google) return;
 
-    if (walkingPolylineRef.current) {
-      walkingPolylineRef.current.setMap(null);
-      walkingPolylineRef.current = null;
+    if (!walkingCoordinates || walkingCoordinates.length < 2) {
+      if (walkingPolylineRef.current) {
+        walkingPolylineRef.current.setMap(null);
+        walkingPolylineRef.current = null;
+      }
+      return;
     }
-
-    if (!walkingCoordinates || walkingCoordinates.length < 2) return;
 
     let isMounted = true;
     const drawWalkingPath = (coords: [number, number][]) => {
       if (!isMounted || !mapRef.current) return;
-      if (walkingPolylineRef.current) walkingPolylineRef.current.setMap(null);
       const walkingPath = coords.map(([lat, lng]) => new google.maps.LatLng(lat, lng));
-      walkingPolylineRef.current = new google.maps.Polyline({
-        path: walkingPath,
-        strokeColor: "#10B981",
-        strokeOpacity: 0.95,
-        strokeWeight: 4.5,
-        zIndex: 16,
-        map: mapRef.current,
-      });
+      if (!walkingPolylineRef.current) {
+        walkingPolylineRef.current = new google.maps.Polyline({
+          path: walkingPath,
+          strokeColor: "#10B981",
+          strokeOpacity: 0.95,
+          strokeWeight: 4.5,
+          zIndex: 16,
+          map: mapRef.current,
+        });
+      } else {
+        walkingPolylineRef.current.setPath(walkingPath);
+        walkingPolylineRef.current.setMap(mapRef.current);
+      }
     };
 
     if (walkingCoordinates.length > 2) {
@@ -667,34 +680,53 @@ export default function GoogleTransitMap({
   // ── 10. User GPS Source Location Marker (Origin) ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !window.google || !effectiveUserLoc) return;
+    if (!map || !mapLoaded || !window.google || !effectiveUserLoc) {
+      if (userCircleRef.current) {
+        userCircleRef.current.setMap(null);
+        userCircleRef.current = null;
+      }
+      if (userMarkerRef.current) {
+        userMarkerRef.current.setMap(null);
+        userMarkerRef.current = null;
+      }
+      return;
+    }
 
-    if (userCircleRef.current) userCircleRef.current.setMap(null);
-    if (userMarkerRef.current) userMarkerRef.current.setMap(null);
+    const pos = { lat: effectiveUserLoc.lat, lng: effectiveUserLoc.lng };
+    const radius = Math.min(effectiveUserLoc.accuracy || 30, 200);
 
-    userCircleRef.current = new google.maps.Circle({
-      center: { lat: effectiveUserLoc.lat, lng: effectiveUserLoc.lng },
-      radius: Math.min(effectiveUserLoc.accuracy || 30, 200),
-      strokeColor: "#3B82F6",
-      strokeOpacity: 0.5,
-      strokeWeight: 1.5,
-      fillColor: "#60A5FA",
-      fillOpacity: 0.18,
-      map,
-    });
+    if (userCircleRef.current) {
+      userCircleRef.current.setCenter(pos);
+      userCircleRef.current.setRadius(radius);
+    } else {
+      userCircleRef.current = new google.maps.Circle({
+        center: pos,
+        radius,
+        strokeColor: "#3B82F6",
+        strokeOpacity: 0.5,
+        strokeWeight: 1.5,
+        fillColor: "#60A5FA",
+        fillOpacity: 0.18,
+        map,
+      });
+    }
 
-    const userSvgUri = createSourceUserMarkerSvgUri();
-    userMarkerRef.current = new google.maps.Marker({
-      position: { lat: effectiveUserLoc.lat, lng: effectiveUserLoc.lng },
-      map,
-      icon: {
-        url: userSvgUri,
-        scaledSize: new google.maps.Size(46, 46),
-        anchor: new google.maps.Point(23, 23),
-      },
-      title: userAddress ? `📍 Your Location (Source): ${userAddress}` : "📍 Your Live Location (Source)",
-      zIndex: 950,
-    });
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setPosition(pos);
+    } else {
+      const userSvgUri = createSourceUserMarkerSvgUri();
+      userMarkerRef.current = new google.maps.Marker({
+        position: pos,
+        map,
+        icon: {
+          url: userSvgUri,
+          scaledSize: new google.maps.Size(46, 46),
+          anchor: new google.maps.Point(23, 23),
+        },
+        title: userAddress ? `📍 Your Location (Source): ${userAddress}` : "📍 Your Live Location (Source)",
+        zIndex: 950,
+      });
+    }
   }, [mapLoaded, effectiveUserLoc, userAddress]);
 
   return (

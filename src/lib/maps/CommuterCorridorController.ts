@@ -44,7 +44,14 @@ export class CommuterCorridorController extends BaseMapController {
   private busLocationData: any = null;
   private busDisplayName = "Campus Shuttle";
   private deviceGpsCoords: MapCoordinates | null = null;
+  private currentHeadingDeg = 0;
+  private currentContinuousHeading = 0;
   private hasInitiallyFittedBounds = false;
+
+  private getShortestAngleDelta(current: number, target: number): number {
+    const da = (target - current) % 360;
+    return ((2 * da) % 360) - da;
+  }
 
   // Direction caches and AbortControllers
   private walkingAbortController: AbortController | null = null;
@@ -431,11 +438,18 @@ export class CommuterCorridorController extends BaseMapController {
   }
 
   /**
-   * Sets or updates user's live device GPS beacon (if distinct from Home Doorstep)
+   * Sets or updates user's live device location and facing direction (Google Maps Navigation Chevron & Heading Cone)
    */
-  public setDeviceGps(coords: MapCoordinates | null): void {
+  public setDeviceGps(coords: MapCoordinates | null, headingDeg?: number | null): void {
     if (this.isDestroyed || !this.mapInstance || !this.leafletModule) return;
     const L = this.leafletModule;
+
+    // Update orientation angle with shortest-path interpolation
+    if (headingDeg !== undefined && headingDeg !== null && !isNaN(headingDeg)) {
+      const delta = this.getShortestAngleDelta(this.currentContinuousHeading, headingDeg);
+      this.currentContinuousHeading += delta;
+      this.currentHeadingDeg = (headingDeg % 360 + 360) % 360;
+    }
 
     this.deviceGpsCoords = coords;
 
@@ -447,44 +461,76 @@ export class CommuterCorridorController extends BaseMapController {
       return;
     }
 
-    // Do not draw device GPS if it is practically identical to Home (< 20 meters)
-    if (this.homeCoords) {
-      const dLat = (coords.latitude - this.homeCoords.latitude) * 111000;
-      const dLng = (coords.longitude - this.homeCoords.longitude) * 96000;
-      if (Math.sqrt(dLat * dLat + dLng * dLng) < 20) {
-        if (this.deviceGpsMarker) {
-          this.mapInstance.removeLayer(this.deviceGpsMarker);
-          this.deviceGpsMarker = null;
-        }
-        return;
+    // If marker already exists, smoothly update coordinates and rotate cone/arrow via CSS transform
+    if (this.deviceGpsMarker) {
+      this.deviceGpsMarker.setLatLng([coords.latitude, coords.longitude]);
+      const el = this.deviceGpsMarker.getElement();
+      if (el) {
+        const cone = el.querySelector(".user-heading-cone") as HTMLElement | null;
+        const arrow = el.querySelector(".user-heading-arrow-disc") as HTMLElement | null;
+        if (cone) cone.style.transform = `rotate(${this.currentContinuousHeading}deg)`;
+        if (arrow) arrow.style.transform = `rotate(${this.currentContinuousHeading}deg)`;
       }
+      return;
     }
 
-    const gpsIcon = L.divIcon({
-      className: "custom-device-gps-marker",
-      html: `
-        <div class="relative flex items-center justify-center" style="transform: translate(-50%, -50%);">
-          <span class="animate-ping absolute inline-flex h-6 w-6 rounded-full bg-cyan-400 opacity-60"></span>
-          <div class="w-4 h-4 rounded-full bg-cyan-500 border-2 border-white shadow-md ring-2 ring-cyan-300/50"></div>
+    // Google Maps Navigation Marker HTML (Pulsing Radar + Translucent Directional Field-of-View Cone + 3D Arrowhead)
+    const navMarkerHtml = `
+      <div class="user-location-nav-marker" style="transform: translate(-50%, -50%);">
+        <!-- 1. Radar Pulse Accuracy Ring -->
+        <div class="user-pulse-ring"></div>
+
+        <!-- 2. Translucent Field-of-View Directional Flashlight Cone -->
+        <div class="user-heading-cone" style="transform: rotate(${this.currentContinuousHeading}deg);">
+          <svg width="84" height="84" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M42 42 L20 4 A 40 40 0 0 1 64 4 Z" fill="url(#user-nav-cone-gradient)" />
+            <defs>
+              <radialGradient id="user-nav-cone-gradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                <stop offset="15%" stop-color="#3B82F6" stop-opacity="0.5" />
+                <stop offset="65%" stop-color="#3B82F6" stop-opacity="0.18" />
+                <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+          </svg>
         </div>
-      `,
+
+        <!-- 3. Google Maps White Circular Disc with 3D Blue Navigation Arrow -->
+        <div class="user-heading-arrow-disc shadow-xl" style="transform: rotate(${this.currentContinuousHeading}deg);">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 text-blue-600 fill-current drop-shadow-sm">
+            <path d="M12 2.5L4.5 20.2l.7.7L12 18l6.8 2.9.7-.7L12 2.5z"/>
+          </svg>
+        </div>
+
+        <!-- 4. Center Core Pivot Dot -->
+        <div class="user-center-dot"></div>
+      </div>
+    `;
+
+    const gpsIcon = L.divIcon({
+      className: "custom-device-nav-marker",
+      html: navMarkerHtml,
       iconSize: [0, 0],
       iconAnchor: [0, 0],
     });
 
-    if (!this.deviceGpsMarker) {
-      this.deviceGpsMarker = L.marker([coords.latitude, coords.longitude], {
-        icon: gpsIcon,
-        zIndexOffset: 1400,
-      }).addTo(this.mapInstance);
+    this.deviceGpsMarker = L.marker([coords.latitude, coords.longitude], {
+      icon: gpsIcon,
+      zIndexOffset: 1550,
+    }).addTo(this.mapInstance);
 
-      this.deviceGpsMarker.bindTooltip("Your Current GPS Location", {
-        direction: "top",
-        offset: [0, -8],
-        className: "custom-route-stop-tooltip",
-      });
-    } else {
-      this.deviceGpsMarker.setLatLng([coords.latitude, coords.longitude]);
+    this.deviceGpsMarker.on("click", () => {
+      this.recenterOnGps();
+    });
+  }
+
+  /**
+   * Smoothly pans and centers camera on user's live GPS navigation arrow
+   */
+  public recenterOnGps(): void {
+    if (!this.mapInstance || this.isDestroyed) return;
+    const target = this.deviceGpsCoords || this.homeCoords;
+    if (target && !isNaN(target.latitude) && !isNaN(target.longitude)) {
+      this.mapInstance.setView([target.latitude, target.longitude], 17, { animate: true });
     }
   }
 
@@ -743,3 +789,4 @@ export class CommuterCorridorController extends BaseMapController {
     super.destroy();
   }
 }
+

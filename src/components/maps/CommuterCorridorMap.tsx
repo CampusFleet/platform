@@ -38,6 +38,20 @@ export interface CommuterCorridorMapProps {
   zoom?: number;
 }
 
+/**
+ * Calculates initial geographic bearing from point A to point B in degrees (0 - 360)
+ */
+function calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
 export default function CommuterCorridorMap({
   homeCoords,
   homeAddress,
@@ -60,6 +74,10 @@ export default function CommuterCorridorMap({
 
   const [mapReady, setMapReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [userHeading, setUserHeading] = useState<number>(0);
+  const [liveUserGps, setLiveUserGps] = useState<{ latitude: number; longitude: number } | null>(
+    deviceGpsCoords || null
+  );
 
   // Fallback initial center coordinates
   const initLat =
@@ -132,11 +150,97 @@ export default function CommuterCorridorMap({
     controllerRef.current.setLiveBusLocation(busLocation, busName);
   }, [busLocation?.latitude, busLocation?.longitude, busLocation?.speedKmh, busLocation?.speed, busLocation?.headingDeg, busName, mapReady]);
 
-  // Sync Device Live GPS (if distinct from home)
+  // ── 1. Live Geolocation Movement & Heading Watcher ──
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lng = Number(pos.coords.longitude.toFixed(6));
+        setLiveUserGps({ latitude: lat, longitude: lng });
+
+        // If device is in motion, GPS heading is authentic and accurate
+        if (pos.coords.heading !== null && !isNaN(pos.coords.heading) && (pos.coords.speed || 0) > 0.4) {
+          setUserHeading(pos.coords.heading);
+        }
+      },
+      (err) => {
+        console.warn("[CommuterCorridorMap] GPS watch:", err);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  // ── 2. Live Magnetometer & Compass Device Orientation (Heading) ──
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOrientation = (e: any) => {
+      let heading: number | null = null;
+      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        // iOS Safari Native Compass
+        heading = e.webkitCompassHeading;
+      } else if (e.alpha !== null && e.alpha !== undefined) {
+        // Android Chrome Standard
+        heading = (360 - e.alpha) % 360;
+      }
+
+      if (heading !== null && !isNaN(heading)) {
+        setUserHeading(heading);
+      }
+    };
+
+    const hasAbsolute = "ondeviceorientationabsolute" in window;
+    if (hasAbsolute) {
+      window.addEventListener("deviceorientationabsolute" as any, handleOrientation, true);
+    } else {
+      window.addEventListener("deviceorientation", handleOrientation, true);
+    }
+
+    return () => {
+      window.removeEventListener("deviceorientationabsolute" as any, handleOrientation, true);
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  }, []);
+
+  // ── 3. Initial Facing Fallback: Point down the street toward the Assigned Boarding Stop ──
+  useEffect(() => {
+    if (userHeading === 0 && assignedStop) {
+      const uLat = liveUserGps?.latitude || deviceGpsCoords?.latitude || homeCoords?.latitude;
+      const uLng = liveUserGps?.longitude || deviceGpsCoords?.longitude || homeCoords?.longitude;
+      if (uLat && uLng && assignedStop.latitude && assignedStop.longitude) {
+        const initialBearing = calculateBearing(uLat, uLng, assignedStop.latitude, assignedStop.longitude);
+        setUserHeading(initialBearing);
+      }
+    }
+  }, [
+    liveUserGps?.latitude,
+    liveUserGps?.longitude,
+    deviceGpsCoords?.latitude,
+    deviceGpsCoords?.longitude,
+    homeCoords?.latitude,
+    homeCoords?.longitude,
+    assignedStop?.id,
+  ]);
+
+  // ── 4. Sync Live User Navigation Arrow and Heading to Controller ──
   useEffect(() => {
     if (!controllerRef.current || !mapReady) return;
-    controllerRef.current.setDeviceGps(deviceGpsCoords || null);
-  }, [deviceGpsCoords?.latitude, deviceGpsCoords?.longitude, mapReady]);
+    const effectiveGps = liveUserGps || deviceGpsCoords || null;
+    controllerRef.current.setDeviceGps(effectiveGps, userHeading);
+  }, [
+    liveUserGps?.latitude,
+    liveUserGps?.longitude,
+    deviceGpsCoords?.latitude,
+    deviceGpsCoords?.longitude,
+    userHeading,
+    mapReady,
+  ]);
 
   // Fullscreen toggle handler
   const toggleFullscreen = useCallback(() => {
@@ -167,9 +271,13 @@ export default function CommuterCorridorMap({
   }, [isFullscreen]);
 
   // Camera Actions
-  const handleRecenterHome = useCallback(() => {
-    controllerRef.current?.recenterOnHome();
-  }, []);
+  const handleRecenterLocation = useCallback(() => {
+    if (liveUserGps || deviceGpsCoords) {
+      controllerRef.current?.recenterOnGps();
+    } else {
+      controllerRef.current?.recenterOnHome();
+    }
+  }, [liveUserGps, deviceGpsCoords]);
 
   const handleFitWalkView = useCallback(() => {
     controllerRef.current?.fitWalkingBounds();
@@ -275,8 +383,8 @@ export default function CommuterCorridorMap({
       >
         <button
           type="button"
-          onClick={handleRecenterHome}
-          title="Recenter on Home Pin"
+          onClick={handleRecenterLocation}
+          title="Recenter on My Location / Home"
           className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
         >
           <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -411,6 +519,76 @@ export default function CommuterCorridorMap({
         }
         .custom-route-stop-tooltip::before {
           display: none !important;
+        }
+
+        /* ── Google Maps Live User Location Navigation Arrow & Directional Cone ── */
+        .user-location-nav-marker {
+          position: relative;
+          width: 84px;
+          height: 84px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: auto;
+          cursor: pointer;
+        }
+        .user-pulse-ring {
+          position: absolute;
+          width: 44px;
+          height: 44px;
+          background-color: rgba(59, 130, 246, 0.28);
+          border-radius: 50%;
+          animation: user-nav-pulse 2.2s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+          pointer-events: none;
+        }
+        @keyframes user-nav-pulse {
+          0% {
+            transform: scale(0.6);
+            opacity: 0.95;
+          }
+          60% {
+            transform: scale(2.0);
+            opacity: 0.22;
+          }
+          100% {
+            transform: scale(2.8);
+            opacity: 0;
+          }
+        }
+        .user-heading-cone {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+          transition: transform 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
+          transform-origin: 42px 42px;
+        }
+        .user-heading-arrow-disc {
+          position: relative;
+          width: 34px;
+          height: 34px;
+          background-color: #ffffff;
+          border-radius: 50%;
+          border: 2px solid #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 14px rgba(15, 23, 42, 0.35), 0 0 0 1.5px rgba(59, 130, 246, 0.5);
+          transition: transform 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
+          transform-origin: center center;
+          z-index: 10;
+        }
+        .user-center-dot {
+          position: absolute;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background-color: #1d4ed8;
+          border: 1.5px solid #ffffff;
+          pointer-events: none;
+          z-index: 12;
         }
       `}</style>
     </div>

@@ -544,8 +544,8 @@ export default function SmartTransitCockpit({
   // ─── 8. Render Modular Views ───────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* ─── LIVE BUS TELEMATICS RADAR BANNER ─── */}
-      {assignedBus && activeStage !== "LOADING" && (
+      {/* ─── LIVE BUS TELEMATICS RADAR BANNER (Auxiliary stages only, hidden when primary interactive map is active) ─── */}
+      {assignedBus && activeStage !== "LOADING" && activeStage !== "RIDE_CONFIRMED" && activeStage !== "WALKING_TO_STOP" && (
         <CommuteLiveRadarBanner
           assignedBus={assignedBus}
           telematicsLocation={telematicsLocation}
@@ -646,6 +646,12 @@ export default function SmartTransitCockpit({
           isAttendanceVerified={isAttendanceVerified}
           assignedConductor={assignedConductor}
           transportManager={transportManager}
+          stops={stops}
+          telematicsLocation={telematicsLocation}
+          isTelematicsLive={isTelematicsLive}
+          firstMileMetrics={firstMileMetrics}
+          userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
+          userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           settingsHref={settingsHref}
           onOpenDigitalPass={onOpenDigitalPass}
           onOpenContactCrew={() => setIsContactCrewOpen(true)}

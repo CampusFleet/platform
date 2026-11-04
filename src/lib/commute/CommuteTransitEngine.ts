@@ -209,12 +209,28 @@ export class CommuteTransitEngine {
       student?.primaryStopId;
     if (!stopId) return null;
     const strStopId = String(stopId).trim();
-    return (
+    const candidate = (
       stops.find((s) => String(s.id) === strStopId) ||
       reservation?.stop ||
       reservation?.stops ||
       null
     );
+
+    // Guard: Campus terminal is NEVER the morning pickup boarding stop!
+    if (candidate && (
+      (candidate as any).isCampusTerminal ||
+      (candidate as any).is_campus_terminal ||
+      candidate.id === "stop-bhimtal-campus" ||
+      candidate.name.toLowerCase().includes("campus main gate") ||
+      candidate.name.toLowerCase().includes("university")
+    )) {
+      const nonCampusStop = stops.find(
+        s => !(s as any).isCampusTerminal && !(s as any).is_campus_terminal && s.id !== "stop-bhimtal-campus" && !s.name.toLowerCase().includes("campus")
+      );
+      if (nonCampusStop) return nonCampusStop;
+    }
+
+    return candidate;
   }
 
   /**

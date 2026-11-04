@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -18,8 +19,22 @@ import {
   Radio,
   ArrowRight,
   Armchair,
+  RefreshCw,
 } from "lucide-react";
 import type { Bus, Stop, Student, Staff } from "@/lib/types";
+
+// Dynamic import for CampusFleetMap with high-performance SSR disabled
+const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-72 sm:h-80 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
+      <div className="flex flex-col items-center gap-2 text-zinc-400">
+        <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+        <span className="text-xs font-medium">Loading Live Transit Corridor...</span>
+      </div>
+    </div>
+  ),
+});
 
 export interface CommuteConfirmedStageProps {
   assignedBus: Bus;
@@ -33,6 +48,12 @@ export interface CommuteConfirmedStageProps {
   isAttendanceVerified?: boolean;
   assignedConductor?: Staff | null;
   transportManager?: Staff | null;
+  stops?: Stop[];
+  telematicsLocation?: any;
+  isTelematicsLive?: boolean;
+  firstMileMetrics?: any;
+  userCoords?: { latitude: number; longitude: number } | null;
+  userAddress?: string | null;
   isCancellingSeat?: boolean;
   settingsHref: string;
   onSwitchSeat?: () => void;
@@ -54,6 +75,12 @@ export function CommuteConfirmedStage({
   isAttendanceVerified = false,
   assignedConductor,
   transportManager,
+  stops = [],
+  telematicsLocation,
+  isTelematicsLive = false,
+  firstMileMetrics,
+  userCoords,
+  userAddress,
   settingsHref,
   onOpenDigitalPass,
   onOpenContactCrew,
@@ -63,19 +90,36 @@ export function CommuteConfirmedStage({
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
 
   const displayBusNumber = assignedBus.busNumber ? `Bus ${assignedBus.busNumber}` : `Bus #${assignedBus.id}`;
+  const speed = telematicsLocation?.speed ? Math.round(telematicsLocation.speed) : 0;
+  const isMoving = speed > 2;
+
+  // Build corridor walking coordinates
+  const walkingCoords = firstMileMetrics?.walkingCoordinates || (
+    userCoords && assignedStop?.latitude && assignedStop?.longitude
+      ? [[userCoords.latitude, userCoords.longitude], [assignedStop.latitude, assignedStop.longitude]]
+      : undefined
+  );
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-7 border border-zinc-200/90 dark:border-zinc-800 shadow-sm space-y-6 animate-in fade-in duration-300">
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-7 border border-zinc-200/90 dark:border-zinc-800 shadow-sm space-y-5 animate-in fade-in duration-300">
       {/* ─── 1. Header with Vehicle Identity & Verification Status Pill ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-inner shrink-0 border border-indigo-100/80 dark:border-indigo-900/40">
             <BusFront className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold">
-              Assigned Vehicle & Commute
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold">
+                Assigned Vehicle & Corridor
+              </span>
+              {isTelematicsLive && (
+                <span className="text-[9px] font-mono font-bold px-2 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  Live GPS
+                </span>
+              )}
+            </div>
             <h2 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
               {displayBusNumber}
             </h2>
@@ -96,7 +140,46 @@ export function CommuteConfirmedStage({
         )}
       </div>
 
-      {/* ─── 2. Attendance Verification Shield & Anti-Proxy Boarding Callout ─── */}
+      {/* ─── 2. Embedded Interactive Transit Corridor Map (Citymapper / Uber Standard) ─── */}
+      <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative z-0">
+        <CampusFleetMap
+          height="310px"
+          zoom={14}
+          walkingCoordinates={walkingCoords}
+          stops={stops}
+          selectedStopId={assignedStop?.id}
+          userPickupStopId={assignedStop?.id}
+          userCoords={userCoords}
+          userAddress={userAddress || "Your Origin"}
+          busLocation={telematicsLocation}
+          showUserLocation={true}
+          showCampusLandmark={true}
+          tileTheme="GOOGLE_STREETS"
+        />
+
+        {/* Top-Right Floating Pill: One-Click Full Screen Radar */}
+        <div className="absolute top-3 right-3 z-10">
+          <Link
+            href={`/portal/radar?busId=${assignedBus.id}`}
+            className="px-3 py-1.5 rounded-xl bg-zinc-900/95 hover:bg-black text-white text-[11px] font-bold backdrop-blur-md shadow-lg border border-white/20 flex items-center gap-1.5 transition-all active:scale-95 group cursor-pointer"
+            title="Launch Full-Screen Satellite Radar"
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            <span>Full Screen Radar</span>
+            <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
+
+        {/* Bottom-Left Live Bus Speed Pill */}
+        {isTelematicsLive && isMoving && (
+          <div className="absolute bottom-3 left-3 z-10 px-2.5 py-1 rounded-lg bg-zinc-900/90 backdrop-blur-md text-white text-[10px] font-mono font-bold border border-white/20 flex items-center gap-1.5 shadow-md">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <span>{speed} km/h • Bus in Motion</span>
+          </div>
+        )}
+      </div>
+
+      {/* ─── 3. Anti-Proxy Attendance Verification Shield ─── */}
       {!isAttendanceVerified ? (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-orange-500/10 border border-amber-500/30 dark:border-amber-500/20 p-4 sm:p-5 space-y-3.5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -117,7 +200,7 @@ export function CommuteConfirmedStage({
                   First Mark Attendance & Verify Boarding
                 </h3>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed mt-0.5 max-w-xl">
-                  Your seat is auto-reserved. To verify your boarding and unlock full telemetry access, scan the bus’s dynamic QR code or tap your physical RFID card.
+                  Your seat is auto-reserved. To verify your boarding and unlock transit telemetry, scan the bus’s dynamic QR code or tap your physical RFID card.
                 </p>
               </div>
             </div>
@@ -163,7 +246,7 @@ export function CommuteConfirmedStage({
         </div>
       )}
 
-      {/* ─── 3. Commute Essentials: 3 Focused Pillars (No Switch / Cancel Buttons) ─── */}
+      {/* ─── 4. Commute Essentials: 3 Focused Pillars ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         {/* Pillar 1: Pick-Up Stop */}
         <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-800 space-y-1">
@@ -194,7 +277,7 @@ export function CommuteConfirmedStage({
           </div>
         </div>
 
-        {/* Pillar 3: Auto-Assigned Seat (Clean presentation, algorithmic allocation) */}
+        {/* Pillar 3: Auto-Assigned Seat (No Switch or Cancel Buttons) */}
         <div className={`p-4 rounded-2xl border space-y-1.5 ${
           isAttendanceVerified 
             ? "bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60"
@@ -226,7 +309,7 @@ export function CommuteConfirmedStage({
         </div>
       </div>
 
-      {/* ─── 4. Progressive Disclosure: Collapsible Vehicle & Crew Specifications ─── */}
+      {/* ─── 5. Progressive Disclosure: Collapsible Vehicle & Crew Specifications ─── */}
       <div className="rounded-2xl border border-zinc-200/70 dark:border-zinc-800 overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/40">
         <button
           type="button"
@@ -311,7 +394,7 @@ export function CommuteConfirmedStage({
         )}
       </div>
 
-      {/* ─── 5. Standout Primary CTAs (Full Screen Radar + QR Pass + Crew) ─── */}
+      {/* ─── 6. Action Row: Full Screen Radar + QR Pass + Crew ─── */}
       <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
         {/* Full Screen Radar CTA */}
         <Link
@@ -388,7 +471,7 @@ export function CommuteConfirmedStage({
         </button>
       </div>
 
-      {/* ─── 6. Footer Guidance ─── */}
+      {/* ─── 7. Footer Guidance ─── */}
       <div className="pt-1 text-center sm:text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-zinc-500">
         <Link
           href={settingsHref}

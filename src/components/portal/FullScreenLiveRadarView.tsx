@@ -274,17 +274,69 @@ export default function FullScreenLiveRadarView({
     };
   }, [isTelematicsLive, liveLocation, isInitialFetchDone, activeTrip]);
 
-  // 4. Resolve commuter's own pickup/drop-off stop
+  // 4. Build ordered sequence of multiple destinations (Source -> Intermediate Destinations -> Terminal)
+  const orderedDestinations = useMemo(() => {
+    const list: Stop[] = [];
+    if (assignedRoute?.stops && assignedRoute.stops.length > 0) {
+      const sorted = [...assignedRoute.stops].sort((a, b) => (a.stopOrder || 0) - (b.stopOrder || 0));
+      for (const item of sorted) {
+        const stopObj = item.stop || stops.find((s) => s.id === item.stopId);
+        if (stopObj && !list.some((s) => s.id === stopObj.id)) {
+          list.push(stopObj);
+        }
+      }
+    } else {
+      // Fallback: all stops matching route campus or default slice
+      const matching = stops.slice(0, 8);
+      list.push(...matching);
+    }
+
+    // Always guarantee institutional campus terminal is represented as the final destination if not present
+    const campusTerminal = getCampusStopFromDatabase(stops, campuses, null);
+    if (campusTerminal && !list.some((s) => s.id === campusTerminal.id || s.code === campusTerminal.code)) {
+      list.push(campusTerminal);
+    }
+
+    return list;
+  }, [assignedRoute, stops, campuses]);
+
+  const sourceStop = orderedDestinations[0] || null;
+  const terminalStop = orderedDestinations[orderedDestinations.length - 1] || null;
+
+  // 4b. Resolve commuter's own pickup/drop-off stop
   const commuterStop = useMemo(() => {
     const targetStopId =
       initialReservation?.boarding_stop_id ||
       activeBooking?.boardingStopId ||
+      student?.autoAssignedStopId ||
       student?.primaryStopId;
-    if (targetStopId) {
-      return stops.find((s) => s.id === targetStopId) || null;
+
+    let candidate = targetStopId ? stops.find((s) => s.id === targetStopId) || null : null;
+
+    // Safety Guard: The university campus terminal is the ultimate trip destination, NEVER a morning pickup stop!
+    // If target stop is identified as the institutional campus terminal or end terminus,
+    // fallback to the student's authentic corridor origin pickup stop.
+    const isCampusTerminalStop = candidate && (
+      (candidate as any).isCampusTerminal ||
+      (candidate as any).is_campus_terminal ||
+      candidate.id === "stop-bhimtal-campus" ||
+      candidate.name.toLowerCase().includes("campus main gate") ||
+      candidate.name.toLowerCase().includes("university")
+    );
+
+    if (!candidate || isCampusTerminalStop) {
+      if (orderedDestinations.length > 0) {
+        // Return first non-campus boarding stop on the corridor
+        const corridorPickup = orderedDestinations.find(
+          s => !(s as any).isCampusTerminal && !(s as any).is_campus_terminal && s.id !== "stop-bhimtal-campus" && !s.name.toLowerCase().includes("campus")
+        );
+        if (corridorPickup) return corridorPickup;
+        return orderedDestinations[0];
+      }
     }
-    return null;
-  }, [initialReservation, activeBooking, student, stops]);
+
+    return candidate;
+  }, [initialReservation, activeBooking, student, stops, orderedDestinations]);
 
   // 4b. Resolve commuter's current coordinates (Live device GPS or verified student home location)
   const resolvedUserCoords = useMemo(() => {
@@ -343,34 +395,6 @@ export default function FullScreenLiveRadarView({
     return staff.find((s) => s.role === "transport_manager" || s.role === "transport_admin") || null;
   }, [staff]);
 
-  // 5. Build ordered sequence of multiple destinations (Source -> Intermediate Destinations -> Terminal)
-  const orderedDestinations = useMemo(() => {
-    const list: Stop[] = [];
-    if (assignedRoute?.stops && assignedRoute.stops.length > 0) {
-      const sorted = [...assignedRoute.stops].sort((a, b) => (a.stopOrder || 0) - (b.stopOrder || 0));
-      for (const item of sorted) {
-        const stopObj = item.stop || stops.find((s) => s.id === item.stopId);
-        if (stopObj && !list.some((s) => s.id === stopObj.id)) {
-          list.push(stopObj);
-        }
-      }
-    } else {
-      // Fallback: all stops matching route campus or default slice
-      const matching = stops.slice(0, 8);
-      list.push(...matching);
-    }
-
-    // Always guarantee institutional campus terminal is represented as the final destination if not present
-    const campusTerminal = getCampusStopFromDatabase(stops, campuses, null);
-    if (campusTerminal && !list.some((s) => s.id === campusTerminal.id || s.code === campusTerminal.code)) {
-      list.push(campusTerminal);
-    }
-
-    return list;
-  }, [assignedRoute, stops, campuses]);
-
-  const sourceStop = orderedDestinations[0] || null;
-  const terminalStop = orderedDestinations[orderedDestinations.length - 1] || null;
 
   // 6. Real-time telematics synchronization (HTML5 BroadcastChannel + Redis/Mongo polling)
   useEffect(() => {

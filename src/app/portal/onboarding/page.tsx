@@ -898,7 +898,7 @@ export default function StudentOnboardingPage() {
       {/* Sticky Responsive Header */}
       <OnboardingHeader onBack={() => router.push("/portal")} />
 
-      <div className="flex-1 w-full max-w-4xl mx-auto py-2.5 sm:py-8 px-0 sm:px-6 space-y-3.5 sm:space-y-6 animate-in fade-in duration-300">
+      <div className="flex-1 w-full max-w-4xl mx-auto py-1.5 sm:py-8 px-0 sm:px-6 space-y-3 sm:space-y-6 animate-in fade-in duration-300">
         {/* Floating Toast Notification */}
         {toast && (
           <div className="fixed top-5 right-5 z-[9999] max-w-sm sm:max-w-md w-[calc(100%-2.5rem)] animate-in slide-in-from-top-4 fade-in duration-300">

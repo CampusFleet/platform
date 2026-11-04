@@ -213,26 +213,26 @@ export default function OnboardingPinMap({
       </div>
 
       {/* 2. Map Control Actions (Recenter, Fullscreen, Locate Me, Zoom) */}
-      <div className={`absolute right-3 z-10 flex flex-col gap-1.5 shadow-md ${isFullscreen ? "top-16" : "top-3"}`}>
+      <div className={`absolute right-3 z-10 flex flex-col gap-2 shadow-md ${isFullscreen ? "top-16" : "top-3"}`}>
         <button
           type="button"
           onClick={handleRecenter}
           title="Recenter on Home Pin"
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-10 h-10 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
         >
-          <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <Crosshair className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
         </button>
 
         <button
           type="button"
           onClick={toggleFullscreen}
           title={isFullscreen ? "Exit Fullscreen" : "Expand Fullscreen Map"}
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-10 h-10 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
         >
           {isFullscreen ? (
-            <Minimize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <Minimize2 className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
           ) : (
-            <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <Maximize2 className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
           )}
         </button>
 
@@ -240,9 +240,9 @@ export default function OnboardingPinMap({
           type="button"
           onClick={handleFitWalkView}
           title="Fit Walking Path in View"
-          className="w-9 h-9 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-95 shadow-sm cursor-pointer"
+          className="w-10 h-10 rounded-xl bg-white/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center transition-transform active:scale-90 shadow-sm cursor-pointer touch-manipulation"
         >
-          <Footprints className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <Footprints className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
         </button>
 
         <button

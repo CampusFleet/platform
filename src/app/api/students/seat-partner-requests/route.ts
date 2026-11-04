@@ -29,13 +29,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, message: "studentId required." }, { status: 400 });
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    // Resolve current student record to support both student.id and user_id aliases
+    const { data: currentStudent } = await supabaseAdmin
+      .from("students_full")
+      .select("id, user_id, full_name, primary_route_id, primary_route_name")
+      .or(`id.eq.${studentId},user_id.eq.${studentId}`)
+      .maybeSingle();
+
+    const resolvedStudentId = currentStudent?.id || studentId;
+    const studentAliases = Array.from(new Set([resolvedStudentId, currentStudent?.user_id, studentId].filter(Boolean))) as string[];
 
     // 1. Fetch Incoming Requests (others wanting to sit with this student)
     const { data: incoming } = await supabaseAdmin
       .from("seat_partner_requests")
       .select("*")
-      .eq("receiver_id", studentId)
+      .or(studentAliases.map(id => `receiver_id.eq.${id}`).join(","))
       .eq("status", "PENDING")
       .order("created_at", { ascending: false });
 
@@ -43,7 +51,7 @@ export async function GET(req: NextRequest) {
     const { data: outgoing } = await supabaseAdmin
       .from("seat_partner_requests")
       .select("*")
-      .eq("sender_id", studentId)
+      .or(studentAliases.map(id => `sender_id.eq.${id}`).join(","))
       .eq("status", "PENDING")
       .order("created_at", { ascending: false });
 
@@ -51,46 +59,112 @@ export async function GET(req: NextRequest) {
     const { data: activePairs } = await supabaseAdmin
       .from("seat_partner_requests")
       .select("*")
-      .or(`sender_id.eq.${studentId},receiver_id.eq.${studentId}`)
+      .or(studentAliases.flatMap(id => [`sender_id.eq.${id}`, `receiver_id.eq.${id}`]).join(","))
       .eq("status", "ACCEPTED")
       .order("created_at", { ascending: false })
       .limit(1);
 
     const activePartnership = activePairs?.[0] || null;
 
-    // 4. Fetch Fellow Commuters on the Same Bus (Potential Seat Partners)
+    // 4. Resolve Bus ID if not provided explicitly
+    let resolvedBusId = busId;
+    let resolvedShiftId = shiftId;
+
+    if (!resolvedBusId) {
+      const { data: todayRes } = await supabaseAdmin
+        .from("bus_reservations")
+        .select("bus_id, shift_id")
+        .or(studentAliases.map(id => `student_id.eq.${id}`).join(","))
+        .neq("status", "CANCELLED")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (todayRes?.bus_id) {
+        resolvedBusId = String(todayRes.bus_id);
+        if (!resolvedShiftId) resolvedShiftId = todayRes.shift_id;
+      } else if (currentStudent?.primary_route_id) {
+        const { data: bDoc } = await supabaseAdmin
+          .from("buses")
+          .select("id")
+          .eq("current_route_id", currentStudent.primary_route_id)
+          .limit(1)
+          .maybeSingle();
+        if (bDoc?.id) resolvedBusId = String(bDoc.id);
+      }
+    }
+
+    // 5. Fetch Bus metadata
+    let busInfo: any = null;
+    if (resolvedBusId) {
+      const { data: bData } = await supabaseAdmin
+        .from("buses")
+        .select("id, bus_number, registration_no, model, capacity, current_route_id")
+        .eq("id", Number(resolvedBusId))
+        .maybeSingle();
+      busInfo = bData;
+    }
+
+    // 6. Fetch Fellow Commuters on the Same Bus (Potential Seat Partners)
     let busPeers: any[] = [];
-    if (busId) {
+    if (resolvedBusId) {
+      const numBusId = Number(resolvedBusId);
       const resQuery = supabaseAdmin
         .from("bus_reservations")
         .select("student_id, chosen_seat, status")
-        .eq("bus_id", busId)
-        .neq("student_id", studentId)
+        .eq("bus_id", numBusId)
         .neq("status", "CANCELLED")
-        .limit(60);
+        .limit(80);
 
-      if (shiftId) resQuery.eq("shift_id", shiftId);
+      if (resolvedShiftId) resQuery.eq("shift_id", resolvedShiftId);
 
       const { data: reservations } = await resQuery;
+      const reservationStudentIds = (reservations || [])
+        .map((r: any) => r.student_id)
+        .filter((sid: string) => !studentAliases.includes(sid));
 
-      if (reservations && reservations.length > 0) {
-        const peerStudentIds = reservations.map((r: any) => r.student_id);
+      const reservationSeatMap = new Map((reservations || []).map((r: any) => [r.student_id, r.chosen_seat]));
+
+      // Also fetch students who have this route assigned as their primary route
+      let routeStudentIds: string[] = [];
+      const routeIdToUse = busInfo?.current_route_id || currentStudent?.primary_route_id;
+      if (routeIdToUse) {
+        const { data: routeStudents } = await supabaseAdmin
+          .from("students")
+          .select("id")
+          .eq("primary_route_id", routeIdToUse)
+          .limit(50);
+        if (routeStudents) {
+          routeStudentIds = routeStudents
+            .map(s => s.id)
+            .filter((sid: string) => !studentAliases.includes(sid));
+        }
+      }
+
+      const allPeerIds = Array.from(new Set([...reservationStudentIds, ...routeStudentIds])).filter(Boolean);
+
+      if (allPeerIds.length > 0) {
         const { data: peerStudents } = await supabaseAdmin
           .from("students_full")
-          .select("id, full_name, student_id_code, department, class_name, primary_stop_name")
-          .in("id", peerStudentIds);
+          .select("id, user_id, full_name, student_id_code, department, class_name, primary_stop_name")
+          .in("id", allPeerIds);
 
-        const reservationSeatMap = new Map(reservations.map((r: any) => [r.student_id, r.chosen_seat]));
-
-        busPeers = (peerStudents || []).map((p: any) => ({
-          studentId: p.id,
-          fullName: p.full_name,
-          studentIdCode: p.student_id_code || "",
-          department: p.department || "",
-          className: p.class_name || "",
-          stopName: p.primary_stop_name || "",
-          currentSeat: reservationSeatMap.get(p.id) || null,
-        }));
+        // Filter out staff, drivers, conductors
+        busPeers = (peerStudents || [])
+          .filter((p: any) => {
+            const code = (p.student_id_code || "").toLowerCase();
+            const id = (p.id || "").toLowerCase();
+            return !code.startsWith("drv-") && !code.startsWith("cnd-") && !id.includes("drv") && !id.includes("cnd") && !id.includes("teacher");
+          })
+          .map((p: any) => ({
+            studentId: p.id,
+            fullName: p.full_name,
+            studentIdCode: p.student_id_code || "",
+            department: p.department || "",
+            className: p.class_name || "",
+            stopName: p.primary_stop_name || "",
+            currentSeat: reservationSeatMap.get(p.id) || reservationSeatMap.get(p.user_id) || null,
+          }));
       }
     }
 
@@ -100,6 +174,8 @@ export async function GET(req: NextRequest) {
       outgoingRequests: outgoing || [],
       activePartnership,
       busPeers,
+      busInfo,
+      busId: resolvedBusId,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -121,52 +197,91 @@ export async function POST(req: NextRequest) {
     // ACTION 1: SEND_REQUEST
     // ══════════════════════════════════════════════════════════════════
     if (action === "SEND_REQUEST") {
-      const { senderId, receiverId, busId, shiftId, tripId, preferredRowZone = "NO_PREFERENCE" } = body;
+      const { senderId, receiverId, receiverStudentIdCode, busId, shiftId, tripId, preferredRowZone = "NO_PREFERENCE" } = body;
 
-      if (!senderId || !receiverId || !busId) {
+      if (!senderId || (!receiverId && !receiverStudentIdCode)) {
         return NextResponse.json(
-          { success: false, message: "senderId, receiverId, and busId are required." },
+          { success: false, message: "Sender and companion are required." },
           { status: 400 }
         );
       }
 
+      // 1. Resolve Sender
+      const { data: senderStudent } = await supabaseAdmin
+        .from("students_full")
+        .select("id, user_id, full_name, primary_route_id")
+        .or(`id.eq.${senderId},user_id.eq.${senderId}`)
+        .maybeSingle();
+
+      const resolvedSenderId = senderStudent?.id || senderId;
+
+      // 2. Resolve Companion / Receiver
+      let receiverQuery = supabaseAdmin
+        .from("students_full")
+        .select("id, user_id, full_name, primary_route_id, student_id_code");
+
+      if (receiverId) {
+        receiverQuery = receiverQuery.or(`id.eq.${receiverId},user_id.eq.${receiverId},student_id_code.ilike.${receiverId}`);
+      } else if (receiverStudentIdCode) {
+        receiverQuery = receiverQuery.ilike("student_id_code", receiverStudentIdCode.trim());
+      }
+
+      const { data: receiverStudent } = await receiverQuery.maybeSingle();
+
+      if (!receiverStudent) {
+        return NextResponse.json(
+          { success: false, message: "Could not find a student matching the selected Roll Number or ID." },
+          { status: 404 }
+        );
+      }
+
+      const resolvedReceiverId = receiverStudent.id;
+
       // Edge Case A: Cannot invite yourself
-      if (senderId === receiverId) {
+      if (resolvedSenderId === resolvedReceiverId || senderStudent?.user_id === receiverStudent.user_id) {
         return NextResponse.json(
           { success: false, message: "You cannot send a seat partner invitation to yourself." },
           { status: 400 }
         );
       }
 
-      // Edge Case B: Verify both students are assigned to this bus
-      const { data: senderRes } = await supabaseAdmin
-        .from("bus_reservations")
-        .select("id, bus_id, chosen_seat, status")
-        .eq("student_id", senderId)
-        .eq("bus_id", busId)
-        .neq("status", "CANCELLED")
-        .maybeSingle();
+      // 3. Resolve target busId
+      let targetBusId = busId;
+      if (!targetBusId) {
+        const { data: activeRes } = await supabaseAdmin
+          .from("bus_reservations")
+          .select("bus_id")
+          .or(`student_id.eq.${resolvedSenderId},student_id.eq.${senderStudent?.user_id || resolvedSenderId}`)
+          .neq("status", "CANCELLED")
+          .limit(1)
+          .maybeSingle();
+        targetBusId = activeRes?.bus_id;
+      }
 
-      const { data: receiverRes } = await supabaseAdmin
-        .from("bus_reservations")
-        .select("id, bus_id, chosen_seat, status")
-        .eq("student_id", receiverId)
-        .eq("bus_id", busId)
-        .neq("status", "CANCELLED")
-        .maybeSingle();
+      if (!targetBusId && senderStudent?.primary_route_id) {
+        const { data: busDoc } = await supabaseAdmin
+          .from("buses")
+          .select("id")
+          .eq("current_route_id", senderStudent.primary_route_id)
+          .limit(1)
+          .maybeSingle();
+        targetBusId = busDoc?.id;
+      }
 
-      if (!senderRes || !receiverRes) {
+      if (!targetBusId) {
         return NextResponse.json(
-          { success: false, message: "Both students must be assigned to this same bus to sit together." },
+          { success: false, message: "No active bus run identified. Please verify your bus assignment." },
           { status: 400 }
         );
       }
 
-      // Edge Case C: Neither student can be already actively paired
+      const numBusId = Number(targetBusId);
+
+      // Edge Case B: Neither student can be already actively paired
       const { data: existingActive } = await supabaseAdmin
         .from("seat_partner_requests")
         .select("id, sender_id, receiver_id")
-        .or(`sender_id.eq.${senderId},receiver_id.eq.${senderId},sender_id.eq.${receiverId},receiver_id.eq.${receiverId}`)
+        .or(`sender_id.eq.${resolvedSenderId},receiver_id.eq.${resolvedSenderId},sender_id.eq.${resolvedReceiverId},receiver_id.eq.${resolvedReceiverId}`)
         .eq("status", "ACCEPTED")
         .limit(1);
 
@@ -177,54 +292,45 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Edge Case D: Check if a reverse pending request exists (Instant Bidirectional Match!)
+      // Edge Case C: Check if a reverse pending request exists (Instant Bidirectional Mutual Match!)
       const { data: reversePending } = await supabaseAdmin
         .from("seat_partner_requests")
         .select("*")
-        .eq("sender_id", receiverId)
-        .eq("receiver_id", senderId)
-        .eq("bus_id", busId)
+        .or(`and(sender_id.eq.${resolvedReceiverId},receiver_id.eq.${resolvedSenderId}),and(sender_id.eq.${receiverStudent.user_id},receiver_id.eq.${senderStudent?.user_id || resolvedSenderId})`)
         .eq("status", "PENDING")
         .maybeSingle();
 
       if (reversePending) {
         // Instant mutual match! Automatically accept
-        return await executeAcceptance(reversePending.id, senderId);
+        return await executeAcceptance(reversePending.id, resolvedSenderId);
       }
 
-      // Edge Case E: Check duplicate pending request
+      // Edge Case D: Check duplicate pending request
       const { data: duplicatePending } = await supabaseAdmin
         .from("seat_partner_requests")
         .select("id")
-        .eq("sender_id", senderId)
-        .eq("receiver_id", receiverId)
+        .or(`and(sender_id.eq.${resolvedSenderId},receiver_id.eq.${resolvedReceiverId}),and(sender_id.eq.${senderStudent?.user_id || resolvedSenderId},receiver_id.eq.${receiverStudent.user_id})`)
         .eq("status", "PENDING")
         .maybeSingle();
 
       if (duplicatePending) {
         return NextResponse.json(
-          { success: false, message: "You already have a pending invitation to this peer. Awaiting their response." },
+          { success: false, message: `You already have a pending invitation to ${receiverStudent.full_name}. Awaiting their response.` },
           { status: 400 }
         );
       }
 
-      // Fetch student display names
-      const [sRes, rRes] = await Promise.all([
-        supabaseAdmin.from("students_full").select("full_name").eq("id", senderId).maybeSingle(),
-        supabaseAdmin.from("students_full").select("full_name").eq("id", receiverId).maybeSingle(),
-      ]);
-
-      const senderName = sRes.data?.full_name || "Commuter";
-      const receiverName = rRes.data?.full_name || "Commuter";
+      const senderName = senderStudent?.full_name || "Commuter";
+      const receiverName = receiverStudent?.full_name || "Commuter";
 
       const { data: inserted, error: insErr } = await supabaseAdmin
         .from("seat_partner_requests")
         .insert({
-          sender_id: senderId,
+          sender_id: resolvedSenderId,
           sender_name: senderName,
-          receiver_id: receiverId,
+          receiver_id: resolvedReceiverId,
           receiver_name: receiverName,
-          bus_id: busId,
+          bus_id: numBusId,
           trip_id: tripId || null,
           shift_id: shiftId || null,
           preferred_row_zone: preferredRowZone,
@@ -234,6 +340,24 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insErr) throw insErr;
+
+      // Send in-app notification to companion
+      try {
+        await supabaseAdmin.from("notifications").insert({
+          user_id: receiverStudent.user_id || resolvedReceiverId,
+          title: "👥 Seat Partner Invitation",
+          message: `${senderName} wants to sit together on Bus ${numBusId}! Review and accept in Seat Preferences to pair adjacent seats.`,
+          type: "COMPANION_INVITE",
+          metadata: {
+            requestId: inserted.id,
+            senderId: resolvedSenderId,
+            senderName,
+            busId: numBusId,
+          },
+        });
+      } catch (notifErr) {
+        console.warn("Notification insert error (non-fatal):", notifErr);
+      }
 
       return NextResponse.json({
         success: true,

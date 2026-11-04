@@ -1,5 +1,5 @@
 // CampusFleet PWA Service Worker
-const CACHE_NAME = 'campusfleet-v1';
+const CACHE_NAME = 'campusfleet-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -7,10 +7,11 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -30,11 +31,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network first with cache fallback for dynamic routes
+  // Network-first policy for HTML navigation documents & API routes
+  // Guarantees immediate delivery of new builds with zero stale bundle lockouts
+  const isHtml = event.request.headers.get('accept')?.includes('text/html') || event.request.mode === 'navigate';
+  const isApi = event.request.url.includes('/api/');
+
+  if (isHtml || isApi) {
+    event.respondWith(
+      fetch(event.request)
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/')))
+    );
+    return;
+  }
+
+  // Network-first with cache fallback for static resources (CSS, JS, images)
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache successful responses for static assets
         if (response.status === 200 && event.request.url.match(/\.(svg|png|jpg|jpeg|css|js|woff2)$/)) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -43,15 +56,7 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => {
-        return caches.match(event.request).then((cached) => {
-          if (cached) return cached;
-          if (event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('/');
-          }
-          return new Response('Offline', { status: 503, statusText: 'Offline' });
-        });
-      })
+      .catch(() => caches.match(event.request))
   );
 });
 

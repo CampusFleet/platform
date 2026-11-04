@@ -47,12 +47,23 @@ export function usePWAInstall() {
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("appinstalled", handleAppInstalled);
 
-    // Register Service Worker
+    // Register Service Worker and aggressively poll for latest build
     if ("serviceWorker" in navigator && process.env.NODE_ENV !== "test") {
       navigator.serviceWorker
         .register("/sw.js")
         .then((reg) => {
-          // SW registered
+          // Immediately check for updated service worker & chunks
+          reg.update().catch(() => {});
+          reg.addEventListener("updatefound", () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.addEventListener("statechange", () => {
+                if (installingWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  installingWorker.postMessage({ type: "SKIP_WAITING" });
+                }
+              });
+            }
+          });
         })
         .catch(() => {
           // SW registration failed silently

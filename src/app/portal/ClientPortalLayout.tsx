@@ -163,8 +163,8 @@ export default function ClientPortalLayout({
     };
   }, [activeStudent?.id]);
   
-  const isOnboardingPage = pathname === "/portal/onboarding";
-  const isPaymentPage = pathname === "/portal/payments";
+  const isOnboardingPage = Boolean(pathname?.startsWith("/portal/onboarding"));
+  const isPaymentPage = Boolean(pathname?.startsWith("/portal/payments"));
   
   // Only block access if the server definitively said they are NOT subscribed!
   const isAccessBlocked = isStudent && !isSubscriptionActive && !isPaymentPage && !isOnboardingPage;
@@ -259,7 +259,7 @@ export default function ClientPortalLayout({
 
   const layoutContent = (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col overflow-x-hidden ${
-      isRadarPage ? "h-[100dvh] pb-0 md:pb-0 overflow-hidden" : "pb-16 md:pb-6"
+      isRadarPage ? "h-[100dvh] pb-0 md:pb-0 overflow-hidden" : isOnboardingPage ? "pb-0 md:pb-6" : "pb-16 md:pb-6"
     }`}>
       {/* Zero-Overflow Unified Header with Vertical Slide-Down Command Panel */}
       <UnifiedAppHeader

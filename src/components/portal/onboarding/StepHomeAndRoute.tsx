@@ -71,19 +71,24 @@ export function StepHomeAndRoute({
   onContinue,
 }: StepHomeAndRouteProps) {
   return (
-    <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl shadow-sm space-y-4 sm:space-y-6 animate-in fade-in duration-200 overflow-hidden">
+    <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl shadow-none sm:shadow-sm space-y-4 sm:space-y-6 animate-in fade-in duration-200 overflow-hidden w-full">
       {/* Header with Title and Pin Icon */}
-      <div className="px-4 sm:px-8 pt-5 sm:pt-8 flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4 sm:pb-5">
+      <div className="px-4 sm:px-8 pt-4 sm:pt-8 flex items-start justify-between gap-3 border-b border-gray-100 dark:border-zinc-800 pb-3.5 sm:pb-5">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
-            Home Location & Interactive Pin Drop
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">
+              Home Location & Interactive Pin Drop
+            </h2>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              Step 1
+            </span>
+          </div>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Type your home address or drop the pin on the map. We automatically assign your transit corridor, nearest bus stop, and zone tier!
+            Search your address or drag the pin. We automatically assign your transit corridor, nearest bus stop, and zone tier!
           </p>
         </div>
-        <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 shrink-0">
-          <MapPin className="w-6 h-6" />
+        <div className="p-2.5 sm:p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 shrink-0">
+          <MapPin className="w-5 h-5 sm:w-6 sm:h-6" />
         </div>
       </div>
 
@@ -265,7 +270,7 @@ export function StepHomeAndRoute({
             allStops={allStops}
             walkingDistanceMeters={walkingDistanceMeters}
             walkingTimeMins={walkingTimeMins}
-            height="430px"
+            height="460px"
             zoom={15}
           />
         </div>

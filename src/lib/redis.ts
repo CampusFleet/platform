@@ -210,6 +210,48 @@ export async function invalidateCachedStudentProfile(
       cacheDel(`student:profile:${id}`),
       cacheDel(`student:profile:${id.toLowerCase()}`),
       cacheDel(`student:${id}`),
+      cacheDel(`student:subscription:${id}`),
+      cacheDel(`student:subscription:${id.toLowerCase()}`),
     ])
   );
+}
+
+/**
+ * Fast-write active subscription across all student/user/email identifier aliases in Redis,
+ * and busts any stale cached profiles so subsequent requests immediately pass access gates.
+ */
+export async function markStudentSubscriptionActiveInCache({
+  studentId,
+  userId,
+  email,
+}: {
+  studentId?: string | null;
+  userId?: string | null;
+  email?: string | null;
+}): Promise<void> {
+  const ids = new Set<string>();
+  if (studentId) {
+    ids.add(studentId);
+    ids.add(studentId.replace(/^stud-/, ""));
+  }
+  if (userId) {
+    ids.add(userId);
+    ids.add(`stud-${userId}`);
+  }
+  if (email) {
+    ids.add(email);
+    ids.add(email.toLowerCase());
+  }
+
+  const validIds = Array.from(ids).filter(Boolean);
+
+  await Promise.allSettled([
+    // Fast-write subscription: true for all alias keys (1 day TTL)
+    ...validIds.map((id) => cacheSet(`student:subscription:${id}`, true, 86400)),
+    // Invalidate stale profile data so the DB is re-read with fresh payment status
+    ...validIds.flatMap((id) => [
+      cacheDel(`student:profile:${id}`),
+      cacheDel(`student:${id}`),
+    ]),
+  ]);
 }

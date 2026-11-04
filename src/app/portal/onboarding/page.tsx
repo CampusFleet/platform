@@ -593,11 +593,22 @@ export default function StudentOnboardingPage() {
         .then(data => {
           setIsRazorpayLoading(false);
           if (data.success) {
-            showToast("success", "🎉 Payment Verified! Your semester transit pass is officially unlocked.", "Access Granted");
+            showToast("success", "🎉 Payment Verified! Your semester transit pass is officially unlocked. Opening Commuter Hub...", "Access Granted");
             window.history.replaceState({}, document.title, window.location.pathname);
+            
+            const targetId = data.studentId || activeStudent?.id;
+            if (targetId) {
+              store.markStudentSubscribed(targetId);
+            }
+            if (currentUser?.id) {
+              store.markStudentSubscribed(currentUser.id);
+            }
+            setServerStudent(prev => prev ? { ...prev, hasActiveSubscription: true, paymentStatus: "APPROVED" } : null);
+
+            // Hard reload to /portal so PortalLayout re-evaluates server authentication with the freshly active pass
             setTimeout(() => {
-              router.push("/portal");
-            }, 1800);
+              window.location.href = "/portal";
+            }, 1200);
           } else {
             showToast("error", data.error || "Failed to verify transaction.", "Verification Failed");
           }
@@ -607,7 +618,19 @@ export default function StudentOnboardingPage() {
           showToast("error", err.message || "Network error verifying payment.", "Network Error");
         });
     }
-  }, [router]);
+  }, [router, activeStudent?.id, currentUser?.id]);
+
+  // Auto-redirect to Commuter Hub if commuter already has an active transit pass
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const hasRazorpayParams = params.has("razorpay_payment_id") || params.has("razorpay_payment_link_id");
+    if (hasRazorpayParams) return; // Don't redirect while actively verifying a payment callback
+
+    if (isPassApproved || activeStudent?.hasActiveSubscription || activeStudent?.paymentStatus === "APPROVED") {
+      router.replace("/portal");
+    }
+  }, [dataLoaded, isPassApproved, activeStudent, router]);
 
   // Save profile and trigger Razorpay Checkout
   const handleSaveAndCheckout = async () => {
@@ -873,7 +896,7 @@ export default function StudentOnboardingPage() {
   return (
     <div className="min-h-screen bg-gray-50/80 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-20">
       {/* Sticky Responsive Header */}
-      <OnboardingHeader onBack={() => router.back()} />
+      <OnboardingHeader onBack={() => router.push("/portal")} />
 
       <div className="flex-1 w-full max-w-4xl mx-auto py-2.5 sm:py-8 px-0 sm:px-6 space-y-3.5 sm:space-y-6 animate-in fade-in duration-300">
         {/* Floating Toast Notification */}

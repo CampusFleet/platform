@@ -100,6 +100,18 @@ export async function POST(request: NextRequest) {
           .eq("id", studentId);
       }
 
+      // Fast-write subscription: true in Redis and invalidate stale profile caches
+      try {
+        const { markStudentSubscriptionActiveInCache } = await import("@/lib/redis");
+        await markStudentSubscriptionActiveInCache({
+          studentId,
+          userId: payment.notes?.userId || (student as any)?.user_id,
+          email: (student as any)?.email,
+        });
+      } catch (cacheErr) {
+        console.warn("Redis webhook cache sync error (non-fatal):", cacheErr);
+      }
+
       await supabaseAdmin.from("audit_logs").insert({
         action: "RAZORPAY_WEBHOOK_PROCESSED",
         user_id: payment.notes?.userId || studentId,

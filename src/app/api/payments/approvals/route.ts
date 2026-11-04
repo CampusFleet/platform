@@ -307,6 +307,16 @@ export async function POST(request: NextRequest) {
         // Non-fatal
       }
 
+      // ── Sync Redis Subscription Cache ────────────────────────────────
+      try {
+        const { markStudentSubscriptionActiveInCache } = await import("@/lib/redis");
+        await markStudentSubscriptionActiveInCache({
+          studentId: submission.student_id,
+        });
+      } catch (err) {
+        console.warn("Redis approval sync error:", err);
+      }
+
       // ── Audit Log ─────────────────────────────────────────────────────
       try {
         await supabaseAdmin.from("audit_logs").insert({
@@ -375,6 +385,16 @@ export async function POST(request: NextRequest) {
         });
       } catch {
         // Non-fatal
+      }
+
+      // ── Sync Redis Subscription Cache ────────────────────────────────
+      try {
+        const { markStudentSubscriptionActiveInCache } = await import("@/lib/redis");
+        await markStudentSubscriptionActiveInCache({
+          studentId: submission.student_id,
+        });
+      } catch (err) {
+        console.warn("Redis approval sync error:", err);
       }
 
       // ── Audit Log ─────────────────────────────────────────────────────

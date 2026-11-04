@@ -22,6 +22,7 @@ declare module "./_base" {
     updateUserRole(userId: string, newRole: UserRole): Promise<void>;
     updateUserRoleLocal(userId: string, newRole: UserRole): void;
     updateStudentProfile(studentId: string, profileData: any): Promise<any>;
+    markStudentSubscribed(studentId: string): void;
     // Notifications
     markNotificationAsRead(id: string): void;
     createNotification(notif: Omit<NotificationItem, "id" | "timestamp">): NotificationItem;
@@ -433,6 +434,25 @@ CampusFleetStore.prototype.updateStudentProfile = async function (
   }
 
   return { success: true, message: "Profile successfully saved to institutional database." };
+};
+
+CampusFleetStore.prototype.markStudentSubscribed = function (
+  this: CampusFleetStore,
+  studentId: string
+) {
+  this.students = this.students.map(s => {
+    if (s.id === studentId || s.userId === studentId) {
+      return {
+        ...s,
+        hasActiveSubscription: true,
+        paymentStatus: "APPROVED",
+        totalFeePaid: s.totalFeeDue || s.totalFeePaid || 12000,
+      };
+    }
+    return s;
+  });
+  this.saveToLocalStorage();
+  this.notify();
 };
 
 // ── Notification CRUD ───────────────────────────────────────────────────────

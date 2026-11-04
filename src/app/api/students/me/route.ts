@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
         (await getCachedStudentProfile(session.userId)) ||
         (session.email ? await getCachedStudentProfile(session.email.toLowerCase()) : null);
 
-      if (cached) {
+      // Fast-path: Only return cached profile if active subscription is already confirmed.
+      // If cached as unpaid/unsubscribed, bypass cache to verify DB ground truth in case payment just landed.
+      if (cached && (cached.hasActiveSubscription || cached.paymentStatus === "APPROVED")) {
         return NextResponse.json({ student: cached, source: "cache" });
       }
     }

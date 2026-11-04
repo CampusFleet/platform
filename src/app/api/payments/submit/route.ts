@@ -219,10 +219,14 @@ export async function POST(request: NextRequest) {
         // Non-fatal if subscription trigger already handled it
       }
 
-      // Fast-write Redis subscription cache for instant boarding clearance
+      // Fast-write Redis subscription cache for instant boarding clearance across all aliases
       try {
-        const { cacheSet } = await import("@/lib/redis");
-        await cacheSet(`student:subscription:${studentId}`, true, 300);
+        const { markStudentSubscriptionActiveInCache } = await import("@/lib/redis");
+        await markStudentSubscriptionActiveInCache({
+          studentId,
+          userId: session.userId || (student as any)?.user_id,
+          email: session.email || (student as any)?.email,
+        });
       } catch {
         // Non-fatal
       }

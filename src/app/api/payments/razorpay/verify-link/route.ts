@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     const { data: studentRecord, error: fetchError } = await supabaseAdmin
       .from("students_full")
-      .select("total_fee_paid, full_name, zone_code")
+      .select("id, user_id, email, total_fee_paid, full_name, zone_code, total_fee_due")
       .eq("id", studentId)
       .maybeSingle();
 
@@ -100,11 +100,49 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 4. Actively write TRUE to Redis so the user is INSTANTLY authorized on the portal!
-    const { cacheSet } = await import("@/lib/redis");
-    await cacheSet(`student:subscription:${studentId}`, true, 300); // 5 minutes cache
+    // 2. Ensure active subscription row exists in subscriptions table as a fail-safe
+    const { data: defaultPlan } = await supabaseAdmin
+      .from("subscription_plans")
+      .select("id")
+      .limit(1)
+      .maybeSingle();
 
-    return NextResponse.json({ success: true, message: "Payment verified and recorded." });
+    const { data: existingSub } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id")
+      .eq("student_id", studentId)
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+
+    if (!existingSub) {
+      await supabaseAdmin.from("subscriptions").insert({
+        student_id: studentId,
+        plan_id: defaultPlan?.id || "plan-standard",
+        start_date: new Date().toISOString().split("T")[0],
+        end_date: new Date(Date.now() + 180 * 86400000).toISOString().split("T")[0],
+        status: "ACTIVE",
+      });
+    }
+
+    await supabaseAdmin
+      .from("students")
+      .update({ transport_access_suspended: false })
+      .eq("id", studentId);
+
+    // 3. Actively write TRUE to Redis and bust stale profiles across all student/user/email aliases
+    const { markStudentSubscriptionActiveInCache } = await import("@/lib/redis");
+    await markStudentSubscriptionActiveInCache({
+      studentId,
+      userId: session.userId || (studentRecord as any).user_id,
+      email: session.email || (studentRecord as any).email,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Payment verified and transit pass unlocked.",
+      studentId,
+      userId: session.userId || (studentRecord as any).user_id,
+    });
 
   } catch (error: any) {
     console.error("Razorpay Link Verification Error:", error);

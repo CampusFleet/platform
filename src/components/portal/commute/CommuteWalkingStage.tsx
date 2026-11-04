@@ -15,11 +15,11 @@ import {
   Radio,
   ArrowRight,
 } from "lucide-react";
-import type { Stop } from "@/lib/types";
+import type { Stop, Route } from "@/lib/types";
 import type { FirstMileMetrics } from "@/lib/commute/types";
 
-// Dynamic import for CampusFleetMap with fallback
-const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+// Dynamic import for CommuterCorridorMap (Settings-inspired high performance map)
+const CommuterCorridorMap = dynamic(() => import("@/components/maps/CommuterCorridorMap"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
@@ -33,12 +33,14 @@ const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"),
 
 interface CommuteWalkingStageProps {
   assignedStop: Stop | null;
+  assignedRoute?: Route | null;
   stops: Stop[];
   metrics: FirstMileMetrics;
   telematicsLocation: any;
   assignedBusNumber: string;
   assignedBusId?: string | number;
   userCoords?: { latitude: number; longitude: number } | null;
+  deviceGpsCoords?: { latitude: number; longitude: number } | null;
   userAddress?: string | null;
   onArrivedAtStop: () => void;
   onSelectSeatAheadOfTime: () => void;
@@ -46,12 +48,14 @@ interface CommuteWalkingStageProps {
 
 export function CommuteWalkingStage({
   assignedStop,
+  assignedRoute,
   stops,
   metrics,
   telematicsLocation,
   assignedBusNumber,
   assignedBusId,
   userCoords,
+  deviceGpsCoords,
   userAddress,
   onArrivedAtStop,
   onSelectSeatAheadOfTime,
@@ -115,42 +119,22 @@ export function CommuteWalkingStage({
           </span>
         </div>
 
-        <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative z-0">
-          <CampusFleetMap
-            height="340px"
-            zoom={15}
-            walkingCoordinates={metrics.walkingCoordinates}
-            stops={stops}
-            selectedStopId={assignedStop?.id}
-            userPickupStopId={assignedStop?.id}
-            userCoords={
-              userCoords ||
-              (metrics.walkingCoordinates?.[0]
-                ? {
-                    latitude: metrics.walkingCoordinates[0][0],
-                    longitude: metrics.walkingCoordinates[0][1],
-                  }
-                : null)
-            }
-            userAddress={userAddress || "Your Origin"}
-            busLocation={telematicsLocation}
-            showUserLocation={true}
-            showCampusLandmark={true}
-            tileTheme="GOOGLE_STREETS"
-          />
-
-          {/* Floating Pill: Quick Switch to Full Screen Radar */}
-          <div className="absolute top-3 right-3 z-10">
-            <Link
-              href={`/portal/radar?busId=${radarBusParam}`}
-              className="px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-black text-white text-[11px] font-bold backdrop-blur-md shadow-lg border border-white/20 flex items-center gap-1.5 transition-all active:scale-95 group"
-            >
-              <Radio className="w-3 h-3 text-cyan-400 animate-pulse" />
-              <span>Full Screen Radar</span>
-              <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-          </div>
-        </div>
+        <CommuterCorridorMap
+          height="350px"
+          zoom={15}
+          homeCoords={userCoords}
+          homeAddress={userAddress}
+          assignedStop={assignedStop}
+          assignedRoute={assignedRoute}
+          allStops={stops}
+          walkingDistanceMeters={metrics.userToStopDistMeters ?? undefined}
+          walkingTimeMins={metrics.walkingEtaMins}
+          busLocation={telematicsLocation}
+          busName={`Bus ${assignedBusNumber}`}
+          isTelematicsLive={Boolean(telematicsLocation)}
+          deviceGpsCoords={deviceGpsCoords}
+          radarHref={`/portal/radar?busId=${radarBusParam}`}
+        />
       </div>
 
       {/* ─── 3. Walking & Arrival Topography Metrics ─── */}

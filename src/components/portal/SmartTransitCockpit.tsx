@@ -338,17 +338,26 @@ export default function SmartTransitCockpit({
     return lat >= 28.5 && lat <= 30.0 && lng >= 78.5 && lng <= 80.5;
   };
 
+  // Priority: Commuter's registered home coordinates always define their home doorstep pin!
+  const studentRegisteredLat = (student as any)?.home_latitude ?? (student as any)?.homeLatitude ?? null;
+  const studentRegisteredLng = (student as any)?.home_longitude ?? (student as any)?.homeLongitude ?? null;
+
   const effectiveUserLat =
+    studentRegisteredLat ??
     (userGeoCoords && isCoordInTransitRegion(userGeoCoords.lat, userGeoCoords.lng) ? userGeoCoords.lat : null) ??
-    (student as any)?.home_latitude ??
-    (student as any)?.homeLatitude ??
     (assignedStop?.latitude ? assignedStop.latitude - 0.0025 : 29.220936);
 
   const effectiveUserLng =
+    studentRegisteredLng ??
     (userGeoCoords && isCoordInTransitRegion(userGeoCoords.lat, userGeoCoords.lng) ? userGeoCoords.lng : null) ??
-    (student as any)?.home_longitude ??
-    (student as any)?.homeLongitude ??
     (assignedStop?.longitude ? assignedStop.longitude - 0.0020 : 79.514496);
+
+  const deviceGpsCoords = useMemo(() => {
+    if (userGeoCoords && isCoordInTransitRegion(userGeoCoords.lat, userGeoCoords.lng)) {
+      return { latitude: userGeoCoords.lat, longitude: userGeoCoords.lng };
+    }
+    return null;
+  }, [userGeoCoords]);
 
   // Asynchronously query Google Maps Routes API for actual road distance
   useEffect(() => {
@@ -656,12 +665,14 @@ export default function SmartTransitCockpit({
       {activeStage === "WALKING_TO_STOP" && (
         <CommuteWalkingStage
           assignedStop={assignedStop}
+          assignedRoute={assignedRoute}
           stops={stops}
           metrics={firstMileMetrics}
           telematicsLocation={telematicsLocation}
           assignedBusNumber={assignedBus?.busNumber ? String(assignedBus.busNumber) : "Assigned"}
           assignedBusId={assignedBus?.id}
           userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
+          deviceGpsCoords={deviceGpsCoords}
           userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           onArrivedAtStop={() => setHasArrivedAtStopManually(true)}
           onSelectSeatAheadOfTime={() => setShowSeatGridWhileWalking(true)}
@@ -708,6 +719,7 @@ export default function SmartTransitCockpit({
         <CommuteConfirmedStage
           assignedBus={assignedBus}
           assignedStop={assignedStop}
+          assignedRoute={assignedRoute}
           assignedShiftName={assignedShiftName}
           assignedShiftStartTime={assignedShiftStartTime}
           assignedShiftEndTime={assignedShiftEndTime}
@@ -724,6 +736,7 @@ export default function SmartTransitCockpit({
           isTelematicsLive={isTelematicsLive}
           firstMileMetrics={firstMileMetrics}
           userCoords={memoizedUserCoords}
+          deviceGpsCoords={deviceGpsCoords}
           userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
           settingsHref={settingsHref}
           onOpenDigitalPass={onOpenDigitalPass}

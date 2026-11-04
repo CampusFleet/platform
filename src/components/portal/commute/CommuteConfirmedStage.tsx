@@ -23,10 +23,10 @@ import {
   Lock,
   Compass,
 } from "lucide-react";
-import type { Bus, Stop, Student, Staff } from "@/lib/types";
+import type { Bus, Stop, Route, Student, Staff } from "@/lib/types";
 
-// Dynamic import for CampusFleetMap with high-performance SSR disabled
-const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"), {
+// Dynamic import for CommuterCorridorMap (Settings-inspired high performance map)
+const CommuterCorridorMap = dynamic(() => import("@/components/maps/CommuterCorridorMap"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800">
@@ -41,6 +41,7 @@ const CampusFleetMap = dynamic(() => import("@/components/maps/CampusFleetMap"),
 export interface CommuteConfirmedStageProps {
   assignedBus: Bus;
   assignedStop: Stop | null;
+  assignedRoute?: Route | null;
   assignedShiftName: string;
   assignedShiftStartTime: string;
   assignedShiftEndTime: string;
@@ -57,6 +58,7 @@ export interface CommuteConfirmedStageProps {
   isTelematicsLive?: boolean;
   firstMileMetrics?: any;
   userCoords?: { latitude: number; longitude: number } | null;
+  deviceGpsCoords?: { latitude: number; longitude: number } | null;
   userAddress?: string | null;
   isCancellingSeat?: boolean;
   settingsHref: string;
@@ -70,6 +72,7 @@ export interface CommuteConfirmedStageProps {
 export function CommuteConfirmedStage({
   assignedBus,
   assignedStop,
+  assignedRoute,
   assignedShiftName,
   assignedShiftStartTime,
   assignedShiftEndTime,
@@ -86,6 +89,7 @@ export function CommuteConfirmedStage({
   isTelematicsLive = false,
   firstMileMetrics,
   userCoords,
+  deviceGpsCoords,
   userAddress,
   settingsHref,
   onOpenDigitalPass,
@@ -175,55 +179,23 @@ export function CommuteConfirmedStage({
         )}
       </div>
 
-      {/* ─── 2. Embedded Interactive Transit Corridor Map (Citymapper / Uber Standard) ─── */}
-      <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-sm relative z-0">
-        <CampusFleetMap
-          height="330px"
-          zoom={14}
-          routeCoordinates={routeCoordinates}
-          walkingCoordinates={walkingCoords}
-          stops={stops}
-          selectedStopId={assignedStop?.id}
-          userPickupStopId={assignedStop?.id}
-          campusDestinationId={campusDestinationId}
-          userCoords={userCoords}
-          userAddress={userAddress || "Your Origin"}
-          busLocation={telematicsLocation}
-          busName={displayBusNumber}
-          showUserLocation={true}
-          showCampusLandmark={true}
-          tileTheme="GOOGLE_STREETS"
-        />
-
-        {/* Top-Left Floating Pill: Live ETA & Status */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-          <div className="px-3 py-1.5 rounded-xl bg-zinc-900/95 backdrop-blur-md text-white text-[11px] font-bold shadow-lg border border-white/20 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span>{firstMileMetrics?.liveEtaText || "Live Corridor Tracking"}</span>
-          </div>
-        </div>
-
-        {/* Top-Right Floating Pill: One-Click Full Screen Radar (Offset from Map Controls) */}
-        <div className="absolute top-3 right-14 z-10">
-          <Link
-            href={`/portal/radar?busId=${assignedBus.id}`}
-            className="px-3 py-1.5 rounded-xl bg-indigo-600/95 hover:bg-indigo-700 active:scale-95 text-white text-[11px] font-bold backdrop-blur-md shadow-lg border border-white/20 flex items-center gap-1.5 transition-all group cursor-pointer"
-            title="Launch Full-Screen Satellite Radar"
-          >
-            <Radio className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
-            <span>Full Radar</span>
-            <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
-          </Link>
-        </div>
-
-        {/* Bottom-Left Live Bus Speed Pill */}
-        {isTelematicsLive && isMoving && (
-          <div className="absolute bottom-3 left-3 z-10 px-2.5 py-1 rounded-lg bg-zinc-900/90 backdrop-blur-md text-white text-[10px] font-mono font-bold border border-white/20 flex items-center gap-1.5 shadow-md">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span>{speed} km/h • In Motion</span>
-          </div>
-        )}
-      </div>
+      {/* ─── 2. Embedded Interactive Transit Corridor Map (Settings Inspired) ─── */}
+      <CommuterCorridorMap
+        height="350px"
+        zoom={15}
+        homeCoords={userCoords}
+        homeAddress={userAddress}
+        assignedStop={assignedStop}
+        assignedRoute={assignedRoute}
+        allStops={stops}
+        walkingDistanceMeters={firstMileMetrics?.userToStopDistMeters}
+        walkingTimeMins={firstMileMetrics?.walkingEtaMins}
+        busLocation={telematicsLocation}
+        busName={displayBusNumber}
+        isTelematicsLive={isTelematicsLive}
+        deviceGpsCoords={deviceGpsCoords}
+        radarHref={`/portal/radar?busId=${assignedBus.id}`}
+      />
 
       {/* ─── 3. Anti-Proxy Attendance Verification Shield ─── */}
       {!isAttendanceVerified ? (

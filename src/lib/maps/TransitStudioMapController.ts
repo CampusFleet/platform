@@ -243,7 +243,7 @@ export class TransitStudioMapController extends BaseMapController {
 
     const map = new google.maps.Map(this.container, mapOptions);
     this.mapInstance = map;
-    this.directionsService = null;
+    this.directionsService = new google.maps.DirectionsService();
     this.infoWindow = new google.maps.InfoWindow();
 
     // Map Click Listener
@@ -721,7 +721,7 @@ export class TransitStudioMapController extends BaseMapController {
    * from Campus Terminal -> Stop 1 -> ... -> Stop N -> Rest Depot
    */
   public async recalculateRoutePath(): Promise<void> {
-    if (!this.googleMaps || !this.mapInstance || !this.directionsService) return;
+    if (!this.googleMaps || !this.mapInstance) return;
 
     const points: { lat: number; lng: number }[] = [];
     if (this.campusAnchor) {
@@ -768,7 +768,45 @@ export class TransitStudioMapController extends BaseMapController {
       console.warn("[TransitStudioMapController] Server road geometry error:", err);
     }
 
-    // 2. Fallback to direct path if server route unavailable
+    // 2. Secondary: Client-side DirectionsService fallback if server route unavailable or returned fallback
+    if (this.directionsService) {
+      try {
+        this.directionsService.route(
+          {
+            origin: new this.googleMaps.maps.LatLng(origin.lat, origin.lng),
+            destination: new this.googleMaps.maps.LatLng(destination.lat, destination.lng),
+            waypoints: waypoints.slice(0, 23),
+            travelMode: this.googleMaps.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: any) => {
+            if (status === "OK" && result?.routes?.[0]?.overview_path) {
+              this.renderOverviewPath(result.routes[0].overview_path);
+
+              let totalMeters = 0;
+              let totalSecs = 0;
+              result.routes[0].legs?.forEach((leg: any) => {
+                totalMeters += leg.distance?.value || 0;
+                totalSecs += leg.duration?.value || 0;
+              });
+
+              const distanceKm = parseFloat((totalMeters / 1000).toFixed(1));
+              const durationMins = Math.round(totalSecs / 60) + (this.studioStops.length * 2);
+
+              if (this.config.onRouteMetricsCalculated) {
+                this.config.onRouteMetricsCalculated({ distanceKm, durationMins });
+              }
+            } else {
+              this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
+            }
+          }
+        );
+        return;
+      } catch (clientErr) {
+        console.warn("[TransitStudioMapController] Client directions error:", clientErr);
+      }
+    }
+
+    // 3. Fallback to direct path if server route unavailable
     this.renderOverviewPath(points.map(p => new this.googleMaps.maps.LatLng(p.lat, p.lng)));
   }
 

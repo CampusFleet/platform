@@ -458,10 +458,16 @@ export default function TransitStudioMap({
     }).then(() => {
       controller.setCampusAnchor(campusAnchor);
       controller.setRestZoneAnchor(selectedRestZone);
-      controller.setStops(studioStops);
       controller.setDemandStudents(students);
       controller.setDemandLayerVisibility(isDemandVisible);
-      controller.fitRouteBounds();
+
+      const targetRouteId = selectedRouteId || activeRouteId || routes[0]?.id;
+      if (targetRouteId) {
+        loadRouteIntoStudio(targetRouteId);
+      } else {
+        controller.setStops(studioStops);
+        controller.fitRouteBounds();
+      }
     });
 
     controllerRef.current = controller;
@@ -665,17 +671,31 @@ export default function TransitStudioMap({
         intermediates = intermediates.slice(1);
       }
 
+      let targetDepot = selectedRestZone;
       const lastCandidate = intermediates[intermediates.length - 1];
       if (lastCandidate) {
         const matchingDepot = depotList.find(d =>
           d.id === lastCandidate.id ||
+          d.id === `depot-${lastCandidate.id}` ||
           (Math.abs(d.latitude - lastCandidate.latitude) < 0.005 && Math.abs(d.longitude - lastCandidate.longitude) < 0.005)
         );
         if (matchingDepot) {
+          targetDepot = matchingDepot;
           setSelectedRestZone(matchingDepot);
           if (intermediates.length > 1) {
             intermediates = intermediates.slice(0, -1);
           }
+        }
+      }
+
+      if (foundRoute.destinationCampusId) {
+        const matchingCampusDepot = depotList.find(d =>
+          d.id === `depot-${foundRoute.destinationCampusId}` ||
+          d.id === foundRoute.destinationCampusId
+        );
+        if (matchingCampusDepot) {
+          targetDepot = matchingCampusDepot;
+          setSelectedRestZone(matchingCampusDepot);
         }
       }
 
@@ -684,19 +704,22 @@ export default function TransitStudioMap({
       setInspectedStop(reordered[0] || null);
 
       if (controllerRef.current) {
+        if (targetDepot) {
+          controllerRef.current.setRestZoneAnchor(targetDepot);
+        }
         controllerRef.current.setStops(reordered);
         controllerRef.current.fitRouteBounds();
       }
     }
   };
 
-  // Synchronize when external selectedRouteId prop changes
+  // Synchronize when external selectedRouteId prop changes or routes change
   useEffect(() => {
-    if (selectedRouteId && selectedRouteId !== activeRouteId) {
+    if (selectedRouteId) {
       setActiveRouteId(selectedRouteId);
       loadRouteIntoStudio(selectedRouteId);
     }
-  }, [selectedRouteId]);
+  }, [selectedRouteId, routes.length]);
 
   // Route selector dropdown handler
   const handleSelectRoute = (val: string) => {

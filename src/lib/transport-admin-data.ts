@@ -141,6 +141,9 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
       totalDistanceKm: Number(r.total_distance_km),
       estimatedDurationMins: Number(r.estimated_duration_mins),
       isActive: Boolean(r.is_active),
+      campusId: r.campus_id,
+      originCampusId: r.origin_campus_id,
+      destinationCampusId: r.destination_campus_id,
       stops: routeStops,
     };
   });

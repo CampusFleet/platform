@@ -48,6 +48,7 @@ import { store } from "@/lib/store";
 import { calculateDistanceKm } from "@/lib/utils";
 import type { Trip, Bus as BusType, Route, Booking, Stop, LiveBusLocation } from "@/lib/types";
 import DriverLiveRadarView from "@/components/driver/DriverLiveRadarView";
+import { DriverGateCameraConsole } from "@/components/driver/DriverGateCameraConsole";
 import { estimateRouteStopTimings, type StopEstimate } from "@/lib/transit-timing";
 
 interface DriverConsoleViewProps {
@@ -894,6 +895,18 @@ export default function DriverConsoleView({
             </button>
           </div>
         </section>
+
+        {/* ── AUTONOMOUS BIOMETRIC DUAL-GATE CAMERA TELEMATICS ── */}
+        <DriverGateCameraConsole
+          busId={bus?.id || 40}
+          busNumber={String(bus?.busNumber || "40")}
+          tripId={activeTrip?.id}
+          capacity={bus?.capacity || 50}
+          currentStopName={currentStopObj?.name || "Campus Terminal"}
+          latitude={realDeviceGpsRef.current?.latitude ?? currentCoords.latitude}
+          longitude={realDeviceGpsRef.current?.longitude ?? currentCoords.longitude}
+          filterRouteId={route?.id ? String(route.id) : undefined}
+        />
 
         {/* 2. SPEEDOMETER & MOTION SENSORS COCKPIT */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">

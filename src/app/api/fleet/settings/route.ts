@@ -22,6 +22,7 @@ export async function GET() {
           maxWalkDistanceKm: Number(data.max_walk_distance_km),
           autoAssignmentEnabled: data.auto_assignment_enabled,
           seatSelectionMode: data.seat_selection_mode,
+          attendanceMode: data.attendance_mode || "FACE_ID",
           minFillPercent: data.min_fill_percent,
           maxRideTimeMins: data.max_ride_time_mins,
           capacityBufferPercent: data.capacity_buffer_percent,
@@ -34,6 +35,7 @@ export async function GET() {
           maxWalkDistanceKm: 3.0,
           autoAssignmentEnabled: true,
           seatSelectionMode: "AT_ATTENDANCE",
+          attendanceMode: "FACE_ID",
           minFillPercent: 60,
           maxRideTimeMins: 90,
           capacityBufferPercent: 10,
@@ -58,6 +60,7 @@ export async function POST(req: NextRequest) {
       maxWalkDistanceKm,
       autoAssignmentEnabled,
       seatSelectionMode,
+      attendanceMode,
       minFillPercent,
       maxRideTimeMins,
       capacityBufferPercent,
@@ -73,6 +76,7 @@ export async function POST(req: NextRequest) {
     if (maxWalkDistanceKm !== undefined) updates.max_walk_distance_km = Number(maxWalkDistanceKm);
     if (autoAssignmentEnabled !== undefined) updates.auto_assignment_enabled = Boolean(autoAssignmentEnabled);
     if (seatSelectionMode !== undefined) updates.seat_selection_mode = seatSelectionMode;
+    if (attendanceMode !== undefined) updates.attendance_mode = attendanceMode;
     if (minFillPercent !== undefined) updates.min_fill_percent = Number(minFillPercent);
     if (maxRideTimeMins !== undefined) updates.max_ride_time_mins = Number(maxRideTimeMins);
     if (capacityBufferPercent !== undefined) updates.capacity_buffer_percent = Number(capacityBufferPercent);
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest) {
           max_walk_distance_km: maxWalkDistanceKm ?? 3.0,
           auto_assignment_enabled: autoAssignmentEnabled ?? true,
           seat_selection_mode: seatSelectionMode ?? "AT_ATTENDANCE",
+          attendance_mode: attendanceMode ?? "FACE_ID",
           min_fill_percent: minFillPercent ?? 60,
           max_ride_time_mins: maxRideTimeMins ?? 90,
           capacity_buffer_percent: capacityBufferPercent ?? 10,
@@ -121,7 +126,7 @@ export async function POST(req: NextRequest) {
       action: "UPDATE_TRANSPORT_SETTINGS",
       entity: "TransportSettings",
       entity_id: result.id,
-      reason: `Transport settings updated: max walk ${result.max_walk_distance_km}km, seat selection mode: ${result.seat_selection_mode}, auto-assignment: ${result.auto_assignment_enabled}`,
+      reason: `Transport settings updated: max walk ${result.max_walk_distance_km}km, seat selection mode: ${result.seat_selection_mode}, attendance mode: ${result.attendance_mode}, auto-assignment: ${result.auto_assignment_enabled}`,
       new_value: result,
     });
 
@@ -132,6 +137,7 @@ export async function POST(req: NextRequest) {
         maxWalkDistanceKm: Number(result.max_walk_distance_km),
         autoAssignmentEnabled: result.auto_assignment_enabled,
         seatSelectionMode: result.seat_selection_mode,
+        attendanceMode: result.attendance_mode || "FACE_ID",
         minFillPercent: result.min_fill_percent,
         maxRideTimeMins: result.max_ride_time_mins,
         capacityBufferPercent: result.capacity_buffer_percent,

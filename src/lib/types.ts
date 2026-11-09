@@ -818,12 +818,15 @@ export interface DynamicRoutePlan {
   createdAt: string;
 }
 
+export type TransitAttendanceMode = "FACE_ID" | "DYNAMIC_QR" | "RFID" | "STATIC_QR" | "ALL";
+
 /** Transport admin configurable settings */
 export interface TransportSettings {
   id: string;
   maxWalkDistanceKm: number;
   autoAssignmentEnabled: boolean;
   seatSelectionMode: SeatSelectionMode;
+  attendanceMode?: TransitAttendanceMode;
   minFillPercent: number;
   maxRideTimeMins: number;
   capacityBufferPercent: number;

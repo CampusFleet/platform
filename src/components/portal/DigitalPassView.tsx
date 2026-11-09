@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Camera,
   User,
+  ScanFace,
 } from "lucide-react";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 import { AttendanceLockCard } from "@/components/portal/AttendanceLockCard";
@@ -77,6 +78,7 @@ export default function DigitalPassView({
   // Full-screen presentation mode for fast scanner reads
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [showBackupQr, setShowBackupQr] = useState(false);
   const [securityPing, setSecurityPing] = useState(0);
   const [isBookingShiftId, setIsBookingShiftId] = useState<string | null>(null);
   const [quickBookingError, setQuickBookingError] = useState<string | null>(null);
@@ -371,57 +373,96 @@ export default function DigitalPassView({
               </div>
             </div>
 
-            {/* QR Core Scanner Box OR Verified Boarding Pass */}
+            {/* ZERO-TOUCH FACE ID BADGE OR QR SCANNER */}
             <div className="p-6 bg-gray-50/50 dark:bg-gray-950/40 text-center space-y-4">
-              {isBoarded && (
-                <div className="py-2 space-y-4">
-                  <div className="w-20 h-20 bg-green-100 dark:bg-green-900/50 rounded-full flex items-center justify-center mx-auto ring-[8px] ring-green-50 dark:ring-green-900/10 mb-2">
-                    <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
+              {isBoarded ? (
+                <div className="py-2 space-y-3">
+                  <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-950/80 rounded-full flex items-center justify-center mx-auto ring-[8px] ring-emerald-50 dark:ring-emerald-900/20 mb-2">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-xl font-black text-green-600 dark:text-green-400 uppercase tracking-widest">Boarded</h3>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase">Show this screen to the conductor</p>
+                    <h3 className="text-xl font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
+                      Boarded & Verified ✓
+                    </h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase">
+                      Seat Reserved • Autonomous Gate Verified
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2 space-y-4">
+                  {/* Face ID Green Security Badge */}
+                  <div className="relative inline-block mx-auto">
+                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-indigo-500/15 via-blue-500/15 to-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center shadow-lg">
+                      <ScanFace className="w-10 h-10 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 p-1 bg-emerald-600 text-white rounded-full shadow-md">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>FACE ID ZERO-TOUCH BOARDING ACTIVE</span>
+                    </div>
+                    <h3 className="text-base font-black text-gray-900 dark:text-white pt-1">
+                      Walk Directly Onto Bus {bus?.busNumber || "Assigned"}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                      The dual-gate door camera will recognize your face, bind your GPS stop, and confirm your boarding automatically.
+                    </p>
+                  </div>
+
+                  {/* Expandable Fallback QR Accordion */}
+                  <div className="pt-2 border-t border-gray-200/60 dark:border-gray-800/60">
+                    <button
+                      type="button"
+                      onClick={() => setShowBackupQr(!showBackupQr)}
+                      className="text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-gray-200 underline decoration-dotted inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{showBackupQr ? "Hide Backup QR Pass" : "Need backup QR pass? Click to show"}</span>
+                    </button>
+
+                    {showBackupQr && (
+                      <div className="mt-4 p-4 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-md inline-block animate-in fade-in duration-200 space-y-3">
+                        <QRCodeSVG
+                          value={qrPayload}
+                          size={160}
+                          level="H"
+                          includeMargin={false}
+                          imageSettings={{
+                            src: "/favicon.ico",
+                            x: undefined,
+                            y: undefined,
+                            height: 24,
+                            width: 24,
+                            excavate: true,
+                          }}
+                        />
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-mono font-bold text-gray-700 dark:text-gray-300">
+                            {activeBooking.bookingCode || "NONE"}
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            Dynamic Cryptographic Token • Verified Conductor Scan
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsFullScreen(true)}
+                          className="px-4 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-950 text-[11px] font-black shadow-md flex items-center gap-1.5 mx-auto transition-transform active:scale-95 cursor-pointer"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>Fullscreen QR</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
-              
-              <div className="inline-block p-4 bg-white rounded-3xl shadow-xl border border-gray-100 dark:border-gray-800 relative">
-                <QRCodeSVG
-                  value={qrPayload}
-                  size={180}
-                  level="H"
-                  includeMargin={false}
-                  imageSettings={{
-                    src: "/favicon.ico",
-                    x: undefined,
-                    y: undefined,
-                    height: 28,
-                    width: 28,
-                    excavate: true,
-                  }}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs font-mono font-bold text-gray-700 dark:text-gray-300 tracking-wider">
-                  {activeBooking.bookingCode || "NONE"}
-                </div>
-                <div className="text-[10px] text-gray-400 flex items-center justify-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-green-500" />
-                  <span>Dynamic Cryptographic Token • Verified Conductor Scan</span>
-                </div>
-              </div>
-
-              {/* Fullscreen Button */}
-              <div className="pt-1">
-                <button
-                  onClick={() => setIsFullScreen(true)}
-                  className="px-5 py-2.5 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-950 text-xs font-extrabold shadow-md flex items-center gap-2 mx-auto transition-transform active:scale-95 cursor-pointer"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                  <span>Enlarge for Conductor Scanner</span>
-                </button>
-              </div>
             </div>
 
             {/* Perforated Divider Strip with Side Cutout Circles */}

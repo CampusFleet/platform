@@ -16,8 +16,13 @@ import {
   Timer,
   ArrowRightLeft,
   Armchair,
+  ScanFace,
+  QrCode,
+  Radio,
+  CreditCard,
+  Layers,
 } from "lucide-react";
-import type { TransportSettings, SeatSelectionMode } from "@/lib/types";
+import type { TransportSettings, SeatSelectionMode, TransitAttendanceMode } from "@/lib/types";
 
 // ─── Default settings (before DB load) ──────────────────────────────────────
 
@@ -26,6 +31,7 @@ const DEFAULT_SETTINGS: TransportSettings = {
   maxWalkDistanceKm: 3.0,
   autoAssignmentEnabled: true,
   seatSelectionMode: "AT_ATTENDANCE",
+  attendanceMode: "FACE_ID",
   minFillPercent: 60,
   maxRideTimeMins: 90,
   capacityBufferPercent: 10,
@@ -173,6 +179,142 @@ export default function StaffTransportSettingsView() {
 
       {/* Settings Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        {/* ─── Card 0: Attendance & Gate Validation Policy ─── */}
+        <div className="lg:col-span-2">
+          <SettingsCard
+            icon={<ScanFace className="w-5 h-5 text-indigo-600" />}
+            title="Institutional Attendance & Gate Validation Policy"
+            description="Select the fleet's active commuter validation mechanism. Commuter passes and vehicle cockpits dynamically adapt to eliminate visual clutter."
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div
+                onClick={() => updateSetting("attendanceMode", "FACE_ID")}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  settings.attendanceMode === "FACE_ID"
+                    ? "border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                      <ScanFace className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-gray-900 dark:text-white">
+                          Autonomous Face ID Biometrics
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                        Zero-touch dual-camera gate telematics. Auto-recognizes commuters, binds driver GPS, tracks live headcount, and intercepts unauthorized intruders. No physical cards or phone battery required.
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                    settings.attendanceMode === "FACE_ID" ? "border-indigo-600 bg-indigo-600" : "border-gray-300 dark:border-gray-600"
+                  }`}>
+                    {settings.attendanceMode === "FACE_ID" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => updateSetting("attendanceMode", "DYNAMIC_QR")}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  settings.attendanceMode === "DYNAMIC_QR"
+                    ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 ring-2 ring-blue-500/20"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
+                      <QrCode className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-black text-gray-900 dark:text-white">
+                        Dynamic Rotating QR Code Pass
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                        Time-based rotating cryptographic token on the student&apos;s mobile screen (HMAC-SHA256, 1-minute anti-screenshot expiration) scanned by conductor.
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                    settings.attendanceMode === "DYNAMIC_QR" ? "border-blue-600 bg-blue-600" : "border-gray-300 dark:border-gray-600"
+                  }`}>
+                    {settings.attendanceMode === "DYNAMIC_QR" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => updateSetting("attendanceMode", "RFID")}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  settings.attendanceMode === "RFID"
+                    ? "border-purple-600 bg-purple-50/60 dark:bg-purple-950/40 ring-2 ring-purple-500/20"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-black text-gray-900 dark:text-white">
+                        Contactless RFID Smart Cards
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                        Physical MIFARE / NFC card tap against IoT door terminals (ESP32/RC522) with local offline cache and cloud sync.
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                    settings.attendanceMode === "RFID" ? "border-purple-600 bg-purple-600" : "border-gray-300 dark:border-gray-600"
+                  }`}>
+                    {settings.attendanceMode === "RFID" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => updateSetting("attendanceMode", "ALL")}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  settings.attendanceMode === "ALL"
+                    ? "border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-black text-gray-900 dark:text-white">
+                        Multi-Modal Hybrid (All Methods Active)
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                        Accepts Face ID, dynamic QR, RFID card taps, and static seat QR simultaneously across fleet vehicles.
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                    settings.attendanceMode === "ALL" ? "border-emerald-600 bg-emerald-600" : "border-gray-300 dark:border-gray-600"
+                  }`}>
+                    {settings.attendanceMode === "ALL" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SettingsCard>
+        </div>
 
         {/* ─── Card 1: Walking Distance & Stop Assignment ─── */}
         <SettingsCard

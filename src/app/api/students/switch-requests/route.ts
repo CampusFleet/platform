@@ -184,6 +184,7 @@ export async function POST(req: NextRequest) {
       maxWalkDistanceKm: Number(settingsRaw?.max_walk_distance_km || 3.0),
       autoAssignmentEnabled: Boolean(settingsRaw?.auto_assignment_enabled ?? true),
       seatSelectionMode: settingsRaw?.seat_selection_mode || "AT_ATTENDANCE",
+      attendanceMode: (settingsRaw?.attendance_mode as any) || "FACE_ID",
       minFillPercent: Number(settingsRaw?.min_fill_percent || 60),
       maxRideTimeMins: Number(settingsRaw?.max_ride_time_mins || 90),
       capacityBufferPercent: Number(settingsRaw?.capacity_buffer_percent || 10),

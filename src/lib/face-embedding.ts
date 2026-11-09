@@ -63,13 +63,13 @@ async function loadOrtLibrary(): Promise<any> {
       // Graceful fallback to unpkg/jsdelivr CDN
       const cdnScript = document.createElement("script");
       cdnScript.setAttribute("data-ort-loader", "true");
-      cdnScript.src = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort.min.js";
+      cdnScript.src = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.wasm.min.js";
       cdnScript.async = true;
 
       cdnScript.onload = () => {
         const ort = (window as any).ort;
         if (ort?.env?.wasm) {
-          ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/";
+          ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/";
           ort.env.wasm.numThreads = 1;
         }
         resolve(ort);

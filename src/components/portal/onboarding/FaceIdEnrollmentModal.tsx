@@ -352,9 +352,11 @@ export function FaceIdEnrollmentModal({
             }
 
             // Yaw: Eye midpoint to nose tip distance, normalized by inter-pupillary distance
+            // Mirroring compensation: In unmirrored camera sensor, turning right moves nose left (X decreases).
+            // Invert yaw so turning right on the mirrored (-scale-x-100) screen maps to +yaw (3 o'clock / Right)
             const eyeMidX = (leftEye.x + rightEye.x) / 2;
             const normYaw = (nose.x - eyeMidX) / eyeDist;
-            rawYaw = normYaw * 90;
+            rawYaw = -normYaw * 90;
 
             // Pitch: Ratio of nose position between forehead and chin
             // Natural resting face has nose at ~0.42 of face height
@@ -443,7 +445,7 @@ export function FaceIdEnrollmentModal({
               const baseNormY = 0.5;
               const dx = normX - baseNormX;
               const dy = normY - baseNormY;
-              rawYaw = dx * 120;
+              rawYaw = -dx * 120; // Invert dx for mirrored camera display
               rawPitch = -dy * 120;
 
               smoothedYawRef.current = EMA_ALPHA * rawYaw + (1 - EMA_ALPHA) * smoothedYawRef.current;
@@ -578,8 +580,7 @@ export function FaceIdEnrollmentModal({
             playAudioTone("success");
             triggerHaptic([30, 50, 40, 80]);
 
-            // Capture final validated keyframe
-            captureFrontalPassPhoto();
+            // Note: Retain 1st frontal image captured during ALIGN_FACE (clean passport portrait, not off-angle)
 
             setTimeout(() => {
               setState("CONFIRMATION");

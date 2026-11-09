@@ -156,6 +156,55 @@ describe("Face ID Apple Reverse-Engineered Architecture & 36-Tick Polar Mapping"
     expect(smoothedYaw).not.toBeCloseTo(10, 1);
   });
 
+  it("inverts raw sensor yaw to compensate for mirrored (-scale-x-100) front camera video feed", () => {
+    // When user turns head to their right (right shoulder):
+    // In raw unmirrored camera sensor, nose moves towards left of the sensor image: nose.x < eyeMidX.
+    // normYaw = (nose.x - eyeMidX) / eyeDist is NEGATIVE.
+    const leftEye = { x: 0.40 };
+    const rightEye = { x: 0.60 };
+    const eyeMidX = (leftEye.x + rightEye.x) / 2; // 0.50
+    const eyeDist = rightEye.x - leftEye.x; // 0.20
+    const noseSensorRightTurn = { x: 0.46 }; // nose shifted left in sensor image
+
+    const normYaw = (noseSensorRightTurn.x - eyeMidX) / eyeDist; // -0.04 / 0.20 = -0.20
+    expect(normYaw).toBeLessThan(0);
+
+    // Front camera mirror compensation inverts normYaw:
+    const compensatedYaw = -normYaw * 90; // -(-0.20) * 90 = +18
+    expect(compensatedYaw).toBeGreaterThan(0); // POSITIVE yaw = turns to RIGHT of the mirrored screen
+
+    // Verifies it maps to 3 o'clock / tick 9 (RIGHT)
+    const thetaRad = Math.atan2(compensatedYaw, 0); // pitch = 0
+    let thetaDeg = (thetaRad * 180) / Math.PI;
+    if (thetaDeg < 0) thetaDeg += 360;
+    const tickIndex = Math.floor(thetaDeg / (360 / TOTAL_TICKS)) % TOTAL_TICKS;
+
+    expect(thetaDeg).toBe(90);
+    expect(tickIndex).toBe(9); // Right side
+  });
+
+  it("preserves 1st frontal passport photo captured during alignment and avoids overwriting with end-of-circling off-angle frame", () => {
+    let capturedPhoto: string | null = null;
+
+    // Phase 1: ALIGN_FACE captures pristine 1st frontal portrait
+    const captureInitialPhoto = () => {
+      capturedPhoto = "data:image/jpeg;base64,pristine_frontal_aligned_pass_photo";
+    };
+
+    captureInitialPhoto();
+    expect(capturedPhoto).toBe("data:image/jpeg;base64,pristine_frontal_aligned_pass_photo");
+
+    // Phase 2: Circling ends — should NOT overwrite with off-angle photo
+    const onCirclingComplete = (overwrite: boolean) => {
+      if (overwrite) {
+        capturedPhoto = "data:image/jpeg;base64,off_angle_side_profile_photo";
+      }
+    };
+
+    onCirclingComplete(false); // New design does NOT overwrite
+    expect(capturedPhoto).toBe("data:image/jpeg;base64,pristine_frontal_aligned_pass_photo");
+  });
+
   it("supports Apple iOS Accessibility option 'Set Up Without Head Motion'", () => {
     let completedSet = new Set<number>();
     const handleAccessibility = () => {

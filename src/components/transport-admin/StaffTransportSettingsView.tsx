@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   Settings2,
   MapPin,
-  Bus,
   Route,
   Shield,
   Save,
@@ -142,7 +141,7 @@ export default function StaffTransportSettingsView() {
             Smart Transit Settings
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            Configure AI auto-assignment, walking distance limits, seat selection mode, and bus consolidation thresholds.
+            Configure corridor dispatch rules, walking distance limits, passenger switch policies, and fleet operational thresholds.
           </p>
         </div>
 
@@ -399,120 +398,7 @@ export default function StaffTransportSettingsView() {
           </div>
         </SettingsCard>
 
-        {/* ─── Card 2: Autonomous Seat Allocation Policy ─── */}
-        <SettingsCard
-          icon={<Armchair className="w-5 h-5 text-indigo-600" />}
-          title="Autonomous Seat Allocation Engine"
-          description="Seats are dynamically assigned by the AI optimization engine based on commuter profile preferences."
-        >
-          <div className="space-y-3.5">
-            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-xs font-black text-indigo-900 dark:text-indigo-200">
-                  Student Preference-Driven
-                </span>
-                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                  Autonomous
-                </span>
-              </div>
-              <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                Seats are automatically assigned by the allocation engine based on each student&apos;s configured coach preferences (Window vs Aisle, Front/Middle/Back zones) and companion partner matching in their profile settings.
-              </p>
-            </div>
-            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1">
-              <span>Manual seat picking: <strong className="text-gray-700 dark:text-gray-300">Disabled (Auto-Assigned)</strong></span>
-              <span>Companion proximity: <strong className="text-emerald-600">Enabled</strong></span>
-            </div>
-          </div>
-        </SettingsCard>
-
-        {/* ─── Card 3: AI Auto-Assignment ─── */}
-        <SettingsCard
-          icon={<Bus className="w-5 h-5 text-amber-600" />}
-          title="AI Bus Auto-Assignment"
-          description="Automatic bus allocation based on student profile, home location, and timetable."
-        >
-          <div className="space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Auto-Assignment Engine</p>
-                <p className="text-[10px] text-gray-400">
-                  {settings.autoAssignmentEnabled
-                    ? "AI assigns optimal bus nightly based on demand + proximity"
-                    : "Manual assignment by transport manager only"}
-                </p>
-              </div>
-              <button
-                onClick={() => updateSetting("autoAssignmentEnabled", !settings.autoAssignmentEnabled)}
-                className={`relative w-14 h-7 rounded-full transition-colors ${
-                  settings.autoAssignmentEnabled
-                    ? "bg-amber-500"
-                    : "bg-gray-300 dark:bg-gray-600"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
-                    settings.autoAssignmentEnabled ? "translate-x-7" : "translate-x-0.5"
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
-                Min Bus Fill Before Consolidation
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min="20"
-                  max="90"
-                  step="5"
-                  value={settings.minFillPercent}
-                  onChange={e => updateSetting("minFillPercent", parseInt(e.target.value))}
-                  className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                />
-                <div className="min-w-[60px] px-3 py-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-center">
-                  <span className="text-lg font-black text-amber-700 dark:text-amber-400">
-                    {settings.minFillPercent}
-                  </span>
-                  <span className="text-[10px] text-amber-600 dark:text-amber-500 ml-0.5">%</span>
-                </div>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                If demand fills buses below this %, routes are consolidated into fewer buses for fuel efficiency.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
-                Capacity Buffer (Reserve)
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min="0"
-                  max="25"
-                  step="5"
-                  value={settings.capacityBufferPercent}
-                  onChange={e => updateSetting("capacityBufferPercent", parseInt(e.target.value))}
-                  className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                />
-                <div className="min-w-[60px] px-3 py-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-center">
-                  <span className="text-lg font-black text-amber-700 dark:text-amber-400">
-                    {settings.capacityBufferPercent}
-                  </span>
-                  <span className="text-[10px] text-amber-600 dark:text-amber-500 ml-0.5">%</span>
-                </div>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                Reserve this % of seats on each bus for last-minute additions and switch approvals.
-              </p>
-            </div>
-          </div>
-        </SettingsCard>
-
-        {/* ─── Card 4: Route & Ride Constraints ─── */}
+        {/* ─── Card 2: Route & Ride Constraints ─── */}
         <SettingsCard
           icon={<Route className="w-5 h-5 text-cyan-600" />}
           title="Route & Ride Constraints"
@@ -541,14 +427,42 @@ export default function StaffTransportSettingsView() {
                 </div>
               </div>
               <p className="text-[10px] text-gray-400 mt-1">
-                Dynamic route generator won't create routes exceeding this duration.
+                Dynamic route generator won&apos;t create routes exceeding this duration.
                 Current: {Math.round(settings.maxRideTimeMins / 60 * 10) / 10} hours.
               </p>
             </div>
           </div>
         </SettingsCard>
 
-        {/* ─── Card 5: Switch Request Policy ─── */}
+        {/* ─── Card 3: Autonomous Seat Allocation Policy ─── */}
+        <SettingsCard
+          icon={<Armchair className="w-5 h-5 text-indigo-600" />}
+          title="Autonomous Seat Allocation Engine"
+          description="Seats are dynamically assigned by the optimization engine based on commuter profile preferences."
+          fullWidth
+        >
+          <div className="space-y-3.5">
+            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xs font-black text-indigo-900 dark:text-indigo-200">
+                  Student Preference-Driven
+                </span>
+                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                  Autonomous
+                </span>
+              </div>
+              <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                Seats are automatically assigned by the allocation engine based on each student&apos;s configured coach preferences (Window vs Aisle, Front/Middle/Back zones) and companion partner matching in their profile settings.
+              </p>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1">
+              <span>Manual seat picking: <strong className="text-gray-700 dark:text-gray-300">Disabled (Auto-Assigned)</strong></span>
+              <span>Companion proximity: <strong className="text-emerald-600">Enabled</strong></span>
+            </div>
+          </div>
+        </SettingsCard>
+
+        {/* ─── Card 4: Switch Request Policy ─── */}
         <SettingsCard
           icon={<ArrowRightLeft className="w-5 h-5 text-rose-600" />}
           title="Bus Switch Request Policy"
@@ -585,7 +499,7 @@ export default function StaffTransportSettingsView() {
 
             {/* Decision Matrix Preview */}
             <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">AI Decision Matrix</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Policy Decision Matrix</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <DecisionPreview
                   icon={<CheckCircle2 className="w-4 h-4 text-green-500" />}

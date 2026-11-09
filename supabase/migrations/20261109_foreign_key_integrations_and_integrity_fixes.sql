@@ -96,3 +96,4 @@ END $$;
 
 -- 5. Add index on transport_settings.updated_by
 CREATE INDEX IF NOT EXISTS idx_transport_settings_updated_by ON public.transport_settings (updated_by);
+

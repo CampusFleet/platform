@@ -29,10 +29,13 @@ import {
   Camera,
   User,
   ScanFace,
+  Radio,
+  ScanLine,
 } from "lucide-react";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 import { AttendanceLockCard } from "@/components/portal/AttendanceLockCard";
 import type { Student, Bus, Trip, Shift, Stop, Booking, Staff } from "@/lib/types";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 export interface DigitalPassProps {
   initialUser?: any;
@@ -82,6 +85,7 @@ export default function DigitalPassView({
   const [securityPing, setSecurityPing] = useState(0);
   const [isBookingShiftId, setIsBookingShiftId] = useState<string | null>(null);
   const [quickBookingError, setQuickBookingError] = useState<string | null>(null);
+  const { mode: attendancePolicyMode, rules: attendanceRules } = useAttendancePolicy();
 
   useEffect(() => {
     if (initialStudent) {
@@ -389,7 +393,108 @@ export default function DigitalPassView({
                     </p>
                   </div>
                 </div>
+              ) : attendancePolicyMode === "DYNAMIC_QR" ? (
+                /* Dynamic Rotating QR Mode */
+                <div className="py-2 space-y-4">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>DYNAMIC ROTATING QR ACTIVE</span>
+                  </div>
+                  <div className="p-4 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-md inline-block animate-in fade-in duration-200 space-y-3">
+                    <QRCodeSVG
+                      value={qrPayload}
+                      size={180}
+                      level="H"
+                      includeMargin={false}
+                      imageSettings={{
+                        src: "/favicon.ico",
+                        x: undefined,
+                        y: undefined,
+                        height: 24,
+                        width: 24,
+                        excavate: true,
+                      }}
+                    />
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-mono font-bold text-gray-700 dark:text-gray-300">
+                        {activeBooking.bookingCode || "PASS"}
+                      </div>
+                      <div className="text-[10px] text-gray-400">
+                        Present to Conductor at Bus Door
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFullScreen(true)}
+                      className="px-4 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-950 text-[11px] font-black shadow-md flex items-center gap-1.5 mx-auto transition-transform active:scale-95 cursor-pointer"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                      <span>Fullscreen QR</span>
+                    </button>
+                  </div>
+                </div>
+              ) : attendancePolicyMode === "RFID" ? (
+                /* Physical RFID Smart Card Mode */
+                <div className="py-2 space-y-4">
+                  <div className="relative inline-block mx-auto">
+                    <div className="w-20 h-20 rounded-3xl bg-indigo-500/15 border-2 border-indigo-500/40 flex items-center justify-center shadow-lg">
+                      <Radio className="w-10 h-10 text-indigo-600 dark:text-indigo-400 animate-pulse" />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 p-1 bg-indigo-600 text-white rounded-full shadow-md">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                      <Radio className="w-3.5 h-3.5" />
+                      <span>RFID SMART CARD BOARDING ACTIVE</span>
+                    </div>
+                    <h3 className="text-base font-black text-gray-900 dark:text-white pt-1">
+                      Tap Your Card on Bus Door Reader
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                      Hold your physical campus card against the sensor to unlock your seat and mark attendance.
+                    </p>
+                    <div className="pt-2 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                      Card UID: <strong className="text-indigo-600 dark:text-indigo-400">{activeStudent.rfidCardId || "Registered on file"}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : attendancePolicyMode === "STATIC_QR" ? (
+                /* Static Bus Door QR Scanning Mode */
+                <div className="py-2 space-y-4">
+                  <div className="relative inline-block mx-auto">
+                    <div className="w-20 h-20 rounded-3xl bg-amber-500/15 border-2 border-amber-500/40 flex items-center justify-center shadow-lg">
+                      <ScanLine className="w-10 h-10 text-amber-600 dark:text-amber-400 animate-pulse" />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 p-1 bg-amber-600 text-white rounded-full shadow-md">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <ScanLine className="w-3.5 h-3.5" />
+                      <span>BUS DOOR QR SELF-SCAN ACTIVE</span>
+                    </div>
+                    <h3 className="text-base font-black text-gray-900 dark:text-white pt-1">
+                      Scan the Physical QR on Bus Door
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                      Point your phone camera at the QR code on the bus entrance to confirm your seat within 150m.
+                    </p>
+                    <div className="pt-2">
+                      <Link
+                        href="/portal/qr/scan"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-black text-xs shadow-md transition-all cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>Open Bus Door Scanner</span>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
               ) : (
+                /* Primary Face ID Zero-Touch Mode (Default & ALL) */
                 <div className="py-2 space-y-4">
                   {/* Face ID Green Security Badge */}
                   <div className="relative inline-block mx-auto">

@@ -27,6 +27,7 @@ import {
 import type { Student, Stop, Route, Bus } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 export interface RfidCardIssuanceViewProps {
   initialStudents?: Student[];
@@ -101,6 +102,7 @@ export default function RfidCardIssuanceView({
   const [stops] = useState<Stop[]>(initialStops);
   const [routes] = useState<Route[]>(initialRoutes);
   const [buses, setBuses] = useState<Bus[]>(initialBuses);
+  const { mode: policyMode, rules: policyRules } = useAttendancePolicy();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -476,6 +478,29 @@ function formatTimeAgo(isoString?: string | null): string {
             <Zap className="w-4 h-4 text-blue-600 flex-shrink-0" />
           )}
           <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Policy Notification Banner if RFID is not primary */}
+      {!policyRules.isRfidIssuancePrimary && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Radio className="w-4 h-4 text-amber-500 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-800 dark:text-amber-200 block">
+                Policy Notice: Institutional Attendance is set to {policyRules.modeLabel}
+              </span>
+              <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                RFID card issuance is currently in Pre-Enrollment / Standby mode. Cards mapped here will be stored in readiness.
+              </span>
+            </div>
+          </div>
+          <Link
+            href="/transport-admin/settings/transit"
+            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0"
+          >
+            Change Policy
+          </Link>
         </div>
       )}
 

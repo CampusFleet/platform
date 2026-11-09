@@ -23,6 +23,7 @@ import {
   Layers,
 } from "lucide-react";
 import type { TransportSettings, SeatSelectionMode, TransitAttendanceMode } from "@/lib/types";
+import { broadcastAttendanceModeChange } from "@/lib/attendance";
 
 // ─── Default settings (before DB load) ──────────────────────────────────────
 
@@ -91,6 +92,9 @@ export default function StaffTransportSettingsView() {
       if (data.success) {
         setOriginalSettings(data.settings);
         setSettings(data.settings);
+        if (data.settings?.attendanceMode) {
+          broadcastAttendanceModeChange(data.settings.attendanceMode);
+        }
         showToast("Transport settings saved successfully!", "success");
       } else {
         showToast(data.message || "Failed to save settings.", "error");

@@ -30,7 +30,10 @@ import {
   GraduationCap,
   FileText,
   ShieldCheck,
+  ScanFace,
+  ScanLine,
 } from "lucide-react";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 export interface MobileBottomNavItem {
   id?: string;
@@ -69,6 +72,7 @@ export function MobileBottomNav({
   const pathname = usePathname();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
+  const { mode: policyMode, rules: policyRules } = useAttendancePolicy();
 
   useEffect(() => {
     const unsub = store.subscribe(() => {
@@ -179,16 +183,16 @@ export function MobileBottomNav({
             highlight: true,
           },
           {
-            id: "scanner",
-            href: "/conductor/scanner",
-            label: "Scanner",
-            icon: QrCode,
-          },
-          {
             id: "manifest",
             href: "/conductor/manifest",
             label: "Manifest",
             icon: FileText,
+          },
+          {
+            id: "scanner",
+            href: "/conductor/scanner",
+            label: policyRules.conductorScannerRole === "PRIMARY" ? "Scanner" : "Backup Scan",
+            icon: QrCode,
           },
           {
             id: "seatMap",
@@ -208,6 +212,16 @@ export function MobileBottomNav({
             label: "Audit",
             icon: ShieldCheck,
           },
+          ...(policyRules.isConductorBusQrActive
+            ? [
+                {
+                  id: "busQr",
+                  href: "/conductor/bus-qr",
+                  label: "Bus QR",
+                  icon: QrCode,
+                },
+              ]
+            : []),
           {
             id: "chat",
             href: "/chat",
@@ -443,8 +457,15 @@ export function MobileBottomNav({
           {
             id: "qr",
             href: "/portal/qr",
-            label: "QR Connect",
-            icon: QrCode,
+            label: policyRules.studentQrConnectLabel || "QR Connect",
+            icon:
+              policyMode === "FACE_ID"
+                ? ScanFace
+                : policyMode === "RFID"
+                ? Radio
+                : policyMode === "STATIC_QR"
+                ? ScanLine
+                : QrCode,
           },
           {
             id: "radar",

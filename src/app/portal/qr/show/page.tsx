@@ -6,6 +6,7 @@ import { store } from "@/lib/store";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, Clock, RefreshCw, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { getSafePhotoUrl } from "@/lib/image-utils";
+import { useAttendancePolicy, PolicyStandbyScreen } from "@/lib/attendance";
 
 // Cryptographic deterministic hex token generator (rotates every 60s)
 function generateDynamicToken(studentId: string, windowIndex: number): string {
@@ -27,12 +28,43 @@ function generateDynamicToken(studentId: string, windowIndex: number): string {
 }
 
 export default function ShowQRPage() {
+  const { mode } = useAttendancePolicy();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeStudent, setActiveStudent] = useState<any>(null);
   const [photoError, setPhotoError] = useState(false);
 
   // Time state for 1-minute rotation
   const [now, setNow] = useState<number>(Date.now());
+
+  if (mode === "RFID") {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-black p-4 flex flex-col justify-center items-center">
+        <PolicyStandbyScreen
+          pageTitle="Dynamic QR Pass"
+          pageFeature="Displaying optical dynamic QR tokens on your screen"
+          requiredModeDescription="Your attendance is verified via RFID contactless smart card tap at the vehicle door."
+          activeMode={mode}
+          returnHref="/portal"
+          returnLabel="Go to My Commute"
+        />
+      </div>
+    );
+  }
+
+  if (mode === "STATIC_QR") {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-black p-4 flex flex-col justify-center items-center">
+        <PolicyStandbyScreen
+          pageTitle="Dynamic QR Pass"
+          pageFeature="Displaying optical dynamic QR tokens on your screen"
+          requiredModeDescription="Your attendance is verified by scanning the physical QR code on the bus door."
+          activeMode={mode}
+          returnHref="/portal/qr/scan"
+          returnLabel="Open Bus Door Scanner"
+        />
+      </div>
+    );
+  }
 
   const resolveStudent = useCallback(() => {
     const user = store.getCurrentUser();

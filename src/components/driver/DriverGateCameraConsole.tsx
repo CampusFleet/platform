@@ -20,6 +20,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type { BusGateType, BusGateEvent } from "@/lib/types";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 interface DriverGateCameraConsoleProps {
   busId: number;
@@ -64,6 +65,9 @@ export function DriverGateCameraConsole({
     title: string;
     subtitle: string;
   } | null>(null);
+
+  const { mode: policyMode, rules: policyRules } = useAttendancePolicy();
+  const [isDiagnosticOverride, setIsDiagnosticOverride] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -356,6 +360,47 @@ export function DriverGateCameraConsole({
   };
 
   const occupancyPercent = Math.min(100, Math.round((occupancyCount / capacity) * 100));
+
+  // Power-Saving Hardware Standby when attendance policy does not require live gate cameras
+  if (!policyRules.isDriverGateCameraActive && !isDiagnosticOverride) {
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-500 shrink-0">
+              <ScanFace className="w-6 h-6 text-zinc-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                  Gate Camera Standby
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-500">
+                  Policy: {policyRules.modeLabel}
+                </span>
+              </div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white mt-1">
+                Dual-Gate Telematics Idle
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {policyRules.driverCameraStandbyReason}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsDiagnosticOverride(true)}
+            className="px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-all cursor-pointer border border-zinc-300 dark:border-zinc-700 active:scale-95 flex items-center gap-1.5"
+            title="Run Camera Diagnostic Test"
+          >
+            <Camera className="w-3.5 h-3.5 text-blue-500" />
+            <span>Hardware Test</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">

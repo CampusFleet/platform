@@ -40,6 +40,7 @@ import {
   Award,
   Flag,
   Zap,
+  ScanFace,
 } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { useTheme } from "@/components/common/ThemeProvider";
@@ -514,6 +515,19 @@ export default function DriverConsoleView({
     return map;
   }, [bookings]);
 
+  // Total trip boarding & APC capacity load factor
+  const tripPassengerStats = useMemo(() => {
+    const tripBookings = bookings.filter(
+      (b) => (activeTrip?.id ? b.tripId === activeTrip.id : true) && b.status !== "CANCELLED"
+    );
+    const boarded = tripBookings.filter((b) => b.status === "BOARDED").length;
+    const total = tripBookings.length;
+    const capacity = bus?.capacity || 50;
+    const pct = Math.min(100, Math.round((boarded / (capacity || 1)) * 100));
+    const isCritical = pct >= 90;
+    return { boarded, total, capacity, pct, isCritical };
+  }, [bookings, activeTrip?.id, bus?.capacity]);
+
   // Dynamic Google Maps-style stop timings (depart now or scheduled timetable)
   const stopEstimates = useMemo(() => {
     if (!route?.stops || route.stops.length === 0) return [];
@@ -896,17 +910,25 @@ export default function DriverConsoleView({
           </div>
         </section>
 
-        {/* ── AUTONOMOUS BIOMETRIC DUAL-GATE CAMERA TELEMATICS ── */}
-        <DriverGateCameraConsole
-          busId={bus?.id || 40}
-          busNumber={String(bus?.busNumber || "40")}
-          tripId={activeTrip?.id}
-          capacity={bus?.capacity || 50}
-          currentStopName={currentStopObj?.name || "Campus Terminal"}
-          latitude={realDeviceGpsRef.current?.latitude ?? currentCoords.latitude}
-          longitude={realDeviceGpsRef.current?.longitude ?? currentCoords.longitude}
-          filterRouteId={route?.id ? String(route.id) : undefined}
-        />
+        {/* APC Capacity Notification Banner (High Load / Express Run Mode) */}
+        {tripPassengerStats.isCritical && (
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/40 text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider block">
+                  APC Load Alert: Bus Nearing Capacity ({tripPassengerStats.boarded}/{tripPassengerStats.capacity} Boarded • {tripPassengerStats.pct}%)
+                </span>
+                <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                  Transit Policy: Verify available standing room before accepting additional commuters at upcoming stops.
+                </span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono font-black uppercase px-2 py-1 rounded bg-amber-500 text-black shrink-0">
+              High Density
+            </span>
+          </div>
+        )}
 
         {/* ── AUTONOMOUS BIOMETRIC DUAL-GATE CAMERA TELEMATICS ── */}
         <DriverGateCameraConsole

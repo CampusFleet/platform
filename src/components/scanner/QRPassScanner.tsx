@@ -23,6 +23,7 @@ import {
   BadgeCheck,
   Footprints,
   ArrowLeft,
+  ScanFace,
 } from "lucide-react";
 import Link from "next/link";
 import { getSafePhotoUrl } from "@/lib/image-utils";
@@ -648,15 +649,15 @@ export function QRPassScanner({
                     return `${busLabel} • ${shiftLabel}`;
                   })()}
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-green-500/20 text-green-400 border border-green-500/30 font-bold">
-                  RADAR
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                  MANUAL BACKUP
                 </span>
               </div>
               <p className="text-[11px] text-gray-400">
                 {(() => {
                   const shift = store.getShifts().find(s => s.id === trip?.shiftId);
                   return shift?.startTime ? `Departure ${shift.startTime} • ` : "";
-                })()}Boarding & Attendance Radar
+                })()}Autonomous Gate Active • Exception Fallback Scanner
               </p>
             </div>
           </div>
@@ -701,7 +702,13 @@ export function QRPassScanner({
 
       {/* Mode Tabs */}
       {fullScreenMode ? (
-        <div className="relative z-30 flex justify-center py-2.5 px-4 bg-black/40 backdrop-blur-xs shrink-0 w-full">
+        <div className="relative z-30 flex flex-col items-center py-2 px-4 bg-black/40 backdrop-blur-xs shrink-0 w-full gap-2">
+          {/* Subtle exception notice */}
+          <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
+            <ScanFace className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>Autonomous Face ID active. Scan here only for exceptions or unverified commuters.</span>
+          </div>
+
           <div className="flex items-center gap-1.5 p-1 bg-white/10 rounded-2xl border border-white/10 max-w-sm w-full">
             <button
               onClick={() => {
@@ -715,7 +722,7 @@ export function QRPassScanner({
               }`}
             >
               <Camera className="w-4 h-4" />
-              <span>Optical QR Radar</span>
+              <span>Optical QR</span>
             </button>
 
             <button
@@ -731,7 +738,7 @@ export function QRPassScanner({
               }`}
             >
               <Keyboard className="w-4 h-4" />
-              <span>Code Entry</span>
+              <span>Roll ID / Code</span>
             </button>
           </div>
         </div>

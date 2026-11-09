@@ -27,18 +27,18 @@ export default function ConductorHubPage() {
 
   const conductorModules: HubModule[] = [
     {
-      title: "Boarding Scanner",
-      description: "High-speed optical QR scanner to check-in students at the bus door.",
-      icon: QrCode,
-      href: "/conductor/scanner"
-    },
-    {
       title: "Passenger Manifest",
       description: activeDepartureAlert 
         ? "🚨 DEPARTURE ALARM ACTIVE • Ringing on outside students' devices."
-        : "Live roster with student passport photos, college IDs, and departure alarms.",
+        : "Live APC roster with automated Face ID gate mirroring, student photos, and departure alarms.",
       icon: FileText,
       href: "/conductor/manifest"
+    },
+    {
+      title: "Backup Exception Scanner",
+      description: "Optical barcode and QR scanner for check-in exceptions and unverified commuters.",
+      icon: QrCode,
+      href: "/conductor/scanner"
     },
     {
       title: "Live Seat Map",
@@ -54,7 +54,7 @@ export default function ConductorHubPage() {
     },
     {
       title: "Attendance Audit",
-      description: "Review signed timestamps, RFID tap-in logs, and compliance audit trail.",
+      description: "Review cryptographic Face ID matches, QR scans, RFID tap-ins, and audit compliance.",
       icon: ShieldCheck,
       href: "/conductor/audit"
     },

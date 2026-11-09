@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Home,
   Navigation,
+  ScanFace,
 } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
@@ -105,8 +106,8 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
 
   const topLevelLinks = [
     { href: "/conductor", label: t('hub'), icon: Home },
-    { href: "/conductor/scanner", label: t('scanner'), icon: QrCode },
     { href: "/conductor/manifest", label: t('manifest'), icon: FileText },
+    { href: "/conductor/scanner", label: "Backup Scanner", icon: QrCode },
     { href: "/conductor/seat-map", label: t('seatMap'), icon: LayoutGrid },
     { href: "/conductor/late-requests", label: t('sosHalt'), icon: AlertTriangle },
     { href: "/conductor/audit", label: t('audit'), icon: ShieldCheck },
@@ -116,7 +117,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
   const currentNavLinks = topLevelLinks;
   let currentTitle = "Conductor Hub";
 
-  if (pathname.includes("/scanner")) currentTitle = "Boarding Scanner";
+  if (pathname.includes("/scanner")) currentTitle = "Manual Backup Scanner";
   else if (pathname.includes("/manifest")) currentTitle = "Passenger Manifest";
   else if (pathname.includes("/seat-map")) currentTitle = "Live Seat Map";
   else if (pathname.includes("/late-requests")) currentTitle = "SOS / Halt Requests";
@@ -159,19 +160,28 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
               <span>{t('driverHud')}</span>
             </Link>
 
-            {/* Quick Bus QR Door Check-in & Bus Card Selector */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectorTab("SCANNER");
-                setIsCrewSelectorOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold shadow-sm transition-all"
-              title="Scan physical QR code on bus door to mark attendance"
+            {/* Autonomous Gate Live Telematics Status Indicator */}
+            <div
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-[11px] font-bold shadow-xs select-none"
+              title="Autonomous Face ID dual-gate cameras are actively logging boarding events"
             >
-              <QrCode className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Scan Door QR</span>
-            </button>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <ScanFace className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Gate Active</span>
+            </div>
+
+            {/* Manual Backup Scanner Trigger (for exceptions & override) */}
+            <Link
+              href="/conductor/scanner"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 active:scale-95 text-xs font-bold shadow-xs transition-all"
+              title="Manual Backup Scanner for exception cases or unverified students"
+            >
+              <QrCode className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">Backup Scanner</span>
+            </Link>
 
             <button
               type="button"

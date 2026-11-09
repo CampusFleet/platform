@@ -17,3 +17,4 @@ CHECK (attendance_mode IN ('FACE_ID', 'DYNAMIC_QR', 'RFID', 'STATIC_QR', 'ALL'))
 UPDATE transport_settings 
 SET attendance_mode = 'FACE_ID' 
 WHERE attendance_mode IS NULL;
+

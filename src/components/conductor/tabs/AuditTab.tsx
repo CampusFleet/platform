@@ -14,6 +14,7 @@ import {
   FileText,
   UserCheck,
   Hash,
+  ScanFace,
 } from "lucide-react";
 import { Student, Bus, Route, AttendanceRecord } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
@@ -36,7 +37,7 @@ export function AuditTab({
   isSyncing,
 }: AuditTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [methodFilter, setMethodFilter] = useState<"ALL" | "QR_SCAN" | "RFID" | "MANUAL">("ALL");
+  const [methodFilter, setMethodFilter] = useState<"ALL" | "FACE_ID" | "QR_SCAN" | "RFID" | "MANUAL">("ALL");
 
   const studentMap = useMemo(() => {
     const map = new Map<string, Student>();
@@ -47,21 +48,23 @@ export function AuditTab({
     return map;
   }, [students]);
 
-  // Aggregate stats
+  // Aggregate stats across all modalities
   const stats = useMemo(() => {
     let total = attendanceRecords.length;
+    let faceIdCount = 0;
     let qrCount = 0;
     let rfidCount = 0;
     let manualCount = 0;
 
     attendanceRecords.forEach(r => {
       const m = (r.method || "").toUpperCase();
-      if (m.includes("QR")) qrCount++;
+      if (m.includes("FACE") || m.includes("BIOMETRIC")) faceIdCount++;
+      else if (m.includes("QR")) qrCount++;
       else if (m.includes("RFID")) rfidCount++;
       else manualCount++;
     });
 
-    return { total, qrCount, rfidCount, manualCount };
+    return { total, faceIdCount, qrCount, rfidCount, manualCount };
   }, [attendanceRecords]);
 
   // Filter records
@@ -71,11 +74,15 @@ export function AuditTab({
     return attendanceRecords.filter(r => {
       const s = studentMap.get(r.studentId);
       const methodStr = (r.method || "").toUpperCase();
+      const isFace = methodStr.includes("FACE") || methodStr.includes("BIOMETRIC");
+      const isQr = methodStr.includes("QR");
+      const isRfid = methodStr.includes("RFID");
 
       // Method filter
-      if (methodFilter === "QR_SCAN" && !methodStr.includes("QR")) return false;
-      if (methodFilter === "RFID" && !methodStr.includes("RFID")) return false;
-      if (methodFilter === "MANUAL" && (methodStr.includes("QR") || methodStr.includes("RFID"))) return false;
+      if (methodFilter === "FACE_ID" && !isFace) return false;
+      if (methodFilter === "QR_SCAN" && !isQr) return false;
+      if (methodFilter === "RFID" && !isRfid) return false;
+      if (methodFilter === "MANUAL" && (isFace || isQr || isRfid)) return false;
 
       // Search query
       if (!q) return true;
@@ -128,7 +135,7 @@ export function AuditTab({
         </div>
 
         {/* Breakdown Metric Tiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
             <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Verified</div>
             <div className="text-2xl font-black text-white font-mono">{stats.total}</div>
@@ -136,9 +143,16 @@ export function AuditTab({
 
           <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
             <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+              <ScanFace className="w-3 h-3" /> Face ID Gate
+            </div>
+            <div className="text-2xl font-black text-emerald-400 font-mono">{stats.faceIdCount}</div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
+            <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
               <QrCode className="w-3 h-3" /> QR Scans
             </div>
-            <div className="text-2xl font-black text-emerald-400 font-mono">{stats.qrCount}</div>
+            <div className="text-2xl font-black text-blue-400 font-mono">{stats.qrCount}</div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
@@ -149,10 +163,10 @@ export function AuditTab({
           </div>
 
           <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-            <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+            <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
               <SlidersHorizontal className="w-3 h-3" /> Manual Desk
             </div>
-            <div className="text-2xl font-black text-blue-400 font-mono">{stats.manualCount}</div>
+            <div className="text-2xl font-black text-zinc-300 font-mono">{stats.manualCount}</div>
           </div>
         </div>
       </div>
@@ -174,36 +188,51 @@ export function AuditTab({
             </button>
 
             <button
-              onClick={() => setMethodFilter("QR_SCAN")}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                methodFilter === "QR_SCAN"
-                  ? "bg-emerald-600 text-white font-black shadow-sm"
+              onClick={() => setMethodFilter("FACE_ID")}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                methodFilter === "FACE_ID"
+                  ? "bg-emerald-600 text-white font-black shadow-sm shadow-emerald-600/30"
                   : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-emerald-400"
               }`}
             >
-              Optical QR ({stats.qrCount})
+              <ScanFace className="w-3.5 h-3.5" />
+              <span>Face ID Gate ({stats.faceIdCount})</span>
+            </button>
+
+            <button
+              onClick={() => setMethodFilter("QR_SCAN")}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                methodFilter === "QR_SCAN"
+                  ? "bg-blue-600 text-white font-black shadow-sm shadow-blue-600/30"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-blue-400"
+              }`}
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>Optical QR ({stats.qrCount})</span>
             </button>
 
             <button
               onClick={() => setMethodFilter("RFID")}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 methodFilter === "RFID"
-                  ? "bg-indigo-600 text-white font-black shadow-sm"
+                  ? "bg-indigo-600 text-white font-black shadow-sm shadow-indigo-600/30"
                   : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-indigo-400"
               }`}
             >
-              RFID Door Card ({stats.rfidCount})
+              <Radio className="w-3.5 h-3.5" />
+              <span>RFID Door Card ({stats.rfidCount})</span>
             </button>
 
             <button
               onClick={() => setMethodFilter("MANUAL")}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 methodFilter === "MANUAL"
-                  ? "bg-blue-600 text-white font-black shadow-sm"
-                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-blue-400"
+                  ? "bg-zinc-700 text-white font-black shadow-sm"
+                  : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-300"
               }`}
             >
-              Manual Override ({stats.manualCount})
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Manual Override ({stats.manualCount})</span>
             </button>
           </div>
 
@@ -281,8 +310,29 @@ export function AuditTab({
                       </div>
 
                       <div className="text-[11px] text-zinc-400 font-mono flex items-center gap-2 flex-wrap">
-                        <span className="text-zinc-300">
-                          Method: <strong>{record.method}</strong>
+                        <span className="text-zinc-300 flex items-center gap-1.5">
+                          Method:
+                          {method.includes("FACE") || method.includes("BIOMETRIC") ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
+                              <ScanFace className="w-3 h-3 text-emerald-400" />
+                              Face ID Gate (AI Verified)
+                            </span>
+                          ) : method.includes("QR") ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-950/80 text-blue-300 border border-blue-800 text-[10px] font-bold">
+                              <QrCode className="w-3 h-3 text-blue-400" />
+                              Optical QR Pass
+                            </span>
+                          ) : method.includes("RFID") ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-950/80 text-indigo-300 border border-indigo-800 text-[10px] font-bold">
+                              <Radio className="w-3 h-3 text-indigo-400" />
+                              RFID Door Card
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px] font-bold">
+                              <SlidersHorizontal className="w-3 h-3 text-zinc-400" />
+                              Manual Desk Override
+                            </span>
+                          )}
                         </span>
                         <span className="text-zinc-600">•</span>
                         <span>Verified by: {record.verifiedBy || "Conductor"}</span>

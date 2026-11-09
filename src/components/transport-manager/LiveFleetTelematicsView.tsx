@@ -28,6 +28,7 @@ import {
   Building2,
   Maximize2,
   RefreshCw,
+  ScanFace,
 } from "lucide-react";
 import type { Bus, Trip, Route, Shift, Staff, Booking, Student, Stop } from "@/lib/types";
 
@@ -615,10 +616,13 @@ export default function LiveFleetTelematicsView({
                     </div>
                   </div>
 
-                  {/* Commuter Occupancy Bar */}
+                  {/* Commuter Occupancy & APC Density */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-500 dark:text-zinc-400 font-medium">Passenger Load</span>
+                      <span className="text-zinc-500 dark:text-zinc-400 font-medium flex items-center gap-1">
+                        <ScanFace className="w-3 h-3 text-emerald-500" />
+                        <span>Face ID Gate APC</span>
+                      </span>
                       <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">
                         {item.totalBooked} / {item.capacity} ({item.occupancyPercent}%)
                       </span>
@@ -626,18 +630,26 @@ export default function LiveFleetTelematicsView({
                     <div className="w-full h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          item.occupancyPercent > 85
+                          item.occupancyPercent >= 90
                             ? "bg-rose-500"
-                            : item.occupancyPercent > 50
-                            ? "bg-emerald-500"
-                            : "bg-blue-500"
+                            : item.occupancyPercent >= 70
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
                         }`}
                         style={{ width: `${item.occupancyPercent}%` }}
                       />
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
-                      <span>🎓 {item.studentCount} Students</span>
-                      {item.facultyCount > 0 && <span>• 👨‍🏫 {item.facultyCount} Faculty</span>}
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
+                      <span>🎓 {item.studentCount} Students{item.facultyCount > 0 ? ` • 👨‍🏫 ${item.facultyCount} Faculty` : ""}</span>
+                      <span className={`font-bold ${
+                        item.occupancyPercent >= 90
+                          ? "text-rose-500"
+                          : item.occupancyPercent >= 70
+                          ? "text-amber-500"
+                          : "text-emerald-500"
+                      }`}>
+                        {item.occupancyPercent >= 90 ? "Critical" : item.occupancyPercent >= 70 ? "High Load" : "Normal"}
+                      </span>
                     </div>
                   </div>
                 </div>

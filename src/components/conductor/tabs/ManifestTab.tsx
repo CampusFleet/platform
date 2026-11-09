@@ -21,6 +21,9 @@ import {
   Volume2,
   BellRing,
   X,
+  ScanFace,
+  QrCode,
+  Radio,
 } from "lucide-react";
 import { Booking, Student, Stop, Bus, Route, Shift } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
@@ -164,11 +167,61 @@ export function ManifestTab({
   const capacity = bus?.capacity || 40;
   const occupancyPercent = Math.min(100, Math.round((boardedCount / (capacity || 1)) * 100));
 
+  // Automated Passenger Counting (APC) standard ITS load factor tiering
+  const loadFactorColor =
+    occupancyPercent >= 90
+      ? "bg-red-500"
+      : occupancyPercent >= 70
+      ? "bg-amber-500"
+      : "bg-emerald-500";
+  const loadFactorText =
+    occupancyPercent >= 90
+      ? "text-red-400"
+      : occupancyPercent >= 70
+      ? "text-amber-400"
+      : "text-emerald-400";
+  const loadFactorLabel =
+    occupancyPercent >= 90
+      ? "Capacity Critical"
+      : occupancyPercent >= 70
+      ? "High Density"
+      : "Normal Seating";
+
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
-      {/* ── TOP OPERATIONAL HERO: Bus & Boarding Meter ── */}
+      {/* ── TOP OPERATIONAL HERO: Bus & APC Boarding Meter ── */}
       <div className="bg-zinc-950 dark:bg-black border border-zinc-800/90 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden text-white">
         <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Autonomous APC Dual-Gate Live Beacon */}
+        <div className="relative z-10 mb-4 pb-3 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+              <ScanFace className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Autonomous Dual-Gate AI Active</span>
+            </div>
+            <span className="hidden sm:inline text-zinc-500 text-xs">•</span>
+            <span className="text-[11px] text-zinc-400 hidden sm:inline">
+              Commuters auto-boarded via ceiling gate camera on entry
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded-md border ${
+              occupancyPercent >= 90
+                ? "bg-red-950/80 text-red-300 border-red-800"
+                : occupancyPercent >= 70
+                ? "bg-amber-950/80 text-amber-300 border-amber-800"
+                : "bg-emerald-950/80 text-emerald-300 border-emerald-800"
+            }`}>
+              APC Load: {loadFactorLabel}
+            </span>
+          </div>
+        </div>
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -193,16 +246,16 @@ export function ManifestTab({
           </div>
 
           {/* Occupancy Gauge */}
-          <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3.5 min-w-[240px] space-y-2">
+          <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3.5 min-w-[260px] space-y-2">
             <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-zinc-400">Boarding Progress</span>
-              <span className="text-emerald-400 font-mono font-black">
+              <span className="text-zinc-400">APC Live Headcount</span>
+              <span className={`${loadFactorText} font-mono font-black`}>
                 {boardedCount} / {tripBookings.length} Boarded ({occupancyPercent}%)
               </span>
             </div>
             <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden">
               <div
-                className="bg-emerald-500 h-full rounded-full transition-all duration-500 ease-out"
+                className={`${loadFactorColor} h-full rounded-full transition-all duration-500 ease-out`}
                 style={{ width: `${occupancyPercent}%` }}
               />
             </div>
@@ -582,18 +635,48 @@ export function ManifestTab({
                         )}
                       </div>
 
-                      {/* Boarded time stamp */}
+                      {/* Boarded time stamp & validation method provenance */}
                       {b.boardedAt && (
-                        <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1 pt-0.5">
-                          <Clock className="w-3 h-3 text-emerald-400" />
+                        <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 pt-0.5 flex-wrap">
+                          <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
                           <span>
                             Boarded at{" "}
                             {new Date(b.boardedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                           </span>
                           {enriched.unlockedBy && (
-                            <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 ml-1">
-                              {enriched.unlockedBy}
-                            </span>
+                            (() => {
+                              const u = (enriched.unlockedBy || "").toUpperCase();
+                              if (u.includes("FACE") || u.includes("BIOMETRIC")) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                    <ScanFace className="w-2.5 h-2.5 text-emerald-400" />
+                                    Face ID Gate
+                                  </span>
+                                );
+                              }
+                              if (u.includes("DYNAMIC") || u.includes("QR")) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                                    <QrCode className="w-2.5 h-2.5 text-blue-400" />
+                                    Dynamic QR
+                                  </span>
+                                );
+                              }
+                              if (u.includes("RFID")) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                                    <Radio className="w-2.5 h-2.5 text-indigo-400" />
+                                    RFID Card
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                                  <UserCheck className="w-2.5 h-2.5 text-zinc-400" />
+                                  {enriched.unlockedBy}
+                                </span>
+                              );
+                            })()
                           )}
                         </div>
                       )}

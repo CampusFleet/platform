@@ -13,6 +13,7 @@ import { StepActivatePassProps } from "./types";
 export function StepActivatePass({
   fullName,
   studentIdCode,
+  photoUrl,
   assignedStop,
   selectedZoneCode,
   semesterFee,
@@ -43,9 +44,17 @@ export function StepActivatePass({
 
         <div className="flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-700 dark:text-emerald-400 shadow-xs">
-              <BusFront className="w-6 h-6" />
-            </div>
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt="Commuter Photo"
+                className="w-11 h-13 rounded-xl object-cover border-2 border-emerald-400 dark:border-emerald-500/50 shadow-sm"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-700 dark:text-emerald-400 shadow-xs">
+                <BusFront className="w-6 h-6" />
+              </div>
+            )}
             <div>
               <h4 className="font-bold text-sm tracking-wide text-gray-900 dark:text-white">
                 CAMPUSFLEET TRANSIT PASS

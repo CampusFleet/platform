@@ -118,6 +118,7 @@ export interface StepProfileAndIdProps {
 export interface StepActivatePassProps {
   fullName: string;
   studentIdCode: string;
+  photoUrl?: string;
   assignedStop: Stop | undefined;
   selectedZoneCode: string;
   semesterFee: number;

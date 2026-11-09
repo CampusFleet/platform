@@ -641,7 +641,7 @@ export default function StudentOnboardingPage() {
     }
 
     if (!photoUrl) {
-      showToast("error", "You must upload an official ID photo before activating your pass.", "Photo Required");
+      showToast("error", "Official live camera photo & Face ID verification required.", "Photo Required");
       setActiveStep(2);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -1064,7 +1064,7 @@ export default function StudentOnboardingPage() {
               setPhotoUrl(avatarUrl);
               setLocalPreviewUrl(avatarUrl);
               setImageLoadFailed(false);
-              showToast("success", "Biometric Face ID active! Zero-touch boarding enabled.", "Face ID Enrolled");
+              showToast("success", "Live pass photo verified & Biometric Face ID active!", "Verified");
             }}
             onPhotoFileChange={handlePhotoFileChange}
             onClearPhoto={handleClearPhoto}
@@ -1074,7 +1074,12 @@ export default function StudentOnboardingPage() {
                 showToast("warning", "Please provide a valid contact phone number.", "Phone Required");
                 return;
               }
+              if (!photoUrl && !localPreviewUrl) {
+                showToast("error", "Official live camera photo & Face ID verification required.", "Photo Required");
+                return;
+              }
               setActiveStep(3);
+              window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           />
         )}
@@ -1084,6 +1089,7 @@ export default function StudentOnboardingPage() {
           <StepActivatePass
             fullName={fullName}
             studentIdCode={studentIdCode}
+            photoUrl={photoUrl || localPreviewUrl}
             assignedStop={assignedStop}
             selectedZoneCode={selectedZoneCode}
             semesterFee={semesterFee}

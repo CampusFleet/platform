@@ -72,6 +72,7 @@ export interface StepHomeAndRouteProps {
 }
 
 export interface StepProfileAndIdProps {
+  studentId?: string;
   fullName: string;
   phone: string;
   studentIdCode: string;

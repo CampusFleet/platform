@@ -43,29 +43,80 @@ export async function POST(req: NextRequest) {
 
     const { embedding, qualityScore, livenessScore, consentGiven, avatarDataUrl, studentId: requestedStudentId } = parsed.data;
 
-    // 1. Resolve authentic student ID
-    let resolvedStudentId = requestedStudentId;
+    // 1. Resolve authentic student ID in public.students (satisfying fk_student_face_profiles_student_id)
+    let resolvedStudentId: string | null = null;
 
-    if (!resolvedStudentId || session.role === "student") {
-      const studentOrFilter = [
-        `user_id.eq.${session.userId}`,
-        `id.eq.${session.userId}`,
-        session.email ? `email.eq.${session.email}` : null,
-      ]
-        .filter(Boolean)
-        .join(",");
+    // Query students table by user_id, id, or requestedStudentId (never query non-existent 'email' on students)
+    const filterParts = [
+      session.userId ? `user_id.eq.${session.userId}` : null,
+      session.userId ? `id.eq.${session.userId}` : null,
+      requestedStudentId ? `id.eq.${requestedStudentId}` : null,
+    ].filter(Boolean);
 
+    if (filterParts.length > 0) {
       const { data: dbStudents } = await supabaseAdmin
         .from("students")
         .select("id, user_id, full_name, photo_locked")
-        .or(studentOrFilter)
+        .or(filterParts.join(","))
         .limit(1);
 
-      resolvedStudentId = dbStudents?.[0]?.id || session.userId;
+      if (dbStudents?.[0]?.id) {
+        resolvedStudentId = dbStudents[0].id;
+      }
+    }
+
+    // Fallback: Check students_full view (which safely joins users.email)
+    if (!resolvedStudentId && session.email) {
+      const { data: sf } = await supabaseAdmin
+        .from("students_full")
+        .select("id")
+        .ilike("email", session.email)
+        .limit(1)
+        .maybeSingle();
+
+      if (sf?.id) {
+        resolvedStudentId = sf.id;
+      }
+    }
+
+    // Fallback: If student record does not exist yet (onboarding Step 2 before Step 3 checkout),
+    // auto-provision a student row linked to session.userId so the foreign key constraint is ALWAYS satisfied!
+    if (!resolvedStudentId && session.userId) {
+      const autoStudentId = `stud-${session.userId}`;
+      const { data: userRow } = await supabaseAdmin
+        .from("users")
+        .select("full_name, phone")
+        .eq("id", session.userId)
+        .maybeSingle();
+
+      const { data: newStudent, error: provisionErr } = await supabaseAdmin
+        .from("students")
+        .upsert(
+          {
+            id: autoStudentId,
+            user_id: session.userId,
+            full_name: userRow?.full_name || (session as any).name || "Student Commuter",
+            student_id_code: `ERP-${Date.now().toString().slice(-6)}`,
+            photo_locked: false,
+          },
+          { onConflict: "id" }
+        )
+        .select("id")
+        .single();
+
+      if (!provisionErr && newStudent?.id) {
+        resolvedStudentId = newStudent.id;
+      }
     }
 
     if (!resolvedStudentId) {
-      resolvedStudentId = session.userId;
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Could not resolve valid student record for biometric enrollment.",
+        },
+        { status: 404 }
+      );
     }
 
     // 2. Save biometric vector embedding to student_face_profiles

@@ -983,6 +983,7 @@ export default function StudentOnboardingPage() {
         {/* STEP 2: STUDENT IDENTITY, ACADEMIC COHORT & SPECIALIZATION */}
         {activeStep === 2 && (
           <StepProfileAndId
+            studentId={activeStudent?.id}
             fullName={fullName}
             phone={phone}
             studentIdCode={studentIdCode}

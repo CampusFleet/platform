@@ -20,6 +20,7 @@ import { StepProfileAndIdProps } from "./types";
 import { FaceIdEnrollmentModal } from "./FaceIdEnrollmentModal";
 
 export function StepProfileAndId({
+  studentId,
   fullName,
   phone,
   studentIdCode,
@@ -71,6 +72,7 @@ export function StepProfileAndId({
       <FaceIdEnrollmentModal
         isOpen={showFaceIdModal}
         onClose={() => setShowFaceIdModal(false)}
+        studentId={studentId}
         studentName={fullName}
         onSuccess={(res) => {
           if (onFaceIdEnrolled) {

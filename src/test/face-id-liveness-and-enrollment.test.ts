@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-describe("Face ID Multi-Angle Liveness & Live Pass Photo Architecture", () => {
+describe("Face ID 5-Point Transit Liveness & Live Pass Photo Architecture", () => {
   const TOTAL_TICKS = 36;
 
   // Replicate mathematical geometry from FaceIdEnrollmentModal
@@ -23,10 +23,11 @@ describe("Face ID Multi-Angle Liveness & Live Pass Photo Architecture", () => {
   });
 
   const POSE_TICK_MAP = {
-    LOOK_CENTER: [33, 34, 35, 0, 1, 2, 3],
-    TURN_LEFT: [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
-    TURN_RIGHT: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-    HOLD_CENTER: [17, 18, 19, 20],
+    LOOK_CENTER: [35, 0, 1], // Top center (Frontal baseline pass photo)
+    TURN_LEFT: [23, 24, 25, 26, 27, 28, 29, 30], // Left quadrant (Yaw -28°)
+    TURN_RIGHT: [6, 7, 8, 9, 10, 11, 12, 13], // Right quadrant (Yaw +26°)
+    TILT_UP: [31, 32, 33, 34, 2, 3, 4, 5], // Upper arc (Elevated bus door camera, Pitch +18°)
+    TILT_DOWN: [14, 15, 16, 17, 18, 19, 20, 21, 22], // Bottom arc (Overhead boarding descent, Pitch -15°)
     SCAN_COMPLETE: Array.from({ length: TOTAL_TICKS }, (_, i) => i),
   };
 
@@ -48,12 +49,13 @@ describe("Face ID Multi-Angle Liveness & Live Pass Photo Architecture", () => {
     });
   });
 
-  it("maps every single tick from 0 to 35 across the 4 pose challenges with zero omissions", () => {
+  it("maps every single tick from 0 to 35 across the 5 pose challenges with zero omissions or duplicates", () => {
     const allAssigned = [
       ...POSE_TICK_MAP.LOOK_CENTER,
       ...POSE_TICK_MAP.TURN_LEFT,
       ...POSE_TICK_MAP.TURN_RIGHT,
-      ...POSE_TICK_MAP.HOLD_CENTER,
+      ...POSE_TICK_MAP.TILT_UP,
+      ...POSE_TICK_MAP.TILT_DOWN,
     ];
 
     expect(allAssigned).toHaveLength(36);
@@ -84,8 +86,25 @@ describe("Face ID Multi-Angle Liveness & Live Pass Photo Architecture", () => {
     });
   });
 
+  it("validates elevated door camera ticks (TILT_UP) map to upper vertical half", () => {
+    POSE_TICK_MAP.TILT_UP.forEach((tickId) => {
+      const tick = RETICLE_TICKS[tickId];
+      // Upper diagonal arc has y < cy (60)
+      expect(tick.y1).toBeLessThan(60);
+      expect(tick.y2).toBeLessThan(60);
+    });
+  });
+
+  it("validates overhead descent camera ticks (TILT_DOWN) map to bottom vertical arc", () => {
+    POSE_TICK_MAP.TILT_DOWN.forEach((tickId) => {
+      const tick = RETICLE_TICKS[tickId];
+      // Bottom arc has y > cy (60)
+      expect(tick.y1).toBeGreaterThan(60);
+      expect(tick.y2).toBeGreaterThan(60);
+    });
+  });
+
   it("enforces dual-use camera capture: live photo required and file upload disabled", () => {
-    // Contract check: Onboarding Step 2 must reject empty photo
     const canContinue = (photoUrl?: string, localPreviewUrl?: string) => {
       return Boolean(photoUrl || localPreviewUrl);
     };

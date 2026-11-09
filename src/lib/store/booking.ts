@@ -1,7 +1,7 @@
 import { CampusFleetStore } from "./_base";
 import { supabase } from "../supabaseClient";
 import { createBooking, cancelBookingAndPromoteWaitlist } from "../reservation-engine";
-import { createAttendanceId } from "../id";
+import { createAttendanceId, createBookingId } from "../id";
 import type { Booking, AttendanceRecord } from "../types";
 
 // ── Module Augmentation ─────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ CampusFleetStore.prototype.recordAttendance = async function (
   const matchedBooking = this.bookings.find(
     b => (b.studentId === resolvedStudentId || b.studentId === studentId || b.id === studentId) && (tripId ? b.tripId === tripId : true)
   );
-  const bookingId = matchedBooking?.id || `bk-${resolvedStudentId}`;
+  const bookingId = matchedBooking?.id || createBookingId();
 
   const newRecord: AttendanceRecord = {
     id: createAttendanceId(),
@@ -173,7 +173,7 @@ CampusFleetStore.prototype.unlockAttendance = async function (
   const matchedBooking = this.bookings.find(
     b => (b.studentId === resolvedStudentId || b.studentId === studentId) && (tripId ? b.tripId === tripId : true)
   );
-  const bookingId = matchedBooking?.id || `bk-${resolvedStudentId}`;
+  const bookingId = matchedBooking?.id || createBookingId();
   const nowIso = new Date().toISOString();
 
   const newRecord: AttendanceRecord = {

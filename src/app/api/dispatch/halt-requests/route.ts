@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis, cacheSet, cacheGet } from "@/lib/redis";
 import type { HaltRequest } from "@/lib/types";
+import { createHaltId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     const newReq: HaltRequest = {
-      id: `${tripId}:${studentId}`,
+      id: createHaltId(),
       tripId,
       studentId,
       studentName,

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import AdminStaffView from "@/components/admin/AdminStaffView";
 import type { UserAccount } from "@/lib/types";
+import { createUserId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -56,7 +57,7 @@ export default async function UserAndRBACManagementPage() {
   for (const s of (dbStudents || [])) {
     const sEmail = (s.email || "").toLowerCase().trim();
     if (!userIds.has(s.user_id) && (!sEmail || !userEmails.has(sEmail))) {
-      const fallbackId = s.user_id || s.id || `usr-${Date.now()}`;
+      const fallbackId = s.user_id || s.id || createUserId();
       const healedUser: UserAccount = {
         id: fallbackId,
         fullName: s.full_name || "Student",

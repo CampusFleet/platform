@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseClient";
-import { createStudentId } from "@/lib/id";
+import { createStudentId, createUserId } from "@/lib/id";
 
 export interface FindOrCreateUserParams {
   email: string;
@@ -124,7 +124,7 @@ export async function findOrCreateUser({
 
   // 2. First-time sign-in: automatically create user account
   const role = adminEmail && cleanEmail === adminEmail ? "admin" : "student";
-  const userId = crypto.randomUUID();
+  const userId = createUserId();
 
   const realName =
     fullName?.trim() ||

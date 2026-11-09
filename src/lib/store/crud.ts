@@ -2,7 +2,7 @@ import { CampusFleetStore } from "./_base";
 import { supabase } from "../supabaseClient";
 import { telematicsService } from "../telematicsService";
 import { lockFinalManifest } from "../reservation-engine";
-import { createTripId } from "../id";
+import { createTripId, createStudentId } from "../id";
 import type {
   Bus, Route, Stop, Campus, Shift, Trip, Student, Staff,
   LiveBusLocation, VehicleIssue, NotificationItem, UserRole,
@@ -255,7 +255,7 @@ CampusFleetStore.prototype.updateStudentProfile = async function (
 
   if (!student) {
     const u = this.currentUser;
-    const targetId = studentId || (u?.id ? `stud-${u.id}` : crypto.randomUUID());
+    const targetId = studentId || createStudentId();
     // Compute fee from zone — never hardcode 0 for a new student
     const zoneCode = profileData.zoneCode || "ZONE_B";
     const zoneFee = this.transitZones.find(z => z.code === zoneCode)?.semesterFee || 12000;

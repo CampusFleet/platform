@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { store } from "@/lib/store";
 import { authService } from "@/lib/auth-service";
+import { createUserId } from "@/lib/id";
 import { UserAccount, UserRole, Campus } from "@/lib/types";
 import {
   Users,
@@ -159,7 +160,7 @@ export default function StaffUsersView({
     }
 
     const createdUser: UserAccount = {
-      id: `usr-${Date.now()}`,
+      id: createUserId(),
       fullName: newUser.fullName,
       email: newUser.email,
       phone: newUser.phone,

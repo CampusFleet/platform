@@ -4,6 +4,7 @@ import { signToken, createSessionCookie } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { findOrCreateUser } from "@/lib/account-service";
 import { redis } from "@/lib/redis";
+import { createUserId } from "@/lib/id";
 
 // In-memory brute-force protection
 const verifyAttempts = new Map<string, { count: number; windowStart: number }>();
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
       console.warn("findOrCreateUser fallback triggered:", userErr);
       const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").toLowerCase();
       user = {
-        id: "usr-" + crypto.createHash("md5").update(cleanEmail).digest("hex").slice(0, 16),
+        id: createUserId(),
         email: cleanEmail,
         full_name: cleanEmail.split("@")[0],
         role: cleanEmail === adminEmail ? "admin" : "student",

@@ -7,6 +7,7 @@ import { Student, TransitZone, Campus, Stop, Route } from "@/lib/types";
 import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Info, X } from "lucide-react";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 import { detectCommuterZoneAndStop } from "@/lib/zone-detector";
+import { createStudentId } from "@/lib/id";
 import {
   OnboardingHeader,
   OnboardingStepNav,
@@ -648,7 +649,7 @@ export default function StudentOnboardingPage() {
     }
 
     setIsSubmitting(true);
-    const targetStudentId = activeStudent?.id || `stud-${currentUser?.id || Date.now()}`;
+    const targetStudentId = activeStudent?.id || createStudentId();
     const chosenClass = classesList.find(c => c.id === selectedClassId);
     const chosenCampus = campuses.find(c => c.id === campusId);
 

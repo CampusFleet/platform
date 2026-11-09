@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getDayOfWeekIST, getCurrentTimeIST } from "@/lib/time-manager";
+import { createAttendanceId } from "@/lib/id";
 
 /**
  * QR-Based Bus Boarding (Attendance Architecture)
@@ -285,7 +286,7 @@ export async function POST(req: NextRequest) {
     const timestamp = new Date().toISOString();
 
     // 7a. Create verified attendance record with UNLOCKED status
-    const attendanceId = `att-${Date.now()}`;
+    const attendanceId = createAttendanceId();
     await supabaseAdmin.from("attendance_records").insert({
       id: attendanceId,
       student_id: student.id,
@@ -301,7 +302,7 @@ export async function POST(req: NextRequest) {
       unlocked_by: "MANUAL_OVERRIDE",
       unlock_timestamp: timestamp,
       // HACK: for backwards compatibility if booking_id was required in DB schema
-      booking_id: `att-${Date.now()}` 
+      booking_id: attendanceId 
     });
 
     // Update Smart Transit bus_reservations status to BOARDED and UNLOCKED

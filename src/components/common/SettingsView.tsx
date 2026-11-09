@@ -17,6 +17,7 @@ import { useTranslation } from "@/components/common/LanguageProvider";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { UserRole } from "@/lib/types";
+import { createStudentId } from "@/lib/id";
 
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
@@ -786,7 +787,7 @@ export function SettingsView() {
 
       const user = store.getCurrentUser();
       const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-      const studentId = data.student?.id || activeStudent?.id || (user ? `stud-${user.id}` : "");
+      const studentId = data.student?.id || activeStudent?.id || (user ? (user.studentId || createStudentId()) : "");
 
       if (studentId) {
         await store.updateStudentProfile(studentId, {

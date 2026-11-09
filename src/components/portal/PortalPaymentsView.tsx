@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { store } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { TRANSIT_ZONES, TransitZone, Student } from "@/lib/types";
+import { createStudentId } from "@/lib/id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -178,7 +179,7 @@ export default function PortalPaymentsView({
     setSubmitSuccess(null);
     
     try {
-      const studentId = activeStudent?.id || `stud-${currentUser.id}`;
+      const studentId = activeStudent?.id || currentUser?.studentId || createStudentId();
       
       const linkRes = await fetch("/api/payments/razorpay/create-link", {
         method: "POST",

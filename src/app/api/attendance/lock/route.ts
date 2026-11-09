@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm, calculateExactDistanceMeters, calculateProximityToBus } from "@/lib/utils";
 import { cacheGet, cacheSet } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
+import { createAttendanceId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 
@@ -496,7 +497,7 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
-      const attendanceId = `att-rfid-${Date.now()}`;
+      const attendanceId = createAttendanceId();
       await supabaseAdmin.from("attendance_records").insert({
         id: attendanceId,
         student_id: reservation?.student_id || resolvedStudentId,

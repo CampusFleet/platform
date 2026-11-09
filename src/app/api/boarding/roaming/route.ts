@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
+import { createAttendanceId } from "@/lib/id";
 
 /**
  * Digital Seat-Hold, Campus Roaming & Bus Departure Recall API
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
         .eq("id", targetBooking.id);
 
       // Record attendance
-      const attendanceId = `att-roam-${Date.now()}`;
+      const attendanceId = createAttendanceId();
       await supabaseAdmin.from("attendance_records").insert({
         id: attendanceId,
         student_id: targetBooking.student_id,

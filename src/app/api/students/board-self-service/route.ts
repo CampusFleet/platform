@@ -5,6 +5,7 @@ import { calculateDistanceKm, isStartingSeat, getTeacherStartingSeats, generateS
 import { cacheGet, cacheSet } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
 import { verifyRollingBusToken } from "@/lib/rolling-bus-crypto";
+import { createBookingId } from "@/lib/id";
 import crypto from "crypto";
 
 /**
@@ -237,7 +238,7 @@ export async function POST(req: NextRequest) {
         .eq("id", targetReservation.id);
     } else {
       // Auto-create reservation so attendance is recorded on the student's dashboard
-      const newResId = crypto.randomUUID();
+      const newResId = createBookingId();
       const boardingStop = studentRecord?.primary_stop_id || "stop-lamachaur";
       await supabaseAdmin
         .from("bus_reservations")

@@ -1,5 +1,6 @@
 import { CampusFleetStore } from "./_base";
 import { authService } from "../auth-service";
+import { createUserId, createStudentId } from "../id";
 import type { UserRole } from "../types";
 
 // ── Module Augmentation ─────────────────────────────────────────────────────
@@ -85,11 +86,11 @@ CampusFleetStore.prototype.switchRole = function (this: CampusFleetStore, newRol
     } else {
       const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").toLowerCase();
       this.currentUser = {
-        id: `usr_${Date.now()}`,
+        id: createUserId(),
         email: newRole === "admin" ? (adminEmail || "admin@gehu.ac.in") : `${newRole}@gehu.ac.in`,
         fullName: `${newRole.charAt(0).toUpperCase() + newRole.slice(1)} User`,
         role: newRole,
-        studentId: newRole === "student" ? `stud_${Date.now()}` : undefined,
+        studentId: newRole === "student" ? createStudentId() : undefined,
       };
     }
   }

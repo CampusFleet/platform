@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { store } from "@/lib/store";
 import { Trip, Bus, Route, Booking, Student, Stop, Shift, AttendanceRecord, HaltRequest } from "@/lib/types";
 import { resolveActiveTrip } from "@/lib/trip-resolver";
+import { createAttendanceId } from "@/lib/id";
 
 // Play subtle transit alert chime when new SOS request is received
 function playTransitNotification(type: "sos" | "success" | "toggle") {
@@ -529,7 +530,7 @@ export function ConductorProvider({
 
       const timestamp = new Date().toISOString();
       const newRecord: AttendanceRecord = {
-        id: `att-${Date.now()}`,
+        id: createAttendanceId(),
         studentId,
         tripId: activeTrip.id,
         busId: activeTrip.busId,

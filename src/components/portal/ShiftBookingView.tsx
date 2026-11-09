@@ -11,6 +11,7 @@ import { InteractiveBusSeatGrid } from "@/components/booking/InteractiveBusSeatG
 import { NearestStopFinder } from "@/components/booking/NearestStopFinder";
 import { calculateHaversineDistanceKm } from "@/lib/eta-calculator";
 import { BoardingPassCard } from "@/components/ticket/BoardingPassCard";
+import { createStudentId } from "@/lib/id";
 import {
   CalendarCheck,
   CheckCircle2,
@@ -193,7 +194,7 @@ export default function ShiftBookingView({
         s.id === currentUser.studentId ||
         s.email?.toLowerCase() === currentUser.email?.toLowerCase()
     ) || initialStudent || {
-      id: `stud-${currentUser.id || currentUser.userId || "guest"}`,
+      id: currentUser.studentId || createStudentId(),
       userId: currentUser.id || currentUser.userId,
       fullName: currentUser.fullName || "Student Commuter",
       email: currentUser.email,

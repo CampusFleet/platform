@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { cacheSet, invalidateCachedStudentProfile } from "@/lib/redis";
+import { createStudentId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     const finalStudentId =
       existingStudentId ||
       studentId ||
-      `stud-${userId}`;
+      createStudentId();
 
     // 2. Validate classId as UUID if provided
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { createAuditLogId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
 
     // 4. Log to audit trail in PostgreSQL
     await supabaseAdmin.from("audit_logs").insert({
-      id: `audit-${Date.now()}`,
+      id: createAuditLogId(),
       action: "CREW_ASSIGNED",
       performed_by: assignedBy || "Transport Operations Staff",
       entity_type: "TRIP_CREW",

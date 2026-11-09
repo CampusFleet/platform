@@ -218,7 +218,11 @@ export function FaceIdEnrollmentModal({
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn("Autoplay deferred:", playErr);
+        }
       }
 
       setState("ALIGN_FACE");
@@ -239,6 +243,14 @@ export function FaceIdEnrollmentModal({
       setState("ERROR");
     }
   }, []);
+
+  // Ensure camera stream is attached as soon as the video DOM element mounts
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  });
 
   // Main 60 FPS Computer Vision & Apple Face ID Interaction Loop
   useEffect(() => {
@@ -648,16 +660,30 @@ export function FaceIdEnrollmentModal({
           </div>
 
           {/* Apple Face ID Oval Reticle Viewfinder */}
-          <div className="relative w-64 h-76 rounded-[48px] overflow-hidden bg-zinc-950 flex items-center justify-center shadow-2xl border border-zinc-800/60">
-            
+          <div
+            style={{ width: "270px", height: "340px", minHeight: "340px" }}
+            className="relative rounded-[48px] overflow-hidden bg-zinc-950 flex items-center justify-center shadow-2xl border-2 border-zinc-800/80 shrink-0"
+          >
             {/* Live Camera Feed (Mirrored for natural mirror view) */}
             {state !== "CONFIRMATION" && (
               <video
                 ref={videoRef}
-                className="absolute inset-0 w-full h-full object-cover transform -scale-x-100"
+                autoPlay
                 playsInline
                 muted
+                onLoadedMetadata={() => {
+                  videoRef.current?.play().catch(() => {});
+                }}
+                className="absolute inset-0 w-full h-full object-cover transform -scale-x-100"
               />
+            )}
+
+            {/* Camera Initializing Spinner */}
+            {state === "INITIALIZING" && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 bg-zinc-950 z-20">
+                <RefreshCw className="w-8 h-8 animate-spin text-emerald-500" />
+                <span className="text-[11px] font-medium text-zinc-400">Starting camera...</span>
+              </div>
             )}
 
             {/* Captured Pass Portrait Preview */}

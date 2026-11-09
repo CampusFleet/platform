@@ -73,11 +73,11 @@ describe("Face ID Apple Reverse-Engineered Architecture & 36-Tick Polar Mapping"
 
   it("calculates accurate 3D facial pitch from MediaPipe landmark ratio (positive when lifting chin up)", () => {
     // noseRatio = (nose.y - forehead.y) / faceHeight
-    // pitch = (0.42 - noseRatio) * 140
+    // pitch = (0.42 - noseRatio) * 130  (updated multiplier)
     const calcPitch = (noseY: number, foreheadY: number, chinY: number) => {
       const faceHeight = Math.abs(chinY - foreheadY);
       const noseRatio = (noseY - foreheadY) / faceHeight;
-      return Math.round((0.42 - noseRatio) * 140);
+      return Math.round((0.42 - noseRatio) * 130);
     };
 
     // Standard frontal resting face: nose is at 42% between forehead and chin
@@ -88,29 +88,72 @@ describe("Face ID Apple Reverse-Engineered Architecture & 36-Tick Polar Mapping"
     const liftChinPitch = calcPitch(0.36, 0.20, 0.70);
     expect(liftChinPitch).toBeGreaterThan(10); // POSITIVE pitch!
 
-    // User nodding DOWN: nose tip drops toward chin (nose = 0.45 -> ratio = 0.25/0.50 = 0.50)
-    const nodDownPitch = calcPitch(0.45, 0.20, 0.70);
+    // User nodding DOWN: nose tip drops toward chin (nose = 0.46 -> ratio = 0.26/0.50 = 0.52)
+    const nodDownPitch = calcPitch(0.46, 0.20, 0.70);
     expect(nodDownPitch).toBeLessThan(-10); // NEGATIVE pitch!
   });
 
-  it("pauses active challenge and warns when face is not properly centered in frame", () => {
-    const checkCentering = (cx: number, cy: number, eyeDist: number) => {
-      const isCentered =
-        Math.abs(cx - 0.5) < 0.16 &&
+  it("uses strict centering for ALIGN_FACE and loose in-frame check for CIRCLING", () => {
+    // Strict centering: used only to start the sweep
+    const checkStrictCentering = (cx: number, cy: number, eyeDist: number) => {
+      return (
+        Math.abs(cx - 0.5) < 0.15 &&
         Math.abs(cy - 0.5) < 0.18 &&
-        eyeDist > 0.12 &&
-        eyeDist < 0.45;
-      return isCentered;
+        eyeDist > 0.10 &&
+        eyeDist < 0.50
+      );
     };
 
-    // Centered face
-    expect(checkCentering(0.5, 0.5, 0.25)).toBe(true);
-    // Face shifted off to left
-    expect(checkCentering(0.2, 0.5, 0.25)).toBe(false);
-    // Face shifted off to top
-    expect(checkCentering(0.5, 0.15, 0.25)).toBe(false);
-    // Face too far away (small eye distance)
-    expect(checkCentering(0.5, 0.5, 0.05)).toBe(false);
+    // Loose in-frame: used during CIRCLING (face just needs to be visible)
+    const checkFaceInFrame = (cx: number, cy: number, eyeDist: number) => {
+      return (
+        cx > 0.08 && cx < 0.92 &&
+        cy > 0.05 && cy < 0.95 &&
+        eyeDist > 0.06
+      );
+    };
+
+    // Well-centered face passes both
+    expect(checkStrictCentering(0.5, 0.5, 0.25)).toBe(true);
+    expect(checkFaceInFrame(0.5, 0.5, 0.25)).toBe(true);
+
+    // Face shifted when turning head — fails strict but passes loose
+    expect(checkStrictCentering(0.3, 0.5, 0.20)).toBe(false);
+    expect(checkFaceInFrame(0.3, 0.5, 0.20)).toBe(true);
+
+    // Face too far shifted — fails both
+    expect(checkStrictCentering(0.05, 0.5, 0.25)).toBe(false);
+    expect(checkFaceInFrame(0.05, 0.5, 0.25)).toBe(false);
+
+    // Face too far away
+    expect(checkStrictCentering(0.5, 0.5, 0.05)).toBe(false);
+    expect(checkFaceInFrame(0.5, 0.5, 0.05)).toBe(false);
+  });
+
+  it("applies EMA smoothing to reduce jitter in yaw/pitch measurements", () => {
+    const EMA_ALPHA = 0.3;
+    let smoothedYaw = 0;
+    let smoothedPitch = 0;
+
+    // Simulate a series of raw measurements with noise
+    const rawMeasurements = [
+      { yaw: 10, pitch: 0 },
+      { yaw: 12, pitch: -1 },
+      { yaw: 8, pitch: 1 },
+      { yaw: 11, pitch: 0 },
+      { yaw: 10, pitch: -2 },
+    ];
+
+    for (const m of rawMeasurements) {
+      smoothedYaw = EMA_ALPHA * m.yaw + (1 - EMA_ALPHA) * smoothedYaw;
+      smoothedPitch = EMA_ALPHA * m.pitch + (1 - EMA_ALPHA) * smoothedPitch;
+    }
+
+    // Smoothed values should be close to the average but biased toward recent measurements
+    expect(smoothedYaw).toBeGreaterThan(5);
+    expect(smoothedYaw).toBeLessThan(15);
+    // The smoothed values should NOT exactly match any single raw measurement (smoothing effect)
+    expect(smoothedYaw).not.toBeCloseTo(10, 1);
   });
 
   it("supports Apple iOS Accessibility option 'Set Up Without Head Motion'", () => {

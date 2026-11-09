@@ -44,20 +44,24 @@ export async function POST(req: NextRequest) {
     const { embedding, qualityScore, livenessScore, consentGiven, avatarDataUrl, studentId: requestedStudentId } = parsed.data;
 
     // 1. Resolve authentic student ID in public.students (satisfying fk_student_face_profiles_student_id)
+    //    Multi-tier resolution strategy to handle all ID formats
     let resolvedStudentId: string | null = null;
 
-    // Query students table by user_id, id, or requestedStudentId (never query non-existent 'email' on students)
-    const filterParts = [
-      session.userId ? `user_id.eq.${session.userId}` : null,
-      session.userId ? `id.eq.${session.userId}` : null,
-      requestedStudentId ? `id.eq.${requestedStudentId}` : null,
-    ].filter(Boolean);
+    // Strategy A: Direct query by user_id or direct id match
+    const orFilters: string[] = [];
+    if (session.userId) {
+      orFilters.push(`user_id.eq.${session.userId}`);
+      orFilters.push(`id.eq.${session.userId}`);
+    }
+    if (requestedStudentId) {
+      orFilters.push(`id.eq.${requestedStudentId}`);
+    }
 
-    if (filterParts.length > 0) {
+    if (orFilters.length > 0) {
       const { data: dbStudents } = await supabaseAdmin
         .from("students")
         .select("id, user_id, full_name, photo_locked")
-        .or(filterParts.join(","))
+        .or(orFilters.join(","))
         .limit(1);
 
       if (dbStudents?.[0]?.id) {
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: Check students_full view (which safely joins users.email)
+    // Strategy B: Check students_full view by email (safe join with users.email)
     if (!resolvedStudentId && session.email) {
       const { data: sf } = await supabaseAdmin
         .from("students_full")
@@ -79,33 +83,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: If student record does not exist yet (onboarding Step 2 before Step 3 checkout),
-    // auto-provision a student row linked to session.userId so the foreign key constraint is ALWAYS satisfied!
+    // Strategy C: Auto-provision student row if none exists (onboarding Step 2 before Step 3)
+    // Let the database auto-generate the UUID — do NOT pass a synthetic id
     if (!resolvedStudentId && session.userId) {
-      const autoStudentId = `stud-${session.userId}`;
       const { data: userRow } = await supabaseAdmin
         .from("users")
         .select("full_name, phone")
         .eq("id", session.userId)
         .maybeSingle();
 
+      // First try insert (let DB generate UUID id)
       const { data: newStudent, error: provisionErr } = await supabaseAdmin
         .from("students")
         .upsert(
           {
-            id: autoStudentId,
             user_id: session.userId,
             full_name: userRow?.full_name || (session as any).name || "Student Commuter",
             student_id_code: `ERP-${Date.now().toString().slice(-6)}`,
             photo_locked: false,
           },
-          { onConflict: "id" }
+          { onConflict: "user_id" }
         )
         .select("id")
         .single();
 
       if (!provisionErr && newStudent?.id) {
         resolvedStudentId = newStudent.id;
+      } else if (provisionErr) {
+        // If upsert failed, the student may already exist — try to find by user_id
+        const { data: existingByUserId } = await supabaseAdmin
+          .from("students")
+          .select("id")
+          .eq("user_id", session.userId)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingByUserId?.id) {
+          resolvedStudentId = existingByUserId.id;
+        }
       }
     }
 

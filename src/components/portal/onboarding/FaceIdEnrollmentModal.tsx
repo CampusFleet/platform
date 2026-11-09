@@ -75,6 +75,8 @@ export function FaceIdEnrollmentModal({
   const [consentChecked, setConsentChecked] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
+  const [faceInFrame, setFaceInFrame] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,12 +84,21 @@ export function FaceIdEnrollmentModal({
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number>();
 
-  // State refs for low-latency 60 FPS animation loop
+  // State refs for low-latency 60 FPS animation loop (avoid stale closures)
   const stateRef = useRef<EnrollmentState>("INITIALIZING");
   const completedTicksRef = useRef<Set<number>>(new Set());
   const lastChimeTimeRef = useRef<number>(0);
-  const baselineCalibratedRef = useRef<{ cx: number; cy: number } | null>(null);
   const landmarkerRef = useRef<any>(null);
+
+  // EMA (Exponential Moving Average) smoothing refs to reduce jitter
+  const smoothedYawRef = useRef<number>(0);
+  const smoothedPitchRef = useRef<number>(0);
+  // Resting baseline calibration: capture neutral head pose on first centered detection
+  const restingYawRef = useRef<number | null>(null);
+  const restingPitchRef = useRef<number | null>(null);
+  // Frame counter for temporal consistency (anti-spoofing)
+  const frameCountRef = useRef<number>(0);
+  const faceDetectedFramesRef = useRef<number>(0);
 
   useEffect(() => {
     stateRef.current = state;
@@ -200,7 +211,14 @@ export function FaceIdEnrollmentModal({
     setSubheadline("Make sure your face is clearly visible and centered");
     setCompletedTicks(new Set());
     completedTicksRef.current = new Set();
-    baselineCalibratedRef.current = null;
+    smoothedYawRef.current = 0;
+    smoothedPitchRef.current = 0;
+    restingYawRef.current = null;
+    restingPitchRef.current = null;
+    frameCountRef.current = 0;
+    faceDetectedFramesRef.current = 0;
+    setIsCameraReady(false);
+    setFaceInFrame(false);
 
     try {
       // 1. Get User Media
@@ -259,18 +277,37 @@ export function FaceIdEnrollmentModal({
     }
 
     let animationId: number;
+    // EMA smoothing factor: lower = smoother but more lag. 0.3 is a good balance.
+    const EMA_ALPHA = 0.3;
+    // Throttle frame processing on mobile for performance (~20 FPS for MediaPipe)
+    let lastProcessTime = 0;
+    const PROCESS_INTERVAL_MS = 50; // Process every 50ms = ~20 FPS detection rate
 
-    const processFrame = () => {
+    const processFrame = (timestamp: number) => {
       const video = videoRef.current;
       if (!video || video.readyState < 2) {
         animationId = requestAnimationFrame(processFrame);
         return;
       }
 
+      // Mark camera as ready once video is playing
+      if (!isCameraReady && video.readyState >= 2) {
+        setIsCameraReady(true);
+      }
+
+      // Throttle MediaPipe detection to avoid overwhelming mobile GPU
+      if (timestamp - lastProcessTime < PROCESS_INTERVAL_MS) {
+        animationId = requestAnimationFrame(processFrame);
+        return;
+      }
+      lastProcessTime = timestamp;
+
+      frameCountRef.current++;
+
       let faceFound = false;
-      let centered = false;
-      let yaw = 0;
-      let pitch = 0;
+      let rawYaw = 0;
+      let rawPitch = 0;
+      let faceIsInFrame = false;
 
       // ── Method A: Google MediaPipe Face Landmarker (True 3D Geometry) ──
       if (landmarkerRef.current) {
@@ -281,6 +318,7 @@ export function FaceIdEnrollmentModal({
           if (results?.faceLandmarks?.[0]) {
             const lm = results.faceLandmarks[0];
             faceFound = true;
+            faceDetectedFramesRef.current++;
 
             const nose = lm[1];
             const forehead = lm[10];
@@ -294,32 +332,52 @@ export function FaceIdEnrollmentModal({
             const eyeDist = Math.abs(rightEye.x - leftEye.x) || 0.1;
             const faceHeight = Math.abs(chin.y - forehead.y) || 0.2;
 
-            // Frame Centering Check (Reticle is centered at 0.5, 0.5)
-            centered =
-              Math.abs(cx - 0.5) < 0.16 &&
+            // ── STRICT centering: for ALIGN_FACE state (face must be well-centered to start)
+            const strictCentered =
+              Math.abs(cx - 0.5) < 0.15 &&
               Math.abs(cy - 0.5) < 0.18 &&
-              eyeDist > 0.12 &&
-              eyeDist < 0.45;
+              eyeDist > 0.10 &&
+              eyeDist < 0.50;
 
-            // Yaw: Eye midpoint to nose tip distance
-            // Mirroring: User turns left (their view) -> nose moves right relative to eye midpoint
+            // ── LOOSE in-frame check: for CIRCLING state (face just needs to be visible)
+            // When user turns head, face center shifts significantly — allow generous bounds
+            faceIsInFrame =
+              cx > 0.08 && cx < 0.92 &&
+              cy > 0.05 && cy < 0.95 &&
+              eyeDist > 0.06;
+
+            // Use strict centering only for ALIGN_FACE, loose for everything else
+            if (stateRef.current === "ALIGN_FACE") {
+              setIsFaceCentered(strictCentered);
+            }
+
+            // Yaw: Eye midpoint to nose tip distance, normalized by inter-pupillary distance
             const eyeMidX = (leftEye.x + rightEye.x) / 2;
             const normYaw = (nose.x - eyeMidX) / eyeDist;
-            yaw = normYaw * 95;
+            rawYaw = normYaw * 90;
 
             // Pitch: Ratio of nose position between forehead and chin
             // Natural resting face has nose at ~0.42 of face height
-            // Lifting chin up moves nose tip higher toward forehead (lower ratio)
-            // Nodding down moves nose tip down toward mouth (higher ratio)
             const noseRatio = (nose.y - forehead.y) / faceHeight;
-            pitch = (0.42 - noseRatio) * 140;
+            rawPitch = (0.42 - noseRatio) * 130;
+
+            // Apply EMA smoothing to reduce jitter
+            smoothedYawRef.current = EMA_ALPHA * rawYaw + (1 - EMA_ALPHA) * smoothedYawRef.current;
+            smoothedPitchRef.current = EMA_ALPHA * rawPitch + (1 - EMA_ALPHA) * smoothedPitchRef.current;
+
+            // Calibrate resting baseline on first well-centered detection
+            if (restingYawRef.current === null && strictCentered) {
+              restingYawRef.current = smoothedYawRef.current;
+              restingPitchRef.current = smoothedPitchRef.current;
+            }
           }
         } catch {
           // Fall through to fallback tracker
         }
       }
 
-      // ── Method B: High-Speed Mathematical Luminance Gradient Fallback ──
+      // ── Method B: High-Speed Skin Chrominance Centroid Fallback ──
+      // Used when MediaPipe hasn't loaded yet (large WASM download on first use)
       if (!faceFound) {
         if (!offscreenCanvasRef.current) {
           offscreenCanvasRef.current = document.createElement("canvas");
@@ -360,37 +418,59 @@ export function FaceIdEnrollmentModal({
 
           if (coverage > 0.08 && coverage < 0.85) {
             faceFound = true;
+            faceDetectedFramesRef.current++;
             const normX = sumX / skinCount / w;
             const normY = sumY / skinCount / h;
 
-            centered = Math.abs(normX - 0.5) < 0.16 && Math.abs(normY - 0.5) < 0.18;
+            const strictCentered = Math.abs(normX - 0.5) < 0.15 && Math.abs(normY - 0.5) < 0.18;
+            faceIsInFrame = normX > 0.1 && normX < 0.9 && normY > 0.1 && normY < 0.9;
 
-            if (!baselineCalibratedRef.current && centered) {
-              baselineCalibratedRef.current = { cx: normX, cy: normY };
+            if (stateRef.current === "ALIGN_FACE") {
+              setIsFaceCentered(strictCentered);
             }
 
-            if (baselineCalibratedRef.current) {
+            // Calibrate resting baseline
+            if (restingYawRef.current === null && strictCentered) {
+              restingYawRef.current = 0;
+              restingPitchRef.current = 0;
+              smoothedYawRef.current = 0;
+              smoothedPitchRef.current = 0;
+            }
+
+            if (restingYawRef.current !== null) {
               // Measure delta against calibrated resting baseline
-              const dx = normX - baselineCalibratedRef.current.cx;
-              const dy = normY - baselineCalibratedRef.current.cy;
-              yaw = dx * 130;
-              pitch = -dy * 130; // Upward head movement moves centroid up (-dy -> positive pitch)
+              const baseNormX = 0.5; // Center of frame
+              const baseNormY = 0.5;
+              const dx = normX - baseNormX;
+              const dy = normY - baseNormY;
+              rawYaw = dx * 120;
+              rawPitch = -dy * 120;
+
+              smoothedYawRef.current = EMA_ALPHA * rawYaw + (1 - EMA_ALPHA) * smoothedYawRef.current;
+              smoothedPitchRef.current = EMA_ALPHA * rawPitch + (1 - EMA_ALPHA) * smoothedPitchRef.current;
             }
           }
         }
       }
 
-      setIsFaceCentered(centered);
+      setFaceInFrame(faceIsInFrame || (faceFound && stateRef.current !== "CIRCLING"));
+
+      // ── Get baseline-corrected yaw/pitch ──
+      const correctedYaw = smoothedYawRef.current - (restingYawRef.current ?? 0);
+      const correctedPitch = smoothedPitchRef.current - (restingPitchRef.current ?? 0);
 
       // ── Step 1: Align Face Inside Oval ──
       if (stateRef.current === "ALIGN_FACE") {
-        if (centered) {
+        if (faceFound && isFaceCentered) {
           // Face is centered! Capture initial pass photo keyframe & transition to Circling
           captureFrontalPassPhoto();
           triggerHaptic(20);
           setState("CIRCLING");
           setHeadline("Move your head slowly to complete the circle");
           setSubheadline("Turn your head gently to show all angles of your face");
+        } else if (faceFound) {
+          setHeadline("Position your face within the frame");
+          setSubheadline("Move closer and center your face in the oval");
         } else {
           setHeadline("Position your face within the frame");
           setSubheadline("Make sure your face is clearly visible and centered");
@@ -399,20 +479,21 @@ export function FaceIdEnrollmentModal({
 
       // ── Step 2: Apple Face ID Continuous Circular Sweep ──
       if (stateRef.current === "CIRCLING") {
-        if (!centered) {
-          // Gentle warning without resetting progress
-          setSubheadline("Re-center your face to continue circling");
+        if (!faceFound || !faceIsInFrame) {
+          // Face completely lost — gentle warning without resetting progress
+          setSubheadline("Keep your face visible in the frame");
           setCurrentPointerAngle(null);
         } else {
-          const magnitude = Math.sqrt(yaw * yaw + pitch * pitch);
+          // Face is detected and in frame — process head orientation regardless of strict centering
+          const magnitude = Math.sqrt(correctedYaw * correctedYaw + correctedPitch * correctedPitch);
 
-          // Frontal baseline (close to center)
-          if (magnitude < 5) {
+          // Frontal baseline (close to center) — fills top ticks
+          if (magnitude < 4) {
             setCurrentPointerAngle(null);
-            // Center sector satisfies top ticks 35, 0, 1
+            // Center sector satisfies top ticks 34, 35, 0, 1, 2
             const updated = new Set(completedTicksRef.current);
             let added = false;
-            [35, 0, 1].forEach((t) => {
+            [34, 35, 0, 1, 2].forEach((t) => {
               if (!updated.has(t)) {
                 updated.add(t);
                 added = true;
@@ -422,11 +503,12 @@ export function FaceIdEnrollmentModal({
               setCompletedTicks(updated);
               completedTicksRef.current = updated;
               playAudioTone("tick");
+              triggerHaptic(6);
             }
-          } else if (magnitude >= 6) {
-            // Natural comfortable head angle (only 6 degrees tilt required!)
-            // Map (yaw, pitch) to clock angle theta: 0° is 12 o'clock (UP), 90° is 3 o'clock (RIGHT)
-            const thetaRad = Math.atan2(yaw, pitch);
+          } else if (magnitude >= 4) {
+            // Head is tilted/turned — map to clock angle and fill corresponding ticks
+            // theta: 0° = 12 o'clock (UP/pitch+), 90° = 3 o'clock (RIGHT/yaw+)
+            const thetaRad = Math.atan2(correctedYaw, correctedPitch);
             let thetaDeg = (thetaRad * 180) / Math.PI;
             if (thetaDeg < 0) thetaDeg += 360;
 
@@ -434,6 +516,7 @@ export function FaceIdEnrollmentModal({
 
             // Determine which tick on the 36-tick ring matches this angle
             const tickIndex = Math.floor(thetaDeg / (360 / TOTAL_TICKS)) % TOTAL_TICKS;
+            // Fill the target tick AND its 2 neighbors (3 ticks per position = smoother filling)
             const neighborA = (tickIndex - 1 + TOTAL_TICKS) % TOTAL_TICKS;
             const neighborB = (tickIndex + 1) % TOTAL_TICKS;
 
@@ -452,7 +535,7 @@ export function FaceIdEnrollmentModal({
               completedTicksRef.current = updated;
 
               const now = performance.now();
-              if (now - lastChimeTimeRef.current > 70) {
+              if (now - lastChimeTimeRef.current > 80) {
                 playAudioTone("tick");
                 triggerHaptic(8);
                 lastChimeTimeRef.current = now;
@@ -460,24 +543,30 @@ export function FaceIdEnrollmentModal({
             }
           }
 
-          // Dynamic subtle direction helper if a specific sector remains open
+          // Dynamic direction guidance — tell user which sector still needs filling
           const ticks = completedTicksRef.current;
           if (ticks.size < TOTAL_TICKS) {
-            const hasTop = [34, 35, 0, 1, 2].some((t) => ticks.has(t));
-            const hasRight = [7, 8, 9, 10, 11].some((t) => ticks.has(t));
-            const hasBottom = [16, 17, 18, 19, 20].some((t) => ticks.has(t));
-            const hasLeft = [25, 26, 27, 28, 29].some((t) => ticks.has(t));
+            // Find the first unfilled sector and guide the user there
+            const topTicks = [34, 35, 0, 1, 2];
+            const rightTicks = [7, 8, 9, 10, 11];
+            const bottomTicks = [16, 17, 18, 19, 20];
+            const leftTicks = [25, 26, 27, 28, 29];
 
-            if (!hasTop) {
-              setSubheadline("Gently tilt your head up to complete the top arc");
-            } else if (!hasRight) {
+            const topDone = topTicks.every((t) => ticks.has(t));
+            const rightDone = rightTicks.every((t) => ticks.has(t));
+            const bottomDone = bottomTicks.every((t) => ticks.has(t));
+            const leftDone = leftTicks.every((t) => ticks.has(t));
+
+            if (!rightDone) {
               setSubheadline("Turn your head to the right");
-            } else if (!hasBottom) {
-              setSubheadline("Gently tilt your head down to complete the lower arc");
-            } else if (!hasLeft) {
+            } else if (!bottomDone) {
+              setSubheadline("Tilt your chin down slightly");
+            } else if (!leftDone) {
               setSubheadline("Turn your head to the left");
+            } else if (!topDone) {
+              setSubheadline("Tilt your chin up slightly");
             } else {
-              setSubheadline("Continue circling slowly to fill all ticks");
+              setSubheadline("Almost done — keep circling slowly");
             }
           }
 
@@ -485,7 +574,7 @@ export function FaceIdEnrollmentModal({
           if (completedTicksRef.current.size >= TOTAL_TICKS) {
             setState("COMPLETED");
             setHeadline("Face ID Setup Complete");
-            setSubheadline("Commuter pass portrait verified & biometric profile ready");
+            setSubheadline("Your commuter pass portrait has been verified");
             playAudioTone("success");
             triggerHaptic([30, 50, 40, 80]);
 
@@ -507,6 +596,8 @@ export function FaceIdEnrollmentModal({
   }, [
     isOpen,
     state,
+    isCameraReady,
+    isFaceCentered,
     captureFrontalPassPhoto,
     playAudioTone,
     triggerHaptic,
@@ -626,6 +717,8 @@ export function FaceIdEnrollmentModal({
 
   if (!isOpen) return null;
 
+  const progressPercent = Math.round((completedTicks.size / TOTAL_TICKS) * 100);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-in fade-in duration-200">
       <div className="bg-black border border-zinc-800/80 rounded-[36px] w-full max-w-sm overflow-hidden shadow-2xl flex flex-col relative text-white">
@@ -650,7 +743,7 @@ export function FaceIdEnrollmentModal({
         <div className="px-6 py-4 flex flex-col items-center text-center">
           
           {/* Apple Typography: Clean Headline and Subheadline */}
-          <div className="mb-6 space-y-1.5 h-14 flex flex-col justify-center">
+          <div className="mb-4 space-y-1.5 min-h-[3.5rem] flex flex-col justify-center">
             <h3 className="text-lg font-bold text-white tracking-tight leading-snug">
               {headline}
             </h3>
@@ -658,6 +751,19 @@ export function FaceIdEnrollmentModal({
               {subheadline}
             </p>
           </div>
+
+          {/* Progress bar during CIRCLING */}
+          {state === "CIRCLING" && (
+            <div className="w-full max-w-[200px] mb-3">
+              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-1 font-mono">{progressPercent}%</p>
+            </div>
+          )}
 
           {/* Apple Face ID Oval Reticle Viewfinder */}
           <div
@@ -673,14 +779,19 @@ export function FaceIdEnrollmentModal({
                 muted
                 onLoadedMetadata={() => {
                   videoRef.current?.play().catch(() => {});
+                  setIsCameraReady(true);
+                }}
+                onCanPlay={() => {
+                  setIsCameraReady(true);
                 }}
                 className="absolute inset-0 w-full h-full object-cover transform -scale-x-100"
+                style={{ zIndex: 1 }}
               />
             )}
 
-            {/* Camera Initializing Spinner */}
-            {state === "INITIALIZING" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 bg-zinc-950 z-20">
+            {/* Camera Initializing Spinner — translucent so camera can bleed through */}
+            {state === "INITIALIZING" && !isCameraReady && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 bg-zinc-950/80 z-20">
                 <RefreshCw className="w-8 h-8 animate-spin text-emerald-500" />
                 <span className="text-[11px] font-medium text-zinc-400">Starting camera...</span>
               </div>
@@ -700,8 +811,9 @@ export function FaceIdEnrollmentModal({
             {/* 36-Tick Radial SVG Ring */}
             {state !== "CONFIRMATION" && (
               <svg
-                className="absolute inset-0 w-full h-full pointer-events-none p-3 z-10"
+                className="absolute inset-0 w-full h-full pointer-events-none p-3"
                 viewBox="0 0 100 120"
+                style={{ zIndex: 10 }}
               >
                 {/* Completed Solid Glowing Circle when 36 ticks done */}
                 {state === "COMPLETED" ? (
@@ -726,26 +838,47 @@ export function FaceIdEnrollmentModal({
                         y1={tick.y1}
                         x2={tick.x2}
                         y2={tick.y2}
-                        stroke={isDone ? "#10b981" : "rgba(255, 255, 255, 0.22)"}
+                        stroke={isDone ? "#10b981" : "rgba(255, 255, 255, 0.25)"}
                         strokeWidth={isDone ? "3.2" : "2"}
                         strokeLinecap="round"
-                        className="transition-colors duration-200"
+                        className="transition-colors duration-150"
+                        style={isDone ? { filter: "drop-shadow(0 0 4px rgba(16, 185, 129, 0.6))" } : undefined}
                       />
                     );
                   })
                 )}
 
-                {/* Subtle soft pointing comet/cursor */}
+                {/* Emerald comet cursor following head position */}
                 {state === "CIRCLING" && currentPointerAngle !== null && (
                   <circle
                     cx={50 + 41 * Math.cos(((currentPointerAngle - 90) * Math.PI) / 180)}
                     cy={60 + 51.5 * Math.sin(((currentPointerAngle - 90) * Math.PI) / 180)}
                     r="3.5"
                     fill="#34d399"
-                    className="drop-shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse"
+                    className="drop-shadow-[0_0_8px_rgba(52,211,153,0.9)]"
+                    style={{ transition: "cx 0.1s ease-out, cy 0.1s ease-out" }}
                   />
                 )}
+
+                {/* Centering guide crosshair during ALIGN_FACE */}
+                {state === "ALIGN_FACE" && !isFaceCentered && (
+                  <>
+                    <line x1="48" y1="58" x2="52" y2="58" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+                    <line x1="50" y1="56" x2="50" y2="60" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+                  </>
+                )}
               </svg>
+            )}
+
+            {/* Face alignment indicator glow */}
+            {state === "ALIGN_FACE" && isFaceCentered && (
+              <div
+                className="absolute inset-0 rounded-[48px] pointer-events-none animate-in fade-in duration-300"
+                style={{
+                  zIndex: 11,
+                  boxShadow: "inset 0 0 30px rgba(16, 185, 129, 0.15)",
+                }}
+              />
             )}
 
             {/* Apple Face ID Centered Checkmark on Completion */}

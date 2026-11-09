@@ -2,12 +2,12 @@
  * Production-Grade Deep Face Embedding Engine
  *
  * Exclusively executes InsightFace MobileFaceNet with ArcFace loss (w600k_mbf.onnx)
- * via onnxruntime-web with WebGL/WASM acceleration.
+ * via onnxruntime-web WebAssembly (SIMD) for robust multi-platform execution.
  *
  * - Model Architecture: MobileFaceNet-ArcFace (WebFace600K backbone)
  * - Input: 112x112 RGB aligned face crop (normalized (x - 127.5) / 128.0, CHW layout)
  * - Output: 512-dimensional L2-normalized metric embedding vector invariant to illumination
- * - Model Type: Strictly "MobileFaceNet-ArcFace-ONNX" (Zero model-mixing or heuristic drift)
+ * - Model Type: Strictly "MobileFaceNet-ArcFace-ONNX"
  */
 
 export interface FaceEmbeddingResult {
@@ -19,6 +19,69 @@ export interface FaceEmbeddingResult {
 
 let onnxSessionPromise: Promise<any> | null = null;
 let onnxSession: any = null;
+
+/**
+ * Dynamically loads the ONNX Runtime Web UMD library into the browser window
+ * Eliminates Webpack bundling and Terser import.meta parsing errors.
+ */
+async function loadOrtLibrary(): Promise<any> {
+  if (typeof window === "undefined") {
+    throw new Error("Face embedding engine must be invoked in browser environment");
+  }
+
+  if ((window as any).ort) {
+    return (window as any).ort;
+  }
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-ort-loader="true"]') as HTMLScriptElement;
+    if (existing) {
+      if ((window as any).ort) {
+        resolve((window as any).ort);
+      } else {
+        existing.addEventListener("load", () => resolve((window as any).ort));
+        existing.addEventListener("error", reject);
+      }
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.setAttribute("data-ort-loader", "true");
+    script.src = "/wasm/ort/ort.min.js";
+    script.async = true;
+
+    script.onload = () => {
+      const ort = (window as any).ort;
+      if (ort?.env?.wasm) {
+        ort.env.wasm.wasmPaths = "/wasm/ort/";
+        ort.env.wasm.numThreads = 1;
+      }
+      resolve(ort);
+    };
+
+    script.onerror = () => {
+      // Graceful fallback to unpkg/jsdelivr CDN
+      const cdnScript = document.createElement("script");
+      cdnScript.setAttribute("data-ort-loader", "true");
+      cdnScript.src = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort.min.js";
+      cdnScript.async = true;
+
+      cdnScript.onload = () => {
+        const ort = (window as any).ort;
+        if (ort?.env?.wasm) {
+          ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/";
+          ort.env.wasm.numThreads = 1;
+        }
+        resolve(ort);
+      };
+
+      cdnScript.onerror = (e) => reject(new Error("Failed to load ONNX runtime web engine"));
+      document.head.appendChild(cdnScript);
+    };
+
+    document.head.appendChild(script);
+  });
+}
 
 /**
  * Lazily initialize the ONNX runtime session for MobileFaceNet/ArcFace
@@ -33,20 +96,24 @@ export async function getFaceEmbeddingSession(): Promise<any> {
 
   onnxSessionPromise = (async () => {
     try {
-      const ort = await import("onnxruntime-web/webgl");
+      const ort = await loadOrtLibrary();
 
-      // Configure WASM paths (CDN fallback for edge delivery)
+      // Configure WASM paths
       if (ort.env?.wasm) {
-        ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/";
+        ort.env.wasm.wasmPaths = "/wasm/ort/";
         ort.env.wasm.numThreads = 1;
       }
 
-      // Self-hosted production ONNX model path
-      const modelUrl = "/models/w600k_mbf.onnx";
+      // Fetch model array buffer directly (bypasses URL origin bugs on mobile browsers)
+      const modelRes = await fetch("/models/w600k_mbf.onnx");
+      if (!modelRes.ok) {
+        throw new Error(`Failed to load ONNX model (${modelRes.status}): /models/w600k_mbf.onnx`);
+      }
+      const modelBuffer = await modelRes.arrayBuffer();
 
-      // Execute with WebGL first for GPU hardware acceleration, fallback to WASM
-      onnxSession = await ort.InferenceSession.create(modelUrl, {
-        executionProviders: ["webgl", "wasm"],
+      // Execute with WebAssembly backend for robust shape and dynamic batch handling
+      onnxSession = await ort.InferenceSession.create(modelBuffer, {
+        executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
 
@@ -146,7 +213,7 @@ export async function generateProductionFaceEmbedding(
   } = {}
 ): Promise<FaceEmbeddingResult> {
   const session = await getFaceEmbeddingSession();
-  const ort = await import("onnxruntime-web/webgl");
+  const ort = await loadOrtLibrary();
 
   const { tensorData } = preprocessFaceCropToCHW(sourceCanvas, options.cropBox);
   const inputTensor = new ort.Tensor("float32", tensorData, [1, 3, 112, 112]);

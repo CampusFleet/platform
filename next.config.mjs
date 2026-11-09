@@ -19,16 +19,13 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: false,
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       path: false,
       crypto: false,
     };
-    if (isServer) {
-      config.externals = [...(config.externals || []), 'onnxruntime-web', 'onnxruntime-web/webgl'];
-    }
     return config;
   },
   async headers() {

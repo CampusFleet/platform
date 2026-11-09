@@ -143,6 +143,9 @@ export async function POST(req: NextRequest) {
       livenessScore,
       biometricConsent: consentGiven,
       metadata: {
+        modelType: "MobileFaceNet-ArcFace-ONNX",
+        vectorDimension: 512,
+        metricNorm: "L2",
         enrolledByUserId: session.userId,
         enrolledByRole: session.role,
         clientUserAgent: req.headers.get("user-agent") || "unknown",
@@ -150,7 +153,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 3. If an avatar thumbnail was captured during the liveness scan, store in user profile
+    // 3. If an avatar thumbnail was captured during the liveness scan, store in user profile and student record
     let avatarUrl: string | undefined = undefined;
     if (avatarDataUrl && avatarDataUrl.startsWith("data:image/")) {
       try {
@@ -165,9 +168,11 @@ export async function POST(req: NextRequest) {
           })
           .eq("id", session.userId);
 
+        // Update student record with official photo and lock it against tampering
         await supabaseAdmin
           .from("students")
           .update({
+            photo_url: avatarDataUrl,
             photo_locked: true,
           })
           .eq("id", resolvedStudentId);

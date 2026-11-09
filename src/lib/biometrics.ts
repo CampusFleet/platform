@@ -7,6 +7,7 @@ import {
   BusGateType,
   SecurityIncidentType,
   SecuritySeverity,
+  IncidentStatus,
 } from "@/lib/types";
 
 /** Cosine distance matching threshold (Lower = stricter). 0.32 is high confidence */
@@ -249,6 +250,119 @@ export async function reportSecurityIncident(incident: {
     evidenceUrl: data.evidence_url,
     status: data.status,
     createdAt: data.created_at,
+    metadata: data.metadata,
+  };
+}
+
+/**
+ * Retrieves security incidents with optional filtering by status, severity, or bus.
+ */
+export async function getSecurityIncidents(options?: {
+  status?: IncidentStatus;
+  severity?: SecuritySeverity;
+  busId?: number;
+  limit?: number;
+}): Promise<BusSecurityIncident[]> {
+  let query = (supabaseAdmin as any)
+    .from("bus_security_incidents")
+    .select("*, buses(bus_number, registration_no)")
+    .order("created_at", { ascending: false });
+
+  if (options?.status) {
+    query = query.eq("status", options.status);
+  }
+  if (options?.severity) {
+    query = query.eq("severity", options.severity);
+  }
+  if (options?.busId) {
+    query = query.eq("bus_id", options.busId);
+  }
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  } else {
+    query = query.limit(50);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Failed to fetch security incidents: ${error.message}`);
+  }
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    busId: row.bus_id,
+    busNumber: row.buses?.bus_number ? String(row.buses.bus_number) : undefined,
+    busRegistrationNo: row.buses?.registration_no,
+    tripId: row.trip_id,
+    incidentType: row.incident_type,
+    severity: row.severity,
+    stopName: row.stop_name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    matchedStudentId: row.matched_student_id,
+    evidenceUrl: row.evidence_url,
+    status: row.status,
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+    resolvedBy: row.resolved_by,
+    resolutionNotes: row.resolution_notes,
+    metadata: row.metadata,
+  }));
+}
+
+/**
+ * Updates an incident's resolution lifecycle status (ACKNOWLEDGED / RESOLVED) with operator notes.
+ */
+export async function updateSecurityIncidentStatus(
+  incidentId: string,
+  update: {
+    status: IncidentStatus;
+    resolvedBy?: string;
+    resolutionNotes?: string;
+  }
+): Promise<BusSecurityIncident> {
+  const updatePayload: Record<string, any> = {
+    status: update.status,
+  };
+
+  if (update.status === "RESOLVED") {
+    updatePayload.resolved_at = new Date().toISOString();
+    if (update.resolvedBy) updatePayload.resolved_by = update.resolvedBy;
+    if (update.resolutionNotes) updatePayload.resolution_notes = update.resolutionNotes;
+  } else if (update.status === "ACKNOWLEDGED") {
+    if (update.resolvedBy) updatePayload.resolved_by = update.resolvedBy;
+    if (update.resolutionNotes) updatePayload.resolution_notes = update.resolutionNotes;
+  }
+
+  const { data, error } = await (supabaseAdmin as any)
+    .from("bus_security_incidents")
+    .update(updatePayload)
+    .eq("id", incidentId)
+    .select("*, buses(bus_number, registration_no)")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update security incident: ${error.message}`);
+  }
+
+  return {
+    id: data.id,
+    busId: data.bus_id,
+    busNumber: data.buses?.bus_number ? String(data.buses.bus_number) : undefined,
+    busRegistrationNo: data.buses?.registration_no,
+    tripId: data.trip_id,
+    incidentType: data.incident_type,
+    severity: data.severity,
+    stopName: data.stop_name,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    matchedStudentId: data.matched_student_id,
+    evidenceUrl: data.evidence_url,
+    status: data.status,
+    createdAt: data.created_at,
+    resolvedAt: data.resolved_at,
+    resolvedBy: data.resolved_by,
+    resolutionNotes: data.resolution_notes,
     metadata: data.metadata,
   };
 }

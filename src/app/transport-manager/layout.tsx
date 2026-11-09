@@ -14,7 +14,9 @@ import {
   Users,
   GitBranch,
   Radio,
+  ShieldAlert,
 } from "lucide-react";
+import { SecurityThreatAlertBanner } from "@/components/transport-manager/SecurityThreatAlertBanner";
 
 export default function TransportManagerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -69,6 +71,15 @@ export default function TransportManagerLayout({ children }: { children: React.R
         { href: "/transport-manager/combine-buses", label: "Combine Buses", shortLabel: "Combine", icon: GitMerge },
       ],
     },
+    security: {
+      title: "Autonomous Transit Security Center",
+      subtitle: "Real-Time Intruder Interception & Gate Biometrics Forensics",
+      items: [
+        { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
+        { href: "/transport-manager/security", label: "Security Center", shortLabel: "Security", icon: ShieldAlert },
+        { href: "/transport-manager/live", label: "Live Fleet Radar", shortLabel: "Live", icon: Radio },
+      ],
+    },
   };
 
   // 2. Determine active sub-portal navigation based on pathname (empty on hub root to avoid duplicating card access)
@@ -80,6 +91,10 @@ export default function TransportManagerLayout({ children }: { children: React.R
     currentNavLinks = subPortals.live.items;
     currentTitle = subPortals.live.title;
     currentSubtitle = subPortals.live.subtitle;
+  } else if (pathname.startsWith("/transport-manager/security")) {
+    currentNavLinks = subPortals.security.items;
+    currentTitle = subPortals.security.title;
+    currentSubtitle = subPortals.security.subtitle;
   } else if (pathname.startsWith("/transport-manager/trips") || pathname.startsWith("/transport-manager/flowchart")) {
     currentNavLinks = subPortals.trips.items;
     currentTitle = subPortals.trips.title;
@@ -102,6 +117,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col ${isHubRoot ? "pb-6" : "pb-16 md:pb-6"} overflow-x-hidden transition-colors`}>
+      <SecurityThreatAlertBanner />
       <UnifiedAppHeader
         role="transport_manager"
         portalTitle={currentTitle}

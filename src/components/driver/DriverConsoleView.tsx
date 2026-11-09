@@ -908,6 +908,18 @@ export default function DriverConsoleView({
           filterRouteId={route?.id ? String(route.id) : undefined}
         />
 
+        {/* ── AUTONOMOUS BIOMETRIC DUAL-GATE CAMERA TELEMATICS ── */}
+        <DriverGateCameraConsole
+          busId={bus?.id || 40}
+          busNumber={String(bus?.busNumber || "40")}
+          tripId={activeTrip?.id}
+          capacity={bus?.capacity || 50}
+          currentStopName={currentStopObj?.name || "Campus Terminal"}
+          latitude={realDeviceGpsRef.current?.latitude ?? currentCoords.latitude}
+          longitude={realDeviceGpsRef.current?.longitude ?? currentCoords.longitude}
+          filterRouteId={route?.id ? String(route.id) : undefined}
+        />
+
         {/* 2. SPEEDOMETER & MOTION SENSORS COCKPIT */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* SPEEDOMETER CLUSTER */}

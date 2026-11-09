@@ -6,7 +6,8 @@ import {
   BarChart3,
   GitMerge,
   Building2,
-  Radio
+  Radio,
+  ShieldAlert,
 } from "lucide-react";
 import { Metadata } from "next";
 
@@ -20,6 +21,12 @@ const logisticsModules: HubModule[] = [
     description: "Multi-bus god-view GPS telematics, live vehicle cards, and remote conductor console mirroring.",
     icon: Radio,
     href: "/transport-manager/live",
+  },
+  {
+    title: "Security & Intruder Center",
+    description: "Autonomous dual-gate biometric telematics, instant intruder interception, and security incident resolution.",
+    icon: ShieldAlert,
+    href: "/transport-manager/security",
   },
   {
     title: "Assign Drivers",

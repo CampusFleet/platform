@@ -889,6 +889,8 @@ export type IncidentStatus = "ACTIVE" | "ACKNOWLEDGED" | "RESOLVED";
 export interface BusSecurityIncident {
   id: string;
   busId: number;
+  busNumber?: string;
+  busRegistrationNo?: string;
   tripId?: string | null;
   incidentType: SecurityIncidentType;
   severity: SecuritySeverity;

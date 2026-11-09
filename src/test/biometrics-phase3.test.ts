@@ -258,3 +258,4 @@ describe("Phase 3: Autonomous Dual-Gate Telematics API (/api/biometrics/verify-g
     expect(json.student.name).toBe("Rohan Verma");
   });
 });
+

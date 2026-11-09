@@ -164,10 +164,35 @@ export function DriverGateCameraConsole({
   }, [facingMode, stopCamera]);
 
   useEffect(() => {
+    // Listen for Transport Manager intercept orders
+    let alertChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        alertChannel = new BroadcastChannel("campusfleet_driver_alerts");
+        alertChannel.onmessage = (event) => {
+          if (
+            event?.data?.type === "SECURITY_INTERCEPT_ORDER" &&
+            Number(event.data.busId) === Number(busId)
+          ) {
+            playSound("INTRUDER");
+            triggerHaptic("alert");
+            setActiveAlert({
+              type: "INTRUDER",
+              title: "🚨 DISPATCH ORDER: VERIFY COMMUTER ID",
+              subtitle: event.data.message || "Transport Manager ordered manual ticket inspection.",
+            });
+          }
+        };
+      }
+    } catch (e) {
+      // fallback
+    }
+
     return () => {
       stopCamera();
+      if (alertChannel) alertChannel.close();
     };
-  }, [stopCamera]);
+  }, [busId, playSound, stopCamera]);
 
   const toggleCameraFacing = async () => {
     const nextFacing = facingMode === "environment" ? "user" : "environment";
@@ -283,6 +308,26 @@ export function DriverGateCameraConsole({
         // Intruder / Unauthorized Person
         playSound("INTRUDER");
         triggerHaptic("alert");
+
+        // Broadcast to Transport Manager dashboard instantly
+        if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+          try {
+            const secChannel = new BroadcastChannel("campusfleet_security_incidents");
+            secChannel.postMessage({
+              type: "NEW_INCIDENT",
+              busId,
+              busNumber,
+              incidentId: data.incidentId,
+              stopName: currentStopName,
+              latitude,
+              longitude,
+              timestamp: new Date().toISOString(),
+            });
+            secChannel.close();
+          } catch (e) {
+            // non-fatal
+          }
+        }
 
         setActiveAlert({
           type: "INTRUDER",

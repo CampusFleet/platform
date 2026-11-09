@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { createStudentId } from "@/lib/id";
 
 export interface FindOrCreateUserParams {
   email: string;
@@ -67,13 +68,13 @@ export async function findOrCreateUser({
       const { data: existingStudents } = await supabaseAdmin
         .from("students")
         .select("id, user_id, campus_id, campus, full_name")
-        .or(`user_id.eq.${existingUser.id},id.eq.stud-${existingUser.id}`)
+        .or(`user_id.eq.${existingUser.id}`)
         .limit(1);
 
       const existingStudent = existingStudents?.[0];
 
       if (!existingStudent) {
-        const newStudentId = `stud-${existingUser.id}`;
+        const newStudentId = createStudentId();
         const { error: studErr2 } = await supabaseAdmin.from("students").upsert({
           id: newStudentId,
           user_id: existingUser.id,
@@ -138,7 +139,7 @@ export async function findOrCreateUser({
     const { data: matchedStudents } = await supabaseAdmin
       .from("students")
       .select("id, user_id, campus_id, campus, full_name")
-      .or(`user_id.eq.${userId},id.eq.stud-${userId}`)
+      .or(`user_id.eq.${userId}`)
       .limit(1);
 
     existingStudentForNewUser = matchedStudents?.[0];
@@ -181,7 +182,7 @@ export async function findOrCreateUser({
         })
         .eq("id", existingStudentForNewUser.id);
     } else {
-      const studentId = `stud-${userId}`;
+      const studentId = createStudentId();
       const { error: studErr } = await supabaseAdmin.from("students").upsert({
         id: studentId,
         user_id: userId,

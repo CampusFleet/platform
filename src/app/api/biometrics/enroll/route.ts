@@ -3,6 +3,7 @@ import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { saveStudentFaceProfile } from "@/lib/biometrics";
 import { z } from "zod";
+import { createStudentId } from "@/lib/id";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Strategy C: Auto-provision student row if none exists (onboarding Step 2 before Step 3)
-    // Let the database auto-generate the UUID — do NOT pass a synthetic id
+    // Use CampusFleet TypeID (std_ prefix, UUIDv7) — let the ID system generate it
     if (!resolvedStudentId && session.userId) {
       const { data: userRow } = await supabaseAdmin
         .from("users")
@@ -92,11 +93,13 @@ export async function POST(req: NextRequest) {
         .eq("id", session.userId)
         .maybeSingle();
 
-      // First try insert (let DB generate UUID id)
+      const newStudentId = createStudentId(); // e.g. std_01jxyz...
+
       const { data: newStudent, error: provisionErr } = await supabaseAdmin
         .from("students")
         .upsert(
           {
+            id: newStudentId,
             user_id: session.userId,
             full_name: userRow?.full_name || (session as any).name || "Student Commuter",
             student_id_code: `ERP-${Date.now().toString().slice(-6)}`,

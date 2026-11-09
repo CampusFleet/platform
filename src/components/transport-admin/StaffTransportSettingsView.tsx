@@ -21,6 +21,7 @@ import {
   Radio,
   CreditCard,
   Layers,
+  ScanLine,
 } from "lucide-react";
 import type { TransportSettings, SeatSelectionMode, TransitAttendanceMode } from "@/lib/types";
 import { broadcastAttendanceModeChange } from "@/lib/attendance";
@@ -283,6 +284,36 @@ export default function StaffTransportSettingsView() {
                     settings.attendanceMode === "RFID" ? "border-purple-600 bg-purple-600" : "border-gray-300 dark:border-gray-600"
                   }`}>
                     {settings.attendanceMode === "RFID" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => updateSetting("attendanceMode", "STATIC_QR")}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  settings.attendanceMode === "STATIC_QR"
+                    ? "border-amber-600 bg-amber-50/60 dark:bg-amber-950/40 ring-2 ring-amber-500/20"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                      <ScanLine className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-black text-gray-900 dark:text-white">
+                        Static Bus Door QR (Self-Scan)
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                        Conductor displays bus entrance QR code. Students self-scan with GPS geofence proximity verification.
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                    settings.attendanceMode === "STATIC_QR" ? "border-amber-600 bg-amber-600" : "border-gray-300 dark:border-gray-600"
+                  }`}>
+                    {settings.attendanceMode === "STATIC_QR" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
               </div>

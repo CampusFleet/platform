@@ -14,7 +14,6 @@ import {
   Gauge,
   Timer,
   ArrowRightLeft,
-  Armchair,
   ScanFace,
   QrCode,
   Radio,
@@ -434,35 +433,7 @@ export default function StaffTransportSettingsView() {
           </div>
         </SettingsCard>
 
-        {/* ─── Card 3: Autonomous Seat Allocation Policy ─── */}
-        <SettingsCard
-          icon={<Armchair className="w-5 h-5 text-indigo-600" />}
-          title="Autonomous Seat Allocation Engine"
-          description="Seats are dynamically assigned by the optimization engine based on commuter profile preferences."
-          fullWidth
-        >
-          <div className="space-y-3.5">
-            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-xs font-black text-indigo-900 dark:text-indigo-200">
-                  Student Preference-Driven
-                </span>
-                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                  Autonomous
-                </span>
-              </div>
-              <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                Seats are automatically assigned by the allocation engine based on each student&apos;s configured coach preferences (Window vs Aisle, Front/Middle/Back zones) and companion partner matching in their profile settings.
-              </p>
-            </div>
-            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1">
-              <span>Manual seat picking: <strong className="text-gray-700 dark:text-gray-300">Disabled (Auto-Assigned)</strong></span>
-              <span>Companion proximity: <strong className="text-emerald-600">Enabled</strong></span>
-            </div>
-          </div>
-        </SettingsCard>
-
-        {/* ─── Card 4: Switch Request Policy ─── */}
+        {/* ─── Card 3: Switch Request Policy ─── */}
         <SettingsCard
           icon={<ArrowRightLeft className="w-5 h-5 text-rose-600" />}
           title="Bus Switch Request Policy"

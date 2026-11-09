@@ -112,7 +112,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
         { href: "/transport-admin/transit", label: "Transit Policies", shortLabel: "Policies", icon: Settings2 },
-        { href: "/transport-admin/rfid", label: "RFID Card Issuance", shortLabel: "Cards", icon: Radio },
+        { href: "/transport-admin/academics/students", label: "Student Passes", shortLabel: "Students", icon: GraduationCap },
         { href: "/transport-admin/buses", label: "Bus Fleet", shortLabel: "Fleet", icon: BusFront },
       ]
     },

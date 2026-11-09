@@ -27,7 +27,7 @@ import {
 import type { Student, Stop, Route, Bus } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
-import { useAttendancePolicy } from "@/lib/attendance";
+import { useAttendancePolicy, PolicyStandbyScreen } from "@/lib/attendance";
 
 export interface RfidCardIssuanceViewProps {
   initialStudents?: Student[];
@@ -456,6 +456,21 @@ function formatTimeAgo(isoString?: string | null): string {
         (s as any).course?.toLowerCase().includes(q)
     );
   }, [assignedCardsList, filterQuery]);
+
+  if (!policyRules.isRfidIssuancePrimary) {
+    return (
+      <div className="py-8 max-w-7xl mx-auto">
+        <PolicyStandbyScreen
+          pageTitle="RFID Smart Card Desk"
+          pageFeature="Physical contactless Mifare/NFC smart card pairing and issuance"
+          requiredModeDescription="Physical smart card issuance is active when institutional attendance is set to Contactless RFID Smart Cards or Hybrid Multi-Modal."
+          activeMode={policyRules.mode}
+          returnHref="/transport-admin/transit"
+          returnLabel="Manage Transit Policy"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

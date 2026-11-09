@@ -118,5 +118,25 @@ describe("Step 5: Attendance Mode Feature & Page Activation Matrix", () => {
       expect(rules.isDriverGateCameraActive).toBe(true);
     });
   });
+
+  describe("Transport Admin & Manager Hub Card Pruning", () => {
+    it("prunes RFID Smart Card desk from Transport Admin Hub in FACE_ID, DYNAMIC_QR, and STATIC_QR modes", () => {
+      const faceRules = getModalityPageRules("FACE_ID");
+      const dynamicRules = getModalityPageRules("DYNAMIC_QR");
+      const staticRules = getModalityPageRules("STATIC_QR");
+
+      expect(faceRules.isRfidIssuancePrimary).toBe(false);
+      expect(dynamicRules.isRfidIssuancePrimary).toBe(false);
+      expect(staticRules.isRfidIssuancePrimary).toBe(false);
+    });
+
+    it("includes RFID Smart Card desk on Transport Admin Hub in RFID and ALL modes", () => {
+      const rfidRules = getModalityPageRules("RFID");
+      const allRules = getModalityPageRules("ALL");
+
+      expect(rfidRules.isRfidIssuancePrimary).toBe(true);
+      expect(allRules.isRfidIssuancePrimary).toBe(true);
+    });
+  });
 });
 

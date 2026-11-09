@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import type { BusSecurityIncident, IncidentStatus, SecuritySeverity } from "@/lib/types";
+import { useAttendancePolicy, PolicyStandbyScreen } from "@/lib/attendance";
 
 interface SecurityIncidentsCenterViewProps {
   initialIncidents?: BusSecurityIncident[];
@@ -32,6 +33,7 @@ interface SecurityIncidentsCenterViewProps {
 export function SecurityIncidentsCenterView({
   initialIncidents = [],
 }: SecurityIncidentsCenterViewProps) {
+  const { mode } = useAttendancePolicy();
   const [incidents, setIncidents] = useState<BusSecurityIncident[]>(initialIncidents);
   const [loading, setLoading] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "ALL">("ALL");
@@ -179,6 +181,21 @@ export function SecurityIncidentsCenterView({
       console.warn("Broadcast error:", e);
     }
   };
+
+  if (mode !== "FACE_ID" && mode !== "ALL") {
+    return (
+      <div className="py-8 max-w-7xl mx-auto px-4">
+        <PolicyStandbyScreen
+          pageTitle="Biometric Intruder Security Center"
+          pageFeature="Autonomous dual-gate face recognition and intruder interception"
+          requiredModeDescription="Biometric security forensics is active when the institutional policy is set to Autonomous Face ID Biometrics or Hybrid Multi-Modal."
+          activeMode={mode}
+          returnHref="/transport-manager"
+          returnLabel="Return to Manager Hub"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">

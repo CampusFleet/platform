@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { getSessionFromRequest } from "@/lib/jwt";
 
 /**
  * GET /api/fleet/settings — Fetch transport settings
@@ -68,6 +69,24 @@ export async function POST(req: NextRequest) {
       updatedBy,
     } = body;
 
+    // 1. Resolve and validate updater user ID against public.users
+    let validUserId: string | null = null;
+    const session = await getSessionFromRequest(req);
+    const candidateUserId = (typeof updatedBy === "string" && updatedBy !== "transport_admin") 
+      ? updatedBy 
+      : (session?.userId || session?.id || null);
+
+    if (candidateUserId) {
+      const { data: userExists } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("id", candidateUserId)
+        .maybeSingle();
+      if (userExists?.id) {
+        validUserId = userExists.id;
+      }
+    }
+
     // Build update payload (only include fields that were sent)
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -81,7 +100,9 @@ export async function POST(req: NextRequest) {
     if (maxRideTimeMins !== undefined) updates.max_ride_time_mins = Number(maxRideTimeMins);
     if (capacityBufferPercent !== undefined) updates.capacity_buffer_percent = Number(capacityBufferPercent);
     if (switchAutoApproveBelowPct !== undefined) updates.switch_auto_approve_below_pct = Number(switchAutoApproveBelowPct);
-    if (updatedBy) updates.updated_by = updatedBy;
+    if (validUserId !== null) {
+      updates.updated_by = validUserId;
+    }
 
     // Upsert: update existing or insert new
     const { data: existing } = await supabaseAdmin
@@ -112,7 +133,7 @@ export async function POST(req: NextRequest) {
           max_ride_time_mins: maxRideTimeMins ?? 90,
           capacity_buffer_percent: capacityBufferPercent ?? 10,
           switch_auto_approve_below_pct: switchAutoApproveBelowPct ?? 90,
-          updated_by: updatedBy,
+          updated_by: validUserId,
         })
         .select()
         .single();
@@ -122,7 +143,8 @@ export async function POST(req: NextRequest) {
 
     // Audit log
     await supabaseAdmin.from("audit_logs").insert({
-      user_role: "transport_admin",
+      user_id: validUserId,
+      user_role: session?.role || "transport_admin",
       action: "UPDATE_TRANSPORT_SETTINGS",
       entity: "TransportSettings",
       entity_id: result.id,

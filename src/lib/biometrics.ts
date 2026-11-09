@@ -325,12 +325,24 @@ export async function updateSecurityIncidentStatus(
     status: update.status,
   };
 
+  let validatedResolverId: string | null = null;
+  if (update.resolvedBy) {
+    const { data: userExists } = await (supabaseAdmin as any)
+      .from("users")
+      .select("id")
+      .eq("id", update.resolvedBy)
+      .maybeSingle();
+    if (userExists?.id) {
+      validatedResolverId = userExists.id;
+    }
+  }
+
   if (update.status === "RESOLVED") {
     updatePayload.resolved_at = new Date().toISOString();
-    if (update.resolvedBy) updatePayload.resolved_by = update.resolvedBy;
+    if (validatedResolverId) updatePayload.resolved_by = validatedResolverId;
     if (update.resolutionNotes) updatePayload.resolution_notes = update.resolutionNotes;
   } else if (update.status === "ACKNOWLEDGED") {
-    if (update.resolvedBy) updatePayload.resolved_by = update.resolvedBy;
+    if (validatedResolverId) updatePayload.resolved_by = validatedResolverId;
     if (update.resolutionNotes) updatePayload.resolution_notes = update.resolutionNotes;
   }
 

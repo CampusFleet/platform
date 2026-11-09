@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { TransportSettings, SeatSelectionMode, TransitAttendanceMode } from "@/lib/types";
 import { broadcastAttendanceModeChange } from "@/lib/attendance";
+import { store } from "@/lib/store";
 
 // ─── Default settings (before DB load) ──────────────────────────────────────
 
@@ -81,12 +82,13 @@ export default function StaffTransportSettingsView() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const currentUser = store.getCurrentUser();
       const res = await fetch("/api/fleet/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...settings,
-          updatedBy: "transport_admin",
+          updatedBy: currentUser?.id || undefined,
         }),
       });
       const data = await res.json();
@@ -397,28 +399,30 @@ export default function StaffTransportSettingsView() {
           </div>
         </SettingsCard>
 
-        {/* ─── Card 2: Seat Selection Mode ─── */}
+        {/* ─── Card 2: Autonomous Seat Allocation Policy ─── */}
         <SettingsCard
-          icon={<Armchair className="w-5 h-5 text-blue-600" />}
-          title="Seat Selection Mode"
-          description="When students choose their seat on the assigned bus."
+          icon={<Armchair className="w-5 h-5 text-indigo-600" />}
+          title="Autonomous Seat Allocation Engine"
+          description="Seats are dynamically assigned by the AI optimization engine based on commuter profile preferences."
         >
-          <div className="space-y-3">
-            <SeatModeOption
-              value="AT_ATTENDANCE"
-              currentValue={settings.seatSelectionMode}
-              title="At Attendance (Recommended)"
-              description="Student picks seat when boarding the bus. Conductor confirms via QR/manual check-in. Prevents no-show seat blocking."
-              recommended
-              onChange={() => updateSetting("seatSelectionMode", "AT_ATTENDANCE")}
-            />
-            <SeatModeOption
-              value="AT_BOOKING"
-              currentValue={settings.seatSelectionMode}
-              title="At Booking"
-              description="Student picks seat at reservation time (legacy mode). May cause ghost reservations if student doesn't show."
-              onChange={() => updateSetting("seatSelectionMode", "AT_BOOKING")}
-            />
+          <div className="space-y-3.5">
+            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xs font-black text-indigo-900 dark:text-indigo-200">
+                  Student Preference-Driven
+                </span>
+                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                  Autonomous
+                </span>
+              </div>
+              <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                Seats are automatically assigned by the allocation engine based on each student&apos;s configured coach preferences (Window vs Aisle, Front/Middle/Back zones) and companion partner matching in their profile settings.
+              </p>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1">
+              <span>Manual seat picking: <strong className="text-gray-700 dark:text-gray-300">Disabled (Auto-Assigned)</strong></span>
+              <span>Companion proximity: <strong className="text-emerald-600">Enabled</strong></span>
+            </div>
           </div>
         </SettingsCard>
 
@@ -638,55 +642,6 @@ function SettingsCard({
       <p className="text-[10px] text-gray-400 mb-5">{description}</p>
       {children}
     </div>
-  );
-}
-
-function SeatModeOption({
-  value,
-  currentValue,
-  title,
-  description,
-  recommended,
-  onChange,
-}: {
-  value: SeatSelectionMode;
-  currentValue: SeatSelectionMode;
-  title: string;
-  description: string;
-  recommended?: boolean;
-  onChange: () => void;
-}) {
-  const isSelected = value === currentValue;
-  return (
-    <button
-      onClick={onChange}
-      className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-        isSelected
-          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-700"
-          : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-            isSelected ? "border-blue-500" : "border-gray-300 dark:border-gray-600"
-          }`}
-        >
-          {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">{title}</span>
-            {recommended && (
-              <span className="px-1.5 py-0.5 text-[9px] font-black bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded-md uppercase">
-                Recommended
-              </span>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-500 mt-0.5">{description}</p>
-        </div>
-      </div>
-    </button>
   );
 }
 

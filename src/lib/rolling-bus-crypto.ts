@@ -18,7 +18,7 @@ import { cacheGet, cacheSet } from "@/lib/redis";
 
 // Default 32-character secret key (overrideable via env BUS_ROLLING_SECRET_KEY)
 export const DEFAULT_32_CHAR_SECRET = (
-  process.env.BUS_ROLLING_SECRET_KEY || "CFLEET_SECURE_BUS_KEY_32CHAR_V2"
+  process.env.BUS_ROLLING_SECRET_KEY || "ad785f824932507aaa8b8fa72f4bc3b4"
 ).slice(0, 32).padEnd(32, "X");
 
 // Default rolling window time step in seconds (e.g. 2s or 3s)
@@ -117,7 +117,7 @@ export function generateRollingBusPayload(
 export async function verifyRollingBusToken(
   scannedData: string | { busId: string; timeBlock?: number; timestampSec?: number; token: string },
   studentId?: string,
-  toleranceSteps: number = 2,
+  toleranceSteps: number = 10,
   secretKey: string = DEFAULT_32_CHAR_SECRET,
   stepSeconds: number = DEFAULT_TIME_STEP_SECONDS
 ): Promise<VerificationResult> {
@@ -128,9 +128,10 @@ export async function verifyRollingBusToken(
   // 1. Parse Scanned Payload
   if (typeof scannedData === "string") {
     const trimmed = scannedData.trim();
-    if (trimmed.startsWith("cf://b/")) {
+    if (trimmed.toLowerCase().startsWith("cf://b/")) {
       try {
-        const url = new URL(trimmed.replace("cf://", "http://cf.local/"));
+        const normalized = "http://cf.local/" + trimmed.slice(trimmed.indexOf("b/"));
+        const url = new URL(normalized);
         const pathParts = url.pathname.split("/").filter(Boolean);
         busId = pathParts[1] || "";
         scannedTimeBlock = parseInt(url.searchParams.get("t") || "0", 10);

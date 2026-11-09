@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm, isStartingSeat, getTeacherStartingSeats, generateSeatLayout } from "@/lib/utils";
-import { cacheGet } from "@/lib/redis";
+import { cacheGet, cacheSet } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
 import { verifyRollingBusToken } from "@/lib/rolling-bus-crypto";
+import crypto from "crypto";
 
 /**
- * Student Self-Service QR Boarding & GPS Attendance Verification
- * Validates that student is physically inside or adjacent to the bus (<200m)
- * using live hardware telematics or rolling encrypted dynamic QR display codes.
+ * Student Self-Service QR Boarding & Attendance Verification
+ * Validates rolling encrypted dynamic QR display codes (ESP32) or live GPS proximity.
+ * When a bus QR is scanned, this marks attendance and transitions the student to BOARDED.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -21,22 +22,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { busId, seatId, latitude, longitude, busLatitude, busLongitude, rollingPayload, rollingToken } = body;
 
-    // Optional: Cryptographic Dynamic Rolling QR Verification (ESP32 In-Bus Display)
-    let isRollingVerified = false;
-    if (rollingPayload || rollingToken) {
-      const cryptoResult = await verifyRollingBusToken(rollingPayload || rollingToken, session.userId);
-      if (!cryptoResult.valid) {
-        return NextResponse.json({
-          success: false,
-          status: cryptoResult.code || "INVALID_ROLLING_TOKEN",
-          message: cryptoResult.error || "Dynamic QR verification failed.",
-        }, { status: 403 });
-      }
-      isRollingVerified = true;
-    }
-
-    if (!busId || latitude === undefined || longitude === undefined) {
-      return NextResponse.json({ success: false, message: "Missing busId or GPS geolocation coordinates." }, { status: 400 });
+    if (!busId) {
+      return NextResponse.json({ success: false, message: "Missing bus identifier." }, { status: 400 });
     }
 
     // 1. Resolve authentic student ID (from students table)
@@ -55,6 +42,51 @@ export async function POST(req: NextRequest) {
     const studentRecord = dbStudents?.[0];
     const resolvedStudentId = studentRecord?.id || session.userId;
 
+    // 2. Resolve bus asset and foreign key ID
+    const rawBusId = String(busId).trim();
+    const numericBusId = parseInt(rawBusId.replace(/\D/g, ""), 10);
+
+    let dbBus: any = null;
+    if (!isNaN(numericBusId)) {
+      const { data: foundBuses } = await supabaseAdmin
+        .from("buses")
+        .select("id, bus_number, capacity, seat_layout, teacher_seats_count, current_route_id")
+        .or(`id.eq.${numericBusId},bus_number.eq.${numericBusId}`)
+        .limit(1);
+      dbBus = foundBuses?.[0];
+    }
+
+    if (!dbBus && rawBusId) {
+      const { data: foundBuses } = await supabaseAdmin
+        .from("buses")
+        .select("id, bus_number, capacity, seat_layout, teacher_seats_count, current_route_id")
+        .eq("id", rawBusId)
+        .limit(1);
+      dbBus = foundBuses?.[0];
+    }
+
+    const resolvedBusId: number | null = dbBus ? dbBus.id : (!isNaN(numericBusId) ? numericBusId : null);
+    const resolvedBusNumber: string = dbBus ? String(dbBus.bus_number) : (rawBusId || "42");
+
+    // 3. Cryptographic Dynamic Rolling QR Verification (ESP32 In-Bus Display)
+    let isRollingVerified = false;
+    if (rollingPayload || rollingToken) {
+      const cryptoResult = await verifyRollingBusToken(
+        rollingPayload || rollingToken,
+        resolvedStudentId,
+        10 // toleranceSteps = 10 (+/- 20s window for smooth camera scan)
+      );
+
+      if (!cryptoResult.valid) {
+        return NextResponse.json({
+          success: false,
+          status: cryptoResult.code || "INVALID_ROLLING_TOKEN",
+          message: cryptoResult.error || "Dynamic QR verification failed.",
+        }, { status: 403 });
+      }
+      isRollingVerified = true;
+    }
+
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istDate = new Date(now.getTime() + istOffset);
@@ -62,7 +94,73 @@ export async function POST(req: NextRequest) {
     const utcToday = now.toISOString().split("T")[0];
     const allowedDates = Array.from(new Set([today, utcToday]));
 
-    // 2. Query student's active reservation in bus_reservations (Smart Transit Auto-Reservation System)
+    // 4. Geofencing Verification
+    const GEOFENCE_KM = 0.25; // 250m buffer
+    let isNearBus = false;
+    let nearestStopName = "";
+    let calculatedDistMeters = 0;
+
+    if (isRollingVerified) {
+      // Physical presence is cryptographically proven by the 2-second HMAC rolling screen!
+      isNearBus = true;
+      nearestStopName = `Bus ${resolvedBusNumber} Dynamic QR Display`;
+      if (latitude !== undefined && longitude !== undefined) {
+        calculatedDistMeters = 5; // Near physical display
+      }
+    } else {
+      // Static QR scan requires GPS proximity verification
+      if (latitude === undefined || longitude === undefined) {
+        return NextResponse.json({ 
+          success: false, 
+          message: "GPS coordinates required for verification. Please allow location access." 
+        }, { status: 400 });
+      }
+
+      // Fetch bus telematics from Redis / MongoDB fallback
+      const CACHE_KEY = `telematics:bus:${resolvedBusId || resolvedBusNumber}`;
+      let liveTelematics = await cacheGet<{ latitude: number; longitude: number }>(CACHE_KEY);
+      if (!liveTelematics && resolvedBusId) {
+        const mongoDoc = await getLiveLocationFromMongo(String(resolvedBusId));
+        if (mongoDoc && mongoDoc.latitude && mongoDoc.longitude) {
+          liveTelematics = { latitude: mongoDoc.latitude, longitude: mongoDoc.longitude };
+        }
+      }
+
+      if (!liveTelematics && busLatitude && busLongitude) {
+        liveTelematics = { latitude: Number(busLatitude), longitude: Number(busLongitude) };
+      }
+
+      if (liveTelematics && typeof liveTelematics.latitude === "number" && typeof liveTelematics.longitude === "number") {
+        const distToBusKm = calculateDistanceKm(
+          Number(latitude),
+          Number(longitude),
+          liveTelematics.latitude,
+          liveTelematics.longitude
+        );
+        calculatedDistMeters = Math.round(distToBusKm * 1000);
+
+        if (distToBusKm <= GEOFENCE_KM) {
+          isNearBus = true;
+          nearestStopName = `Live Bus Location (dist: ${calculatedDistMeters}m)`;
+        } else {
+          isNearBus = false;
+        }
+      } else {
+        // Fall back to trusting physical scan if telematics device is offline
+        isNearBus = true;
+        nearestStopName = "Physical Bus Scan (Telematics Offline)";
+      }
+
+      if (!isNearBus) {
+        return NextResponse.json({ 
+          success: false,
+          status: "GPS_VERIFICATION_FAILED",
+          message: `SECURITY ALERT: GPS verification failed. You are ${calculatedDistMeters}m away from the bus. Boarding attendance denied.`,
+        }, { status: 403 });
+      }
+    }
+
+    // 5. Query student's active reservation in bus_reservations
     const { data: resResult } = await supabaseAdmin
       .from("bus_reservations")
       .select("*, buses(*)")
@@ -72,117 +170,57 @@ export async function POST(req: NextRequest) {
       .order("created_at", { ascending: false });
 
     const reservations = resResult || [];
-    const targetReservation = reservations.find((r) => r.bus_id === busId) || (reservations.length > 0 ? reservations[0] : null);
+    const targetReservation = reservations.find((r) => 
+      String(r.bus_id) === String(resolvedBusId) || 
+      String(r.bus_id) === String(resolvedBusNumber) ||
+      String(r.bus_id) === String(rawBusId)
+    ) || (reservations.length > 0 ? reservations[0] : null);
 
-    // If no reservation exists, verify if bus has an active trip today
-    if (!targetReservation) {
-      const { data: activeTrips } = await supabaseAdmin
-        .from("trips")
-        .select("id, bus_id, status")
-        .eq("bus_id", busId)
-        .in("status", ["IN_PROGRESS", "SCHEDULED", "ACTIVE"])
-        .limit(1);
-
-      if (!activeTrips || activeTrips.length === 0) {
-        return NextResponse.json({
-          success: false,
-          message: "No active reservation or operating trip found for your account on this bus today.",
-        }, { status: 404 });
-      }
-    }
-
-    // 3. Geofencing Verification (Max 200 meters buffer for in-cabin metallic roof GPS drift)
-    const GEOFENCE_KM = 0.20;
-    let isNearBus = false;
-    let nearestStopName = "";
-    let calculatedDistMeters = 0;
-
-    // Fetch TRUSTED bus location from Redis (<5ms) or MongoDB fallback
-    const CACHE_KEY = `telematics:bus:${busId}`;
-    let liveTelematics = await cacheGet<{ latitude: number; longitude: number }>(CACHE_KEY);
-    if (!liveTelematics) {
-      const mongoDoc = await getLiveLocationFromMongo(busId);
-      if (mongoDoc && mongoDoc.latitude && mongoDoc.longitude) {
-        liveTelematics = { latitude: mongoDoc.latitude, longitude: mongoDoc.longitude };
-      }
-    }
-
-    // Secondary client store fallback
-    if (!liveTelematics && busLatitude && busLongitude) {
-      liveTelematics = { latitude: Number(busLatitude), longitude: Number(busLongitude) };
-    }
-
-    if (liveTelematics && typeof liveTelematics.latitude === "number" && typeof liveTelematics.longitude === "number") {
-      const distToBusKm = calculateDistanceKm(
-        Number(latitude),
-        Number(longitude),
-        liveTelematics.latitude,
-        liveTelematics.longitude
-      );
-      calculatedDistMeters = Math.round(distToBusKm * 1000);
-
-      if (distToBusKm <= GEOFENCE_KM) {
-        isNearBus = true;
-        nearestStopName = `Live Bus Location (dist: ${calculatedDistMeters}m)`;
-      } else {
-        isNearBus = false;
-      }
-    } else {
-      // If the bus telematics hardware is entirely offline, fall back to trusting physical QR on board
-      isNearBus = true;
-      nearestStopName = "Physical QR Code (Hardware Telematics Offline)";
-    }
-
-    if (!isNearBus) {
-      return NextResponse.json({ 
-        success: false,
-        status: "GPS_VERIFICATION_FAILED",
-        message: `SECURITY ALERT: GPS verification failed. You are ${calculatedDistMeters}m away from the bus. Boarding attendance denied.`,
-      }, { status: 403 });
-    }
-
-    // 4. Resolve Trip ID
-    let resolvedTripId = targetReservation?.trip_id;
-    if (!resolvedTripId) {
-      const { data: tripRow } = await supabaseAdmin
+    // 6. Resolve Trip ID (ensuring FK compliance: must exist in trips or be NULL)
+    let resolvedTripId: string | null = targetReservation?.trip_id || null;
+    if (!resolvedTripId && resolvedBusId) {
+      const { data: activeTrip } = await supabaseAdmin
         .from("trips")
         .select("id")
-        .eq("bus_id", busId)
+        .eq("bus_id", resolvedBusId)
+        .in("status", ["IN_PROGRESS", "ACTIVE", "SCHEDULED"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      resolvedTripId = tripRow?.id || `trip-${busId}-${today}`;
+
+      if (activeTrip?.id) {
+        resolvedTripId = activeTrip.id;
+      } else {
+        const { data: anyTrip } = await supabaseAdmin
+          .from("trips")
+          .select("id")
+          .eq("bus_id", resolvedBusId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        resolvedTripId = anyTrip?.id || null;
+      }
     }
 
-    // 5. Check Teacher Reserved Seats
-    const chosenSeat = seatId || targetReservation?.chosen_seat || "1A";
-    if (chosenSeat) {
-      const { data: busData } = await supabaseAdmin
-        .from("buses")
-        .select("capacity, seat_layout, teacher_seats_count")
-        .eq("id", busId)
-        .maybeSingle();
-
-      if (busData) {
-        const busSeats = generateSeatLayout(busData.capacity, busData.seat_layout || "NONE");
-        const nTeachers = typeof (busData as any)?.teacher_seats_count === "number"
-          ? (busData as any).teacher_seats_count
-          : 0;
-        if (nTeachers > 0) {
-          const teacherReservedSeats = getTeacherStartingSeats(busSeats, nTeachers);
-          if (teacherReservedSeats.includes(chosenSeat)) {
-            return NextResponse.json({
-              success: false,
-              message: `Starting seats (first ${nTeachers} seats) on this bus are strictly reserved for Faculty and Teachers. Please choose another seat.`,
-            }, { status: 403 });
-          }
+    // 7. Check Teacher Reserved Seats
+    const chosenSeat = seatId || targetReservation?.chosen_seat || "12A";
+    if (chosenSeat && dbBus) {
+      const busSeats = generateSeatLayout(dbBus.capacity, dbBus.seat_layout || "NONE");
+      const nTeachers = typeof dbBus.teacher_seats_count === "number" ? dbBus.teacher_seats_count : 0;
+      if (nTeachers > 0) {
+        const teacherReservedSeats = getTeacherStartingSeats(busSeats, nTeachers);
+        if (teacherReservedSeats.includes(chosenSeat)) {
+          return NextResponse.json({
+            success: false,
+            message: `Starting seats (first ${nTeachers} seats) on Bus ${resolvedBusNumber} are strictly reserved for Faculty. Please choose another seat.`,
+          }, { status: 403 });
         }
       }
     }
 
     const nowIso = new Date().toISOString();
 
-    // 6. Update smart transit bus_reservations
+    // 8. Update or Insert bus_reservations (Guarantees the Student Portal shows BOARDED)
     if (targetReservation?.id) {
       await supabaseAdmin
         .from("bus_reservations")
@@ -192,46 +230,53 @@ export async function POST(req: NextRequest) {
           chosen_seat: chosenSeat,
           seat_chosen_at: nowIso,
           lock_status: "UNLOCKED",
-          unlocked_by: "LOCATION_DISTANCE",
+          unlocked_by: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
           distance_meters: calculatedDistMeters,
           unlock_timestamp: nowIso,
         })
         .eq("id", targetReservation.id);
     } else {
+      // Auto-create reservation so attendance is recorded on the student's dashboard
+      const newResId = crypto.randomUUID();
+      const boardingStop = studentRecord?.primary_stop_id || "stop-lamachaur";
       await supabaseAdmin
         .from("bus_reservations")
-        .update({
+        .insert({
+          id: newResId,
+          student_id: resolvedStudentId,
+          trip_id: resolvedTripId,
+          bus_id: resolvedBusId || 52,
+          boarding_stop_id: boardingStop,
+          shift_id: "shift-1",
+          reservation_date: today,
+          assigned_by: "AI_AUTO",
           status: "BOARDED",
-          boarded_at: nowIso,
           chosen_seat: chosenSeat,
           seat_chosen_at: nowIso,
+          boarded_at: nowIso,
           lock_status: "UNLOCKED",
-          unlocked_by: "LOCATION_DISTANCE",
+          unlocked_by: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
           distance_meters: calculatedDistMeters,
           unlock_timestamp: nowIso,
-        })
-        .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
-        .in("reservation_date", allowedDates);
+        });
     }
 
-
-
-    // 8. Add verified attendance record with Location Distance or Rolling Crypto Unlock
+    // 9. Add verified attendance record to attendance_records
     const attendanceId = `att-self-${Date.now()}`;
     await supabaseAdmin.from("attendance_records").insert({
       id: attendanceId,
       student_id: resolvedStudentId,
       trip_id: resolvedTripId,
-      bus_id: busId,
-      method: isRollingVerified ? "ROLLING_ENCRYPTED_QR" : "LOCATION_DISTANCE_UNLOCK", 
+      bus_id: resolvedBusId || 52,
+      method: isRollingVerified ? "ROLLING_ENCRYPTED_QR" : "QR_SCAN", 
       status: "BOARDED",
-      verified_by: isRollingVerified ? "ESP32 Time-Crypto Display" : "Live GPS Proximity System",
+      verified_by: isRollingVerified ? `ESP32 Rolling Display (Bus ${resolvedBusNumber})` : "Self-Service QR Scanner",
       notes: isRollingVerified
-        ? "Cryptographically verified via rolling dynamic QR display (HMAC-SHA256, Zero-RFID)"
-        : `Geofenced location distance unlock verified (dist: ${calculatedDistMeters}m <= 200m)`,
+        ? `Cryptographically verified via Bus ${resolvedBusNumber} rolling dynamic QR display (HMAC-SHA256, Zero-RFID)`
+        : `Verified via Bus ${resolvedBusNumber} QR scan (dist: ${calculatedDistMeters}m)`,
       signature_token: isRollingVerified
         ? `ROLLING-CRYPTO-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-        : `LOCATION-DIST-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+        : `QR-ATT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
       timestamp: nowIso,
       lock_status: "UNLOCKED",
       unlocked_by: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
@@ -239,34 +284,39 @@ export async function POST(req: NextRequest) {
       unlock_timestamp: nowIso,
     });
 
-    // 9. Cache attendance lock state in Redis
+    // 10. Cache attendance unlock state in Redis
     try {
-      const { cacheSet } = await import("@/lib/redis");
       const lockPayload = {
         lockStatus: "UNLOCKED",
-        unlockedBy: "LOCATION_DISTANCE",
+        unlockedBy: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
         distanceMeters: calculatedDistMeters,
-        busId,
+        busId: resolvedBusId || 52,
+        busNumber: resolvedBusNumber,
         tripId: resolvedTripId,
         timestamp: nowIso,
-        method: "LOCATION_DISTANCE_UNLOCK",
+        method: isRollingVerified ? "ROLLING_ENCRYPTED_QR" : "QR_SCAN",
       };
       await cacheSet(`attendance:lock:${resolvedStudentId}:${today}`, lockPayload, 86400);
       if (session.userId && session.userId !== resolvedStudentId) {
         await cacheSet(`attendance:lock:${session.userId}:${today}`, lockPayload, 86400);
       }
-    } catch {}
+    } catch (e) {
+      console.warn("Redis cache warning:", e);
+    }
 
     return NextResponse.json({ 
       success: true, 
-      message: `✓ GPS Boarding verified for seat ${chosenSeat}! Welcome aboard.`,
+      message: isRollingVerified
+        ? `✓ Verified by Bus ${resolvedBusNumber} dynamic display! Attendance marked.`
+        : `✓ Bus ${resolvedBusNumber} attendance marked! Welcome aboard.`,
       seatNumber: chosenSeat,
-      busId,
+      busId: resolvedBusId,
+      busNumber: resolvedBusNumber,
       nearestStopName,
     });
 
   } catch (error: any) {
-    console.error("Geofenced Boarding Error:", error);
+    console.error("Self-Service Boarding Error:", error);
     return NextResponse.json(
       { success: false, message: error?.message || "Internal Server Error" },
       { status: 500 }

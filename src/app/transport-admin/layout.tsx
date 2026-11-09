@@ -105,7 +105,15 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
         { href: "/transport-admin/system/users", label: "User Accounts", shortLabel: "Users", icon: Users },
         { href: "/transport-admin/system/reports", label: "Download Reports", shortLabel: "Reports", icon: FileBarChart },
-        { href: "/transport-admin/settings/transit", label: "Smart Transit", shortLabel: "Transit", icon: Settings2 },
+      ]
+    },
+    transit: {
+      title: "Smart Transit & Fleet Policies",
+      items: [
+        { href: "/transport-admin", label: "← Hub", shortLabel: "Hub", icon: Home },
+        { href: "/transport-admin/transit", label: "Transit Policies", shortLabel: "Policies", icon: Settings2 },
+        { href: "/transport-admin/rfid", label: "RFID Card Issuance", shortLabel: "Cards", icon: Radio },
+        { href: "/transport-admin/buses", label: "Bus Fleet", shortLabel: "Fleet", icon: BusFront },
       ]
     },
     rfid: {
@@ -161,7 +169,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   } else if (pathname.startsWith("/transport-admin/maintenance")) {
     currentNavLinks = subPortals.maintenance.items;
     currentTitle = subPortals.maintenance.title;
-  } else if (pathname.startsWith("/transport-admin/system") || pathname.startsWith("/transport-admin/settings/transit")) {
+  } else if (pathname.startsWith("/transport-admin/transit") || pathname.startsWith("/transport-admin/settings/transit")) {
+    currentNavLinks = subPortals.transit.items;
+    currentTitle = subPortals.transit.title;
+  } else if (pathname.startsWith("/transport-admin/system")) {
     currentNavLinks = subPortals.system.items;
     currentTitle = subPortals.system.title;
   }

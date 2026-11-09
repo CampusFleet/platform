@@ -326,7 +326,7 @@ export function UnifiedAppHeader({
       case "driver":
         return "/driver/settings";
       case "transport_admin":
-        return "/transport-admin/settings/transit";
+        return "/transport-admin/settings";
       case "transport_manager":
         return "/transport-manager/settings";
       case "admin":

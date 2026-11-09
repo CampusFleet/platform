@@ -303,7 +303,7 @@ export function PolicyStandbyScreen({
             <span>{returnLabel}</span>
           </Link>
           <Link
-            href="/transport-admin/settings/transit"
+            href="/transport-admin/transit"
             className="py-3 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs border border-zinc-200 dark:border-zinc-800 transition-all flex items-center justify-center gap-1"
             title="Transport Admin Settings"
           >

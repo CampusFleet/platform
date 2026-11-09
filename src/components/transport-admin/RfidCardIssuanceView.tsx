@@ -496,7 +496,7 @@ function formatTimeAgo(isoString?: string | null): string {
             </div>
           </div>
           <Link
-            href="/transport-admin/settings/transit"
+            href="/transport-admin/transit"
             className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0"
           >
             Change Policy

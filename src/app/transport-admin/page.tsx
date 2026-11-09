@@ -11,7 +11,8 @@ import {
   BookOpen,
   Building2,
   Radio,
-  Banknote
+  Banknote,
+  Settings2
 } from "lucide-react";
 import { Metadata } from "next";
 
@@ -31,6 +32,12 @@ const staffModules: HubModule[] = [
     description: "Switch to Transport Manager to manage driver allocations, live trips, demand, and bus combines.",
     icon: Compass,
     href: "/transport-manager"
+  },
+  {
+    title: "Smart Transit & Attendance",
+    description: "Configure fleet attendance verification policy (Face ID, Dynamic QR, RFID, Door QR), walk distance limits, seat allocation, and bus consolidation.",
+    icon: Settings2,
+    href: "/transport-admin/transit"
   },
   {
     title: "RFID Smart Cards",

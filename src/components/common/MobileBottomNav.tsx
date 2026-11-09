@@ -310,7 +310,7 @@ export function MobileBottomNav({
           },
           {
             id: "settings",
-            href: "/transport-admin/settings/transit",
+            href: "/transport-admin/settings",
             label: "Settings",
             icon: SettingsIcon,
             onClick: onOpenSettings,

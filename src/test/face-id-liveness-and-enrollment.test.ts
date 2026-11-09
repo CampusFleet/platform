@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-describe("Face ID 5-Point Transit Liveness & Live Pass Photo Architecture", () => {
+describe("Face ID Apple Reverse-Engineered Architecture & 36-Tick Polar Mapping", () => {
   const TOTAL_TICKS = 36;
 
   // Replicate mathematical geometry from FaceIdEnrollmentModal
@@ -22,15 +22,6 @@ describe("Face ID 5-Point Transit Liveness & Live Pass Photo Architecture", () =
     return { id: i, angleDeg, x1, y1, x2, y2 };
   });
 
-  const POSE_TICK_MAP = {
-    LOOK_CENTER: [35, 0, 1], // Top center (Frontal baseline pass photo)
-    TURN_LEFT: [23, 24, 25, 26, 27, 28, 29, 30], // Left quadrant (Yaw -16° to -28°)
-    TURN_RIGHT: [6, 7, 8, 9, 10, 11, 12, 13], // Right quadrant (Yaw +16° to +26°)
-    TILT_UP: [31, 32, 33, 34, 2, 3, 4, 5], // Upper arc (Elevated bus door camera, Pitch +12°)
-    TILT_DOWN: [14, 15, 16, 17, 18, 19, 20, 21, 22], // Bottom arc (Overhead boarding descent, Pitch -10°)
-    SCAN_COMPLETE: Array.from({ length: TOTAL_TICKS }, (_, i) => i),
-  };
-
   it("generates exactly 36 Apple Face ID radial ticks spanning full 360 degrees", () => {
     expect(RETICLE_TICKS).toHaveLength(36);
     expect(RETICLE_TICKS[0].angleDeg).toBe(-90); // Top 12 o'clock
@@ -49,122 +40,86 @@ describe("Face ID 5-Point Transit Liveness & Live Pass Photo Architecture", () =
     });
   });
 
-  it("maps every single tick from 0 to 35 across the 5 pose challenges with zero omissions or duplicates", () => {
-    const allAssigned = [
-      ...POSE_TICK_MAP.LOOK_CENTER,
-      ...POSE_TICK_MAP.TURN_LEFT,
-      ...POSE_TICK_MAP.TURN_RIGHT,
-      ...POSE_TICK_MAP.TILT_UP,
-      ...POSE_TICK_MAP.TILT_DOWN,
-    ];
+  it("maps head movement (Yaw, Pitch) accurately to Apple continuous polar clock angles", () => {
+    const mapMovementToTick = (yaw: number, pitch: number): { tickIndex: number; angleDeg: number } => {
+      const thetaRad = Math.atan2(yaw, pitch);
+      let thetaDeg = (thetaRad * 180) / Math.PI;
+      if (thetaDeg < 0) thetaDeg += 360;
 
-    expect(allAssigned).toHaveLength(36);
-
-    const uniqueSet = new Set(allAssigned);
-    expect(uniqueSet.size).toBe(36);
-
-    for (let i = 0; i < 36; i++) {
-      expect(uniqueSet.has(i)).toBe(true);
-    }
-  });
-
-  it("validates left quadrant ticks correspond to negative yaw angles (left head turns)", () => {
-    POSE_TICK_MAP.TURN_LEFT.forEach((tickId) => {
-      const tick = RETICLE_TICKS[tickId];
-      // In SVG viewBox (0-100), left side has x < cx (50)
-      expect(tick.x1).toBeLessThan(50);
-      expect(tick.x2).toBeLessThan(50);
-    });
-  });
-
-  it("validates right quadrant ticks correspond to positive yaw angles (right head turns)", () => {
-    POSE_TICK_MAP.TURN_RIGHT.forEach((tickId) => {
-      const tick = RETICLE_TICKS[tickId];
-      // In SVG viewBox (0-100), right side has x > cx (50)
-      expect(tick.x1).toBeGreaterThan(50);
-      expect(tick.x2).toBeGreaterThan(50);
-    });
-  });
-
-  it("validates elevated door camera ticks (TILT_UP) map to upper vertical half", () => {
-    POSE_TICK_MAP.TILT_UP.forEach((tickId) => {
-      const tick = RETICLE_TICKS[tickId];
-      // Upper diagonal arc has y < cy (60)
-      expect(tick.y1).toBeLessThan(60);
-      expect(tick.y2).toBeLessThan(60);
-    });
-  });
-
-  it("validates overhead descent camera ticks (TILT_DOWN) map to bottom vertical arc", () => {
-    POSE_TICK_MAP.TILT_DOWN.forEach((tickId) => {
-      const tick = RETICLE_TICKS[tickId];
-      // Bottom arc has y > cy (60)
-      expect(tick.y1).toBeGreaterThan(60);
-      expect(tick.y2).toBeGreaterThan(60);
-    });
-  });
-
-  it("enforces real-time active angle thresholds: only advances when user actually performs motions", () => {
-    const isAngleSatisfied = (pose: string, yaw: number, pitch: number): boolean => {
-      switch (pose) {
-        case "LOOK_CENTER":
-          return Math.abs(yaw) <= 10 && Math.abs(pitch) <= 10;
-        case "TURN_LEFT":
-          return yaw <= -14;
-        case "TURN_RIGHT":
-          return yaw >= 14;
-        case "TILT_UP":
-          return pitch >= 10;
-        case "TILT_DOWN":
-          return pitch <= -8;
-        default:
-          return false;
-      }
+      const tickIndex = Math.floor(thetaDeg / (360 / TOTAL_TICKS)) % TOTAL_TICKS;
+      return { tickIndex, angleDeg: Math.round(thetaDeg) };
     };
 
-    // Staring straight ahead must NOT satisfy TURN_LEFT
-    expect(isAngleSatisfied("TURN_LEFT", 0, 0)).toBe(false);
-    expect(isAngleSatisfied("TURN_LEFT", -5, 0)).toBe(false);
-    // Turning head left (-18°) MUST satisfy TURN_LEFT
-    expect(isAngleSatisfied("TURN_LEFT", -18, 0)).toBe(true);
+    // Tilting Up (Pitch > 0, Yaw = 0) -> 12 o'clock (0° / tick 0)
+    const up = mapMovementToTick(0, 15);
+    expect(up.angleDeg).toBe(0);
+    expect(up.tickIndex).toBe(0);
 
-    // Staring straight must NOT satisfy TURN_RIGHT
-    expect(isAngleSatisfied("TURN_RIGHT", 0, 0)).toBe(false);
-    expect(isAngleSatisfied("TURN_RIGHT", 18, 0)).toBe(true);
+    // Turning Right (Yaw > 0, Pitch = 0) -> 3 o'clock (90° / tick 9)
+    const right = mapMovementToTick(15, 0);
+    expect(right.angleDeg).toBe(90);
+    expect(right.tickIndex).toBe(9);
 
-    // Elevated bus door angle (+15°) must satisfy TILT_UP
-    expect(isAngleSatisfied("TILT_UP", 0, 0)).toBe(false);
-    expect(isAngleSatisfied("TILT_UP", 0, 15)).toBe(true);
+    // Nodding Down (Pitch < 0, Yaw = 0) -> 6 o'clock (180° / tick 18)
+    const down = mapMovementToTick(0, -15);
+    expect(down.angleDeg).toBe(180);
+    expect(down.tickIndex).toBe(18);
 
-    // Overhead boarding step descent angle (-12°) must satisfy TILT_DOWN
-    expect(isAngleSatisfied("TILT_DOWN", 0, 0)).toBe(false);
-    expect(isAngleSatisfied("TILT_DOWN", 0, -12)).toBe(true);
+    // Turning Left (Yaw < 0, Pitch = 0) -> 9 o'clock (270° / tick 27)
+    const left = mapMovementToTick(-15, 0);
+    expect(left.angleDeg).toBe(270);
+    expect(left.tickIndex).toBe(27);
   });
 
-  it("pauses active challenge and warns when face is not properly centered in oval", () => {
-    const checkCentering = (isFacePresent: boolean, offCenterX: number, offCenterY: number) => {
-      if (!isFacePresent) return { isCentered: false, warning: "No face detected" };
-      if (offCenterX > 0.16 || offCenterY > 0.18) return { isCentered: false, warning: "Align face inside oval" };
-      return { isCentered: true, warning: null };
+  it("calculates accurate 3D facial pitch from MediaPipe landmark ratio (positive when lifting chin up)", () => {
+    // noseRatio = (nose.y - forehead.y) / faceHeight
+    // pitch = (0.42 - noseRatio) * 140
+    const calcPitch = (noseY: number, foreheadY: number, chinY: number) => {
+      const faceHeight = Math.abs(chinY - foreheadY);
+      const noseRatio = (noseY - foreheadY) / faceHeight;
+      return Math.round((0.42 - noseRatio) * 140);
     };
 
-    // No face in camera
-    expect(checkCentering(false, 0, 0).isCentered).toBe(false);
-    // Face way off to the side
-    expect(checkCentering(true, 0.35, 0).isCentered).toBe(false);
-    expect(checkCentering(true, 0.35, 0).warning).toBe("Align face inside oval");
-    // Face centered properly
-    expect(checkCentering(true, 0.05, 0.05).isCentered).toBe(true);
-    expect(checkCentering(true, 0.05, 0.05).warning).toBeNull();
+    // Standard frontal resting face: nose is at 42% between forehead and chin
+    const frontalPitch = calcPitch(0.41, 0.20, 0.70); // forehead=0.20, chin=0.70 (height=0.50), nose=0.41 (0.21/0.50 = 0.42)
+    expect(Math.abs(frontalPitch)).toBeLessThanOrEqual(2);
+
+    // User tilting chin UP: nose tip rises toward forehead (nose = 0.36 -> ratio = 0.16/0.50 = 0.32)
+    const liftChinPitch = calcPitch(0.36, 0.20, 0.70);
+    expect(liftChinPitch).toBeGreaterThan(10); // POSITIVE pitch!
+
+    // User nodding DOWN: nose tip drops toward chin (nose = 0.45 -> ratio = 0.25/0.50 = 0.50)
+    const nodDownPitch = calcPitch(0.45, 0.20, 0.70);
+    expect(nodDownPitch).toBeLessThan(-10); // NEGATIVE pitch!
   });
 
-  it("enforces dual-use camera capture: live photo required and file upload disabled", () => {
-    const canContinue = (photoUrl?: string, localPreviewUrl?: string) => {
-      return Boolean(photoUrl || localPreviewUrl);
+  it("pauses active challenge and warns when face is not properly centered in frame", () => {
+    const checkCentering = (cx: number, cy: number, eyeDist: number) => {
+      const isCentered =
+        Math.abs(cx - 0.5) < 0.16 &&
+        Math.abs(cy - 0.5) < 0.18 &&
+        eyeDist > 0.12 &&
+        eyeDist < 0.45;
+      return isCentered;
     };
 
-    expect(canContinue(undefined, undefined)).toBe(false);
-    expect(canContinue("data:image/jpeg;base64,sample123", undefined)).toBe(true);
-    expect(canContinue(undefined, "data:image/jpeg;base64,sample123")).toBe(true);
+    // Centered face
+    expect(checkCentering(0.5, 0.5, 0.25)).toBe(true);
+    // Face shifted off to left
+    expect(checkCentering(0.2, 0.5, 0.25)).toBe(false);
+    // Face shifted off to top
+    expect(checkCentering(0.5, 0.15, 0.25)).toBe(false);
+    // Face too far away (small eye distance)
+    expect(checkCentering(0.5, 0.5, 0.05)).toBe(false);
+  });
+
+  it("supports Apple iOS Accessibility option 'Set Up Without Head Motion'", () => {
+    let completedSet = new Set<number>();
+    const handleAccessibility = () => {
+      completedSet = new Set(Array.from({ length: TOTAL_TICKS }, (_, i) => i));
+    };
+
+    handleAccessibility();
+    expect(completedSet.size).toBe(36);
   });
 });

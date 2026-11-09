@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import {
   GraduationCap,
   Camera,
-  Lock,
   RefreshCw,
   User,
   HeartHandshake,
@@ -12,8 +11,6 @@ import {
   ArrowRight,
   Loader2,
   ScanFace,
-  Sparkles,
-  ShieldCheck,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StepProfileAndIdProps } from "./types";
@@ -81,122 +78,86 @@ export function StepProfileAndId({
         }}
       />
 
-      <div className="flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-5">
-        <div>
-          <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
-            Official Student Photo & Biometric Face ID
-          </h2>
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Required for digital commuter pass photo ID, conductor manifests, and autonomous zero-touch bus door attendance.
-          </p>
-        </div>
-        <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 shrink-0">
-          <ScanFace className="w-6 h-6" />
-        </div>
-      </div>
-
-      {/* Modern Biometric Live Photo Card (Zero File Uploads - Live Camera Only) */}
-      <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 p-6 rounded-3xl border border-gray-200 dark:border-zinc-800 bg-gradient-to-br from-blue-50/40 via-white to-gray-50/60 dark:from-zinc-900/60 dark:via-zinc-950 dark:to-zinc-900 shadow-xs">
-        {/* Live Portrait Frame / Viewfinder */}
-        <div className="relative w-36 h-44 rounded-2xl overflow-hidden border-2 border-dashed border-blue-300 dark:border-blue-700/60 bg-white dark:bg-zinc-900 flex items-center justify-center shrink-0 shadow-md">
-          {localPreviewUrl || photoUrl ? (
-            <div className="relative w-full h-full group">
+      {/* Sleek Identity & Photo Card (Clean Apple / FinTech Standard) */}
+      <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4 text-center sm:text-left w-full sm:w-auto flex-col sm:flex-row">
+          {/* Avatar Portrait Preview */}
+          <div className="relative w-20 h-20 sm:w-22 sm:h-22 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shrink-0 shadow-xs flex items-center justify-center">
+            {localPreviewUrl || photoUrl ? (
               <img
                 src={localPreviewUrl || photoUrl}
-                alt="Official Commuter Pass Portrait"
+                alt="Commuter Pass Portrait"
                 className="w-full h-full object-cover"
               />
-              <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-emerald-500/90 text-white text-[9px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1">
-                <Check className="w-3 h-3" />
-                Live Verified
+            ) : (
+              <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500">
+                <ScanFace className="w-8 h-8 stroke-[1.5]" />
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-2 text-blue-500 dark:text-blue-400 text-center p-3">
-              <div className="relative">
-                <ScanFace className="w-12 h-12 stroke-[1.5] animate-pulse" />
-                <Camera className="w-5 h-5 absolute -bottom-1 -right-1 p-0.5 rounded-full bg-blue-600 text-white shadow-sm" />
+            )}
+            {/* Status indicator on avatar corner */}
+            {(isFaceIdEnrolled || localPreviewUrl || photoUrl) && (
+              <div className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white dark:ring-zinc-900">
+                <Check className="w-3 h-3 stroke-[3]" />
               </div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                Live Photo
-              </span>
-              <span className="text-[9px] text-zinc-400 leading-tight">
-                Camera Only
-              </span>
-            </div>
-          )}
-          {isUploadingPhoto && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center text-white">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
-            </div>
-          )}
-        </div>
+            )}
+            {isUploadingPhoto && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center text-white">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+              </div>
+            )}
+          </div>
 
-        {/* Details & Live Actions */}
-        <div className="flex-1 space-y-3.5 text-center sm:text-left w-full">
-          <div>
-            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-              <h3 className="text-base font-black text-gray-900 dark:text-white">
-                Live Commuter Pass Photo & Face ID
+          <div className="space-y-1">
+            <div className="flex items-center justify-center sm:justify-start gap-2">
+              <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
+                Transit Pass Photo & Face ID
               </h3>
               {isFaceIdEnrolled || localPreviewUrl || photoUrl ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  <Check className="w-3 h-3" />
-                  VERIFIED & ACTIVE
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  <Check className="w-3 h-3" /> Ready
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                  <Camera className="w-3 h-3" />
-                  LIVE CAPTURE REQUIRED
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                  Required
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 max-w-lg leading-relaxed">
-              In accordance with transit security standards (ICAO 9303 / DPDP 2023), profile photos must be captured live via camera. Pre-saved file uploads are disabled to prevent spoofing and ensure clearance at bus doors.
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {isFaceIdEnrolled || localPreviewUrl || photoUrl
+                ? "Live scan active for bus pass and automatic door boarding."
+                : "Live camera scan required for your digital commuter pass."}
             </p>
           </div>
+        </div>
 
-          {/* Compliance & Security Pills */}
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-0.5">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              Anti-Spoofing Protected
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-center sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setShowFaceIdModal(true)}
+            className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              isFaceIdEnrolled || localPreviewUrl || photoUrl
+                ? "border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 shadow-xs"
+                : "bg-blue-600 hover:bg-blue-500 active:scale-95 text-white shadow-sm shadow-blue-500/25"
+            }`}
+          >
+            <Camera className="w-4 h-4" />
+            <span>
+              {isFaceIdEnrolled || localPreviewUrl || photoUrl
+                ? "Retake Scan"
+                : "Set Up Face ID"}
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
-              <ScanFace className="w-3.5 h-3.5 text-blue-500" />
-              Dual-Use: Pass Photo + Face ID
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
-              <Lock className="w-3.5 h-3.5 text-violet-500" />
-              No File Uploads
-            </span>
-          </div>
+          </button>
 
-          {/* Actions: ONLY Live Camera Capture */}
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
+          {(photoUrl || localPreviewUrl) && !isPhotoLocked && (
             <button
               type="button"
-              onClick={() => setShowFaceIdModal(true)}
-              className="px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-black flex items-center gap-2.5 shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
+              onClick={onClearPhoto}
+              className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 hover:border-rose-300 dark:hover:border-rose-800 text-xs font-medium text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
             >
-              <Camera className="w-4 h-4" />
-              <span>
-                {isFaceIdEnrolled || localPreviewUrl || photoUrl
-                  ? "Retake Live Photo & Re-Scan Face ID"
-                  : "Capture Live Photo & Set Up Face ID"}
-              </span>
+              Clear
             </button>
-
-            {(photoUrl || localPreviewUrl) && !isPhotoLocked && (
-              <button
-                type="button"
-                onClick={onClearPhoto}
-                className="px-4 py-3 rounded-2xl border border-gray-200 dark:border-zinc-700 text-xs font-bold text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
-              >
-                Clear Photo
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 

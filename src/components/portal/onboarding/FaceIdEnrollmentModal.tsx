@@ -489,13 +489,13 @@ export function FaceIdEnrollmentModal({
           // Face is detected and in frame — process head orientation regardless of strict centering
           const magnitude = Math.sqrt(correctedYaw * correctedYaw + correctedPitch * correctedPitch);
 
-          // Frontal baseline (close to center) — fills top ticks
+          // Frontal baseline (close to center) — fills top & center ticks
           if (magnitude < 4) {
             setCurrentPointerAngle(null);
-            // Center sector satisfies top ticks 34, 35, 0, 1, 2
+            // Center sector satisfies top & frontal ticks
             const updated = new Set(completedTicksRef.current);
             let added = false;
-            [34, 35, 0, 1, 2].forEach((t) => {
+            [34, 35, 0, 1, 2, 17, 18, 19].forEach((t) => {
               if (!updated.has(t)) {
                 updated.add(t);
                 added = true;
@@ -518,14 +518,29 @@ export function FaceIdEnrollmentModal({
 
             // Determine which tick on the 36-tick ring matches this angle
             const tickIndex = Math.floor(thetaDeg / (360 / TOTAL_TICKS)) % TOTAL_TICKS;
-            // Fill the target tick AND its 2 neighbors (3 ticks per position = smoother filling)
-            const neighborA = (tickIndex - 1 + TOTAL_TICKS) % TOTAL_TICKS;
-            const neighborB = (tickIndex + 1) % TOTAL_TICKS;
+            
+            // Fill a generous 5-tick arc around the gaze position for smooth responsiveness
+            const ticksToFill = [
+              (tickIndex - 2 + TOTAL_TICKS) % TOTAL_TICKS,
+              (tickIndex - 1 + TOTAL_TICKS) % TOTAL_TICKS,
+              tickIndex,
+              (tickIndex + 1) % TOTAL_TICKS,
+              (tickIndex + 2) % TOTAL_TICKS,
+            ];
+
+            // If user has turned right significantly, sweep right semicircle ticks
+            if (correctedYaw > 10) {
+              [5, 6, 7, 8, 9, 10, 11, 12, 13].forEach((t) => ticksToFill.push(t));
+            }
+            // If user has turned left significantly, sweep left semicircle ticks
+            if (correctedYaw < -10) {
+              [23, 24, 25, 26, 27, 28, 29, 30, 31].forEach((t) => ticksToFill.push(t));
+            }
 
             const updated = new Set(completedTicksRef.current);
             let added = false;
 
-            [tickIndex, neighborA, neighborB].forEach((t) => {
+            ticksToFill.forEach((t) => {
               if (!updated.has(t)) {
                 updated.add(t);
                 added = true;
@@ -537,7 +552,7 @@ export function FaceIdEnrollmentModal({
               completedTicksRef.current = updated;
 
               const now = performance.now();
-              if (now - lastChimeTimeRef.current > 80) {
+              if (now - lastChimeTimeRef.current > 70) {
                 playAudioTone("tick");
                 triggerHaptic(8);
                 lastChimeTimeRef.current = now;
@@ -545,35 +560,32 @@ export function FaceIdEnrollmentModal({
             }
           }
 
-          // Dynamic direction guidance — tell user which sector still needs filling
+          // Dynamic direction guidance — streamlined discrete prompts
           const ticks = completedTicksRef.current;
-          if (ticks.size < TOTAL_TICKS) {
-            // Find the first unfilled sector and guide the user there
-            const topTicks = [34, 35, 0, 1, 2];
-            const rightTicks = [7, 8, 9, 10, 11];
-            const bottomTicks = [16, 17, 18, 19, 20];
-            const leftTicks = [25, 26, 27, 28, 29];
+          
+          const rightTicks = [7, 8, 9, 10, 11];
+          const leftTicks = [25, 26, 27, 28, 29];
 
-            const topDone = topTicks.every((t) => ticks.has(t));
-            const rightDone = rightTicks.every((t) => ticks.has(t));
-            const bottomDone = bottomTicks.every((t) => ticks.has(t));
-            const leftDone = leftTicks.every((t) => ticks.has(t));
+          const rightDone = rightTicks.some((t) => ticks.has(t)) && [8, 9, 10].some((t) => ticks.has(t));
+          const leftDone = leftTicks.some((t) => ticks.has(t)) && [26, 27, 28].some((t) => ticks.has(t));
 
-            if (!rightDone) {
-              setSubheadline("Turn your head to the right");
-            } else if (!bottomDone) {
-              setSubheadline("Tilt your chin down slightly");
-            } else if (!leftDone) {
-              setSubheadline("Turn your head to the left");
-            } else if (!topDone) {
-              setSubheadline("Tilt your chin up slightly");
-            } else {
-              setSubheadline("Almost done — keep circling slowly");
-            }
+          if (!rightDone) {
+            setSubheadline("Turn your head to the right");
+          } else if (!leftDone) {
+            setSubheadline("Now turn your head to the left");
+          } else if (ticks.size < TOTAL_TICKS - 4) {
+            setSubheadline("Look straight ahead");
+          } else {
+            setSubheadline("Finishing scan...");
           }
 
-          // ── Step 3: All 36 Ticks Complete! ──
-          if (completedTicksRef.current.size >= TOTAL_TICKS) {
+          // ── Step 3: Complete when right & left 3D parallax are confirmed ──
+          if (ticks.size >= 28 || (rightDone && leftDone && ticks.size >= 22)) {
+            // Auto-complete all 36 ticks for a triumphant finished circle
+            const fullSet = new Set(Array.from({ length: TOTAL_TICKS }, (_, i) => i));
+            setCompletedTicks(fullSet);
+            completedTicksRef.current = fullSet;
+
             setState("COMPLETED");
             setHeadline("Face ID Setup Complete");
             setSubheadline("Your commuter pass portrait has been verified");
@@ -584,7 +596,7 @@ export function FaceIdEnrollmentModal({
 
             setTimeout(() => {
               setState("CONFIRMATION");
-            }, 1200);
+            }, 1100);
           }
         }
       }

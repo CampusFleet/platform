@@ -1059,6 +1059,13 @@ export default function StudentOnboardingPage() {
             }}
             onEmergencyNameChange={setEmergencyName}
             onEmergencyPhoneChange={setEmergencyPhone}
+            isFaceIdEnrolled={Boolean(photoUrl)}
+            onFaceIdEnrolled={(avatarUrl) => {
+              setPhotoUrl(avatarUrl);
+              setLocalPreviewUrl(avatarUrl);
+              setImageLoadFailed(false);
+              showToast("success", "Biometric Face ID active! Zero-touch boarding enabled.", "Face ID Enrolled");
+            }}
             onPhotoFileChange={handlePhotoFileChange}
             onClearPhoto={handleClearPhoto}
             onBack={() => setActiveStep(1)}

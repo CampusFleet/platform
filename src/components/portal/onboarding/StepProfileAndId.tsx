@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   GraduationCap,
   Upload,
@@ -9,9 +9,13 @@ import {
   Check,
   ArrowRight,
   Loader2,
+  ScanFace,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StepProfileAndIdProps } from "./types";
+import { FaceIdEnrollmentModal } from "./FaceIdEnrollmentModal";
 
 export function StepProfileAndId({
   fullName,
@@ -38,6 +42,8 @@ export function StepProfileAndId({
   isUploadingPhoto,
   isPhotoLocked,
   imageLoadFailed,
+  isFaceIdEnrolled,
+  onFaceIdEnrolled,
   onFullNameChange,
   onPhoneChange,
   onStudentIdCodeChange,
@@ -54,25 +60,40 @@ export function StepProfileAndId({
   onBack,
   onContinue,
 }: StepProfileAndIdProps) {
+  const [showFaceIdModal, setShowFaceIdModal] = useState(false);
+
   return (
     <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl p-4 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
+      
+      {/* Face ID Live Enrollment Modal */}
+      <FaceIdEnrollmentModal
+        isOpen={showFaceIdModal}
+        onClose={() => setShowFaceIdModal(false)}
+        studentName={fullName}
+        onSuccess={(res) => {
+          if (onFaceIdEnrolled) {
+            onFaceIdEnrolled(res.avatarUrl);
+          }
+        }}
+      />
+
       <div className="flex items-start justify-between gap-4 border-b border-gray-100 dark:border-zinc-800 pb-5">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
-            Student Identity & Official ID Photo
+            Student Identity & Biometric Face ID
           </h2>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Required for institutional pass verification, digital rolling QR pass, and conductor scanner validation.
+            Required for autonomous zero-touch bus gate attendance, digital commuter pass, and security verification.
           </p>
         </div>
-        <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 shrink-0">
-          <GraduationCap className="w-6 h-6" />
+        <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 shrink-0">
+          <ScanFace className="w-6 h-6" />
         </div>
       </div>
 
-      {/* Photo Upload Card */}
-      <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-950">
-        <div className="relative w-28 h-32 rounded-2xl overflow-hidden border-2 border-dashed border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-center shrink-0 shadow-xs">
+      {/* Modern Biometric Face ID & Photo Card */}
+      <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 p-6 rounded-3xl border border-gray-200 dark:border-zinc-800 bg-gradient-to-br from-blue-50/40 via-white to-gray-50/60 dark:from-zinc-900/60 dark:via-zinc-950 dark:to-zinc-900 shadow-xs">
+        <div className="relative w-32 h-36 rounded-2xl overflow-hidden border-2 border-dashed border-blue-300 dark:border-blue-700/60 bg-white dark:bg-zinc-900 flex items-center justify-center shrink-0 shadow-md">
           {localPreviewUrl || photoUrl ? (
             <img
               src={localPreviewUrl || photoUrl}
@@ -80,32 +101,56 @@ export function StepProfileAndId({
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="flex flex-col items-center gap-1.5 text-gray-400 text-center p-2">
-              <User className="w-8 h-8" />
-              <span className="text-[10px] font-semibold leading-tight">Passport Photo</span>
+            <div className="flex flex-col items-center gap-1.5 text-blue-400 text-center p-2">
+              <ScanFace className="w-10 h-10 animate-pulse" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Face ID</span>
             </div>
           )}
           {isUploadingPhoto && (
             <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center text-white">
-              <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
             </div>
           )}
         </div>
 
-        <div className="flex-1 space-y-2 text-center sm:text-left">
+        <div className="flex-1 space-y-3 text-center sm:text-left w-full">
           <div>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-              Official Passport-Sized Portrait
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Clear front-facing photo against a plain background. Displayed on conductor scanners during boarding.
+            <div className="flex items-center justify-center sm:justify-start gap-2">
+              <h3 className="text-base font-black text-gray-900 dark:text-white">
+                Biometric Face ID
+              </h3>
+              {isFaceIdEnrolled || localPreviewUrl || photoUrl ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <Check className="w-3 h-3" />
+                  ENROLLED
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                  <Sparkles className="w-3 h-3 animate-spin" />
+                  RECOMMENDED
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md">
+              Enables zero-touch automatic boarding at bus doors via live dual cameras. Eliminates all cards & QR codes.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
-            <label className={`px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer ${isUploadingPhoto ? "opacity-50 cursor-not-allowed" : ""}`}>
+            {/* Primary Action: Launch Live Face ID Scanner */}
+            <button
+              type="button"
+              onClick={() => setShowFaceIdModal(true)}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+            >
+              <ScanFace className="w-4 h-4" />
+              <span>{isFaceIdEnrolled || localPreviewUrl || photoUrl ? "Re-Scan Face ID" : "Set Up Face ID (Live)"}</span>
+            </button>
+
+            {/* Secondary Action: Standard Photo Upload */}
+            <label className={`px-4 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-xs font-bold flex items-center gap-2 transition-transform active:scale-95 cursor-pointer ${isUploadingPhoto ? "opacity-50 cursor-not-allowed" : ""}`}>
               {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              <span>{isUploadingPhoto ? "Uploading..." : "Upload ID Photo"}</span>
+              <span>Upload Photo</span>
               <input
                 type="file"
                 accept="image/*"
@@ -119,7 +164,7 @@ export function StepProfileAndId({
               <button
                 type="button"
                 onClick={onClearPhoto}
-                className="px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-xs font-medium text-gray-500 hover:text-rose-500 transition-colors"
               >
                 Clear
               </button>

@@ -96,6 +96,8 @@ export interface StepProfileAndIdProps {
   isUploadingPhoto: boolean;
   isPhotoLocked: boolean;
   imageLoadFailed: boolean;
+  isFaceIdEnrolled?: boolean;
+  onFaceIdEnrolled?: (avatarUrl: string) => void;
   onFullNameChange: (val: string) => void;
   onPhoneChange: (val: string) => void;
   onStudentIdCodeChange: (val: string) => void;

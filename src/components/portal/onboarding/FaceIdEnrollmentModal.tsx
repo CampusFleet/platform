@@ -14,6 +14,7 @@ import {
   Check,
 } from "lucide-react";
 import { getFaceLandmarker } from "@/lib/face-landmarker-loader";
+import { generateProductionFaceEmbedding } from "@/lib/face-embedding";
 
 interface FaceIdEnrollmentModalProps {
   isOpen: boolean;
@@ -89,6 +90,8 @@ export function FaceIdEnrollmentModal({
   const completedTicksRef = useRef<Set<number>>(new Set());
   const lastChimeTimeRef = useRef<number>(0);
   const landmarkerRef = useRef<any>(null);
+  const lastLandmarksRef = useRef<any>(null);
+  const frontalLandmarksRef = useRef<any>(null);
 
   // EMA (Exponential Moving Average) smoothing refs to reduce jitter
   const smoothedYawRef = useRef<number>(0);
@@ -201,6 +204,7 @@ export function FaceIdEnrollmentModal({
 
     const dataUrl = thumbCanvas.toDataURL("image/jpeg", 0.92);
     setCapturedThumbnail(dataUrl);
+    frontalLandmarksRef.current = lastLandmarksRef.current;
   }, []);
 
   // Start Camera Stream and Initialize Face Landmarker
@@ -317,6 +321,7 @@ export function FaceIdEnrollmentModal({
 
           if (results?.faceLandmarks?.[0]) {
             const lm = results.faceLandmarks[0];
+            lastLandmarksRef.current = lm;
             faceFound = true;
             faceDetectedFramesRef.current++;
 
@@ -629,53 +634,14 @@ export function FaceIdEnrollmentModal({
     }, 900);
   };
 
-  // Generate ArcFace 512-d normalized descriptor
-  const generateEmbeddingFromCanvas = (canvas: HTMLCanvasElement): number[] => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas context unavailable");
-
-    const size = Math.min(canvas.width, canvas.height);
-    const sx = (canvas.width - size) / 2;
-    const sy = (canvas.height - size) / 2;
-    const imgData = ctx.getImageData(sx, sy, size, size);
-    const data = imgData.data;
-
-    const embedding = new Float32Array(512);
-    const stepX = Math.floor(size / 32);
-    const stepY = Math.floor(size / 16);
-
-    let idx = 0;
-    for (let y = 0; y < 16 && idx < 512; y++) {
-      for (let x = 0; x < 32 && idx < 512; x++) {
-        const px = Math.min(size - 1, x * stepX);
-        const py = Math.min(size - 1, y * stepY);
-        const p = (py * size + px) * 4;
-
-        const r = data[p] / 255;
-        const g = data[p + 1] / 255;
-        const b = data[p + 2] / 255;
-        const lum = r * 0.299 + g * 0.587 + b * 0.114;
-
-        embedding[idx] = (lum - 0.5) * 2.0;
-        idx++;
-      }
-    }
-
-    let sumSq = 0;
-    for (let i = 0; i < 512; i++) {
-      sumSq += embedding[i] * embedding[i];
-    }
-    const norm = Math.sqrt(sumSq) || 1.0;
-    return Array.from(embedding).map((v) => Number((v / norm).toFixed(6)));
-  };
-
   // Confirm and persist to database via /api/biometrics/enroll
   const handleConfirmAndActivate = async () => {
     if (!canvasRef.current || !capturedThumbnail) return;
 
     setIsSubmitting(true);
     try {
-      const embedding = generateEmbeddingFromCanvas(canvasRef.current);
+      // Production Deep Metric Feature Extraction: InsightFace MobileFaceNet with ArcFace Loss
+      const { embedding } = await generateProductionFaceEmbedding(canvasRef.current);
 
       const res = await fetch("/api/biometrics/enroll", {
         method: "POST",

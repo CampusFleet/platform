@@ -12,7 +12,7 @@ export type VehicleStatus = "ACTIVE" | "MAINTENANCE" | "INACTIVE" | "DECOMMISSIO
 
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "WAIVED";
 
-export type AttendanceMethod = "QR_SCAN" | "BIOMETRIC_DEVICE" | "MANUAL_OVERRIDE";
+export type AttendanceMethod = "QR_SCAN" | "BIOMETRIC_DEVICE" | "MANUAL_OVERRIDE" | "BIOMETRIC_FACE_ID";
 
 export interface Profile {
   id: string;
@@ -842,3 +842,75 @@ export interface SwitchEvaluation {
   reasoning: string;
   alternativeBusId?: string;
 }
+
+/** Biometric Face ID & Dual-Camera Gate Telematics Types */
+export interface StudentFaceProfile {
+  id: string;
+  studentId: string;
+  faceEmbedding?: number[]; // 512-dim normalized vector
+  qualityScore: number;
+  livenessScore: number;
+  enrolledAt: string;
+  updatedAt: string;
+  biometricConsentGiven: boolean;
+  consentTimestamp: string;
+  isActive: boolean;
+  metadata?: Record<string, any>;
+}
+
+export type BusGateType = "GATE_IN" | "GATE_OUT";
+
+export interface BusGateEvent {
+  id: string;
+  busId: number;
+  tripId?: string | null;
+  gateType: BusGateType;
+  studentId?: string | null;
+  matchedDistance?: number | null;
+  confidenceScore?: number | null;
+  isAuthorized: boolean;
+  latitude: number;
+  longitude: number;
+  stopName?: string | null;
+  createdAt: string;
+  metadata?: Record<string, any>;
+}
+
+export type SecurityIncidentType =
+  | "UNAUTHORIZED_INTRUDER"
+  | "WRONG_BUS_BOARDING"
+  | "UNREGISTERED_COMMUTER"
+  | "LIVENESS_SPOOF_ATTEMPT"
+  | "TAILGATING_DETECTED";
+
+export type SecuritySeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type IncidentStatus = "ACTIVE" | "ACKNOWLEDGED" | "RESOLVED";
+
+export interface BusSecurityIncident {
+  id: string;
+  busId: number;
+  tripId?: string | null;
+  incidentType: SecurityIncidentType;
+  severity: SecuritySeverity;
+  stopName?: string | null;
+  latitude: number;
+  longitude: number;
+  matchedStudentId?: string | null;
+  evidenceUrl?: string | null;
+  status: IncidentStatus;
+  createdAt: string;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolutionNotes?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface FaceMatchCandidate {
+  studentId: string;
+  studentName: string;
+  studentIdCode: string;
+  primaryRouteId?: string | null;
+  distance: number;
+  confidence: number;
+}
+

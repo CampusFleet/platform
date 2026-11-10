@@ -17,13 +17,30 @@ export async function GET() {
     if (error) throw error;
 
     // Return settings or defaults
+    const defaultLocks = {
+      faceId: true,
+      dynamicQr: true,
+      rfid: true,
+      staticQr: true,
+    };
+
+    const resolvedLocks = data?.validation_locks && typeof data.validation_locks === "object"
+      ? {
+          faceId: Boolean(data.validation_locks.faceId),
+          dynamicQr: Boolean(data.validation_locks.dynamicQr),
+          rfid: Boolean(data.validation_locks.rfid),
+          staticQr: Boolean(data.validation_locks.staticQr),
+        }
+      : defaultLocks;
+
     const settings = data
       ? {
           id: data.id,
           maxWalkDistanceKm: Number(data.max_walk_distance_km),
           autoAssignmentEnabled: data.auto_assignment_enabled,
           seatSelectionMode: data.seat_selection_mode,
-          attendanceMode: data.attendance_mode || "FACE_ID",
+          attendanceMode: data.attendance_mode || "ALL",
+          validationLocks: resolvedLocks,
           minFillPercent: data.min_fill_percent,
           maxRideTimeMins: data.max_ride_time_mins,
           capacityBufferPercent: data.capacity_buffer_percent,
@@ -36,7 +53,8 @@ export async function GET() {
           maxWalkDistanceKm: 3.0,
           autoAssignmentEnabled: true,
           seatSelectionMode: "AT_ATTENDANCE",
-          attendanceMode: "FACE_ID",
+          attendanceMode: "ALL",
+          validationLocks: defaultLocks,
           minFillPercent: 60,
           maxRideTimeMins: 90,
           capacityBufferPercent: 10,
@@ -62,6 +80,7 @@ export async function POST(req: NextRequest) {
       autoAssignmentEnabled,
       seatSelectionMode,
       attendanceMode,
+      validationLocks,
       minFillPercent,
       maxRideTimeMins,
       capacityBufferPercent,
@@ -95,7 +114,60 @@ export async function POST(req: NextRequest) {
     if (maxWalkDistanceKm !== undefined) updates.max_walk_distance_km = Number(maxWalkDistanceKm);
     if (autoAssignmentEnabled !== undefined) updates.auto_assignment_enabled = Boolean(autoAssignmentEnabled);
     if (seatSelectionMode !== undefined) updates.seat_selection_mode = seatSelectionMode;
-    if (attendanceMode !== undefined) updates.attendance_mode = attendanceMode;
+    
+    // Process validation locks
+    if (validationLocks && typeof validationLocks === "object") {
+      const activeLocksCount = [
+        Boolean(validationLocks.faceId),
+        Boolean(validationLocks.dynamicQr),
+        Boolean(validationLocks.rfid),
+        Boolean(validationLocks.staticQr),
+      ].filter(Boolean).length;
+
+      if (activeLocksCount === 0) {
+        return NextResponse.json(
+          { success: false, message: "At least one gate validation lock must remain active." },
+          { status: 400 },
+        );
+      }
+
+      const cleanLocks = {
+        faceId: Boolean(validationLocks.faceId),
+        dynamicQr: Boolean(validationLocks.dynamicQr),
+        rfid: Boolean(validationLocks.rfid),
+        staticQr: Boolean(validationLocks.staticQr),
+      };
+
+      updates.validation_locks = cleanLocks;
+
+      // Compute attendance_mode compatible with DB CHECK constraint:
+      // ('FACE_ID', 'DYNAMIC_QR', 'RFID', 'STATIC_QR', 'ALL')
+      if (activeLocksCount > 1) {
+        updates.attendance_mode = "ALL";
+      } else if (cleanLocks.faceId) {
+        updates.attendance_mode = "FACE_ID";
+      } else if (cleanLocks.dynamicQr) {
+        updates.attendance_mode = "DYNAMIC_QR";
+      } else if (cleanLocks.rfid) {
+        updates.attendance_mode = "RFID";
+      } else if (cleanLocks.staticQr) {
+        updates.attendance_mode = "STATIC_QR";
+      }
+    } else if (attendanceMode !== undefined) {
+      updates.attendance_mode = attendanceMode;
+      // Derive locks from legacy mode
+      if (attendanceMode === "ALL") {
+        updates.validation_locks = { faceId: true, dynamicQr: true, rfid: true, staticQr: true };
+      } else {
+        updates.validation_locks = {
+          faceId: attendanceMode === "FACE_ID",
+          dynamicQr: attendanceMode === "DYNAMIC_QR",
+          rfid: attendanceMode === "RFID",
+          staticQr: attendanceMode === "STATIC_QR",
+        };
+      }
+    }
+
     if (minFillPercent !== undefined) updates.min_fill_percent = Number(minFillPercent);
     if (maxRideTimeMins !== undefined) updates.max_ride_time_mins = Number(maxRideTimeMins);
     if (capacityBufferPercent !== undefined) updates.capacity_buffer_percent = Number(capacityBufferPercent);
@@ -128,7 +200,8 @@ export async function POST(req: NextRequest) {
           max_walk_distance_km: maxWalkDistanceKm ?? 3.0,
           auto_assignment_enabled: autoAssignmentEnabled ?? true,
           seat_selection_mode: seatSelectionMode ?? "AT_ATTENDANCE",
-          attendance_mode: attendanceMode ?? "FACE_ID",
+          attendance_mode: updates.attendance_mode ?? "ALL",
+          validation_locks: updates.validation_locks ?? { faceId: true, dynamicQr: true, rfid: true, staticQr: true },
           min_fill_percent: minFillPercent ?? 60,
           max_ride_time_mins: maxRideTimeMins ?? 90,
           capacity_buffer_percent: capacityBufferPercent ?? 10,
@@ -148,7 +221,7 @@ export async function POST(req: NextRequest) {
       action: "UPDATE_TRANSPORT_SETTINGS",
       entity: "TransportSettings",
       entity_id: result.id,
-      reason: `Transport settings updated: max walk ${result.max_walk_distance_km}km, seat selection mode: ${result.seat_selection_mode}, attendance mode: ${result.attendance_mode}, auto-assignment: ${result.auto_assignment_enabled}`,
+      reason: `Transport settings updated: validation locks: ${JSON.stringify(result.validation_locks)}, max walk ${result.max_walk_distance_km}km, seat selection: ${result.seat_selection_mode}, attendance mode: ${result.attendance_mode}`,
       new_value: result,
     });
 
@@ -159,7 +232,8 @@ export async function POST(req: NextRequest) {
         maxWalkDistanceKm: Number(result.max_walk_distance_km),
         autoAssignmentEnabled: result.auto_assignment_enabled,
         seatSelectionMode: result.seat_selection_mode,
-        attendanceMode: result.attendance_mode || "FACE_ID",
+        attendanceMode: result.attendance_mode || "ALL",
+        validationLocks: result.validation_locks || { faceId: true, dynamicQr: true, rfid: true, staticQr: true },
         minFillPercent: result.min_fill_percent,
         maxRideTimeMins: result.max_ride_time_mins,
         capacityBufferPercent: result.capacity_buffer_percent,

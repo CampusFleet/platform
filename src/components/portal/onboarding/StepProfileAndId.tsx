@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   GraduationCap,
   Camera,
+  Upload,
   RefreshCw,
   User,
   HeartHandshake,
@@ -11,10 +12,15 @@ import {
   ArrowRight,
   Loader2,
   ScanFace,
+  QrCode,
+  CreditCard,
+  ScanLine,
+  ShieldCheck,
 } from "lucide-react";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StepProfileAndIdProps } from "./types";
 import { FaceIdEnrollmentModal } from "./FaceIdEnrollmentModal";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 export function StepProfileAndId({
   studentId,
@@ -61,29 +67,46 @@ export function StepProfileAndId({
   onContinue,
 }: StepProfileAndIdProps) {
   const [showFaceIdModal, setShowFaceIdModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { locks } = useAttendancePolicy();
+
+  const isFaceIdActive = locks.faceId;
+  const hasPhoto = Boolean(localPreviewUrl || photoUrl);
 
   return (
     <div className="bg-white dark:bg-zinc-900 border-y sm:border border-gray-200 dark:border-zinc-800 rounded-none sm:rounded-3xl p-4 sm:p-8 shadow-sm space-y-6 animate-in fade-in duration-200">
       
-      {/* Face ID Live Enrollment Modal */}
-      <FaceIdEnrollmentModal
-        isOpen={showFaceIdModal}
-        onClose={() => setShowFaceIdModal(false)}
-        studentId={studentId}
-        studentName={fullName}
-        onSuccess={(res) => {
-          if (onFaceIdEnrolled) {
-            onFaceIdEnrolled(res.avatarUrl);
-          }
-        }}
+      {/* Hidden File Input for Direct Photo Upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="user"
+        className="hidden"
+        onChange={onPhotoFileChange}
       />
+
+      {/* Face ID Live Enrollment Modal */}
+      {isFaceIdActive && (
+        <FaceIdEnrollmentModal
+          isOpen={showFaceIdModal}
+          onClose={() => setShowFaceIdModal(false)}
+          studentId={studentId}
+          studentName={fullName}
+          onSuccess={(res) => {
+            if (onFaceIdEnrolled) {
+              onFaceIdEnrolled(res.avatarUrl);
+            }
+          }}
+        />
+      )}
 
       {/* Sleek Identity & Photo Card (Clean Apple / FinTech Standard) */}
       <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/40 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4 text-center sm:text-left w-full sm:w-auto flex-col sm:flex-row">
           {/* Avatar Portrait Preview */}
           <div className="relative w-20 h-20 sm:w-22 sm:h-22 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shrink-0 shadow-xs flex items-center justify-center">
-            {localPreviewUrl || photoUrl ? (
+            {hasPhoto ? (
               <img
                 src={localPreviewUrl || photoUrl}
                 alt="Commuter Pass Portrait"
@@ -91,11 +114,15 @@ export function StepProfileAndId({
               />
             ) : (
               <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500">
-                <ScanFace className="w-8 h-8 stroke-[1.5]" />
+                {isFaceIdActive ? (
+                  <ScanFace className="w-8 h-8 stroke-[1.5]" />
+                ) : (
+                  <User className="w-8 h-8 stroke-[1.5]" />
+                )}
               </div>
             )}
             {/* Status indicator on avatar corner */}
-            {(isFaceIdEnrolled || localPreviewUrl || photoUrl) && (
+            {hasPhoto && (
               <div className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white dark:ring-zinc-900">
                 <Check className="w-3 h-3 stroke-[3]" />
               </div>
@@ -110,9 +137,9 @@ export function StepProfileAndId({
           <div className="space-y-1">
             <div className="flex items-center justify-center sm:justify-start gap-2">
               <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
-                Transit Pass Photo & Face ID
+                {isFaceIdActive ? "Transit Pass Photo & Face ID" : "Official Commuter Photo ID"}
               </h3>
-              {isFaceIdEnrolled || localPreviewUrl || photoUrl ? (
+              {hasPhoto ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                   <Check className="w-3 h-3" /> Ready
                 </span>
@@ -122,34 +149,63 @@ export function StepProfileAndId({
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {isFaceIdEnrolled || localPreviewUrl || photoUrl
-                ? "Live scan active for bus pass and automatic door boarding."
-                : "Live camera scan required for your digital commuter pass."}
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md">
+              {isFaceIdActive
+                ? hasPhoto
+                  ? "Live scan active for bus pass and automatic door boarding."
+                  : "Live camera scan required for your digital commuter pass & bus door entry."
+                : hasPhoto
+                  ? "Portrait uploaded and verified for your official transit pass."
+                  : "Upload a front-facing photo for your pass. Face ID gate cameras are currently disabled."}
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-center sm:justify-end">
-          <button
-            type="button"
-            onClick={() => setShowFaceIdModal(true)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              isFaceIdEnrolled || localPreviewUrl || photoUrl
-                ? "border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 shadow-xs"
-                : "bg-blue-600 hover:bg-blue-500 active:scale-95 text-white shadow-sm shadow-blue-500/25"
-            }`}
-          >
-            <Camera className="w-4 h-4" />
-            <span>
-              {isFaceIdEnrolled || localPreviewUrl || photoUrl
-                ? "Retake Scan"
-                : "Set Up Face ID"}
-            </span>
-          </button>
+        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-center sm:justify-end flex-wrap">
+          {isFaceIdActive ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowFaceIdModal(true)}
+                className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  hasPhoto
+                    ? "border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 shadow-xs"
+                    : "bg-blue-600 hover:bg-blue-500 active:scale-95 text-white shadow-sm shadow-blue-500/25"
+                }`}
+              >
+                <Camera className="w-4 h-4" />
+                <span>{hasPhoto ? "Retake Face ID" : "Set Up Face ID"}</span>
+              </button>
 
-          {(photoUrl || localPreviewUrl) && !isPhotoLocked && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isPhotoLocked || isUploadingPhoto}
+                className="px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-all cursor-pointer flex items-center gap-1.5"
+                title="Upload Photo File"
+              >
+                <Upload className="w-3.5 h-3.5 text-gray-500" />
+                <span>Upload File</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isPhotoLocked || isUploadingPhoto}
+              className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                hasPhoto
+                  ? "border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 shadow-xs"
+                  : "bg-blue-600 hover:bg-blue-500 active:scale-95 text-white shadow-sm shadow-blue-500/25"
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              <span>{hasPhoto ? "Change Photo" : "Upload Photo"}</span>
+            </button>
+          )}
+
+          {hasPhoto && !isPhotoLocked && (
             <button
               type="button"
               onClick={onClearPhoto}
@@ -157,6 +213,38 @@ export function StepProfileAndId({
             >
               Clear
             </button>
+          )}
+        </div>
+      </div>
+
+      {/* Active Gate Locks Accepted Strip */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-950/40 border border-gray-200 dark:border-zinc-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span className="font-bold text-gray-900 dark:text-white">
+            Accepted Boarding Channels on Bus Fleet:
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {locks.faceId && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+              <ScanFace className="w-3 h-3" /> Face ID
+            </span>
+          )}
+          {locks.dynamicQr && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+              <QrCode className="w-3 h-3" /> Dynamic QR Pass
+            </span>
+          )}
+          {locks.rfid && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+              <CreditCard className="w-3 h-3" /> RFID Card Tap
+            </span>
+          )}
+          {locks.staticQr && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+              <ScanLine className="w-3 h-3" /> Bus Door QR
+            </span>
           )}
         </div>
       </div>

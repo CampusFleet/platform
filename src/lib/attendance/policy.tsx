@@ -16,13 +16,15 @@ import {
   Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
-import type { TransitAttendanceMode } from "@/lib/types";
+import type { TransitAttendanceMode, ValidationLocksConfig } from "@/lib/types";
+import { DEFAULT_VALIDATION_LOCKS } from "@/lib/types";
 
 /**
  * Universal Feature & Page Activation Matrix based on Institutional Attendance Policy.
  */
 export interface ModalityPageRules {
   mode: TransitAttendanceMode;
+  locks: ValidationLocksConfig;
   modeLabel: string;
   modeDescription: string;
 
@@ -47,106 +49,125 @@ export interface ModalityPageRules {
 }
 
 /**
- * Evaluates the authoritative page activation rules for a given transit attendance mode.
+ * Resolves active validation locks, falling back to legacy single mode if needed.
  */
-export function getModalityPageRules(mode: TransitAttendanceMode = "FACE_ID"): ModalityPageRules {
+export function resolveValidationLocks(
+  mode?: TransitAttendanceMode,
+  locks?: ValidationLocksConfig
+): ValidationLocksConfig {
+  if (locks && typeof locks === "object") {
+    return {
+      faceId: Boolean(locks.faceId),
+      dynamicQr: Boolean(locks.dynamicQr),
+      rfid: Boolean(locks.rfid),
+      staticQr: Boolean(locks.staticQr),
+    };
+  }
+
   switch (mode) {
     case "DYNAMIC_QR":
-      return {
-        mode: "DYNAMIC_QR",
-        modeLabel: "Dynamic Rotating QR",
-        modeDescription: "Students present rolling time-synced QR tokens on their phones; conductors scan at bus doors.",
-        studentPassBadge: "DYNAMIC_QR",
-        isStudentDoorScannerActive: false, // Student presents QR; doesn't scan bus door
-        isStudentShowQrActive: true,
-        studentQrConnectLabel: "QR Pass",
-        isConductorBusQrActive: false, // Door posters not required
-        conductorScannerRole: "PRIMARY",
-        conductorGateMirroringEnabled: false,
-        isDriverGateCameraActive: false,
-        driverCameraStandbyReason: "Institutional attendance policy is set to Dynamic QR Pass. Conductor handles boarding scans.",
-        isRfidIssuancePrimary: false,
-        isEsp32ProvisioningPrimary: true,
-      };
-
+      return { faceId: false, dynamicQr: true, rfid: false, staticQr: false };
     case "RFID":
-      return {
-        mode: "RFID",
-        modeLabel: "RFID Smart Card",
-        modeDescription: "Students tap physical Mifare/NFC smart cards on vehicle door readers.",
-        studentPassBadge: "RFID",
-        isStudentDoorScannerActive: false,
-        isStudentShowQrActive: false,
-        studentQrConnectLabel: "Smart Card",
-        isConductorBusQrActive: false,
-        conductorScannerRole: "BACKUP_EXCEPTION",
-        conductorGateMirroringEnabled: true,
-        isDriverGateCameraActive: false,
-        driverCameraStandbyReason: "Institutional attendance policy is set to RFID Smart Cards. Door reader handles tap-ins.",
-        isRfidIssuancePrimary: true,
-        isEsp32ProvisioningPrimary: true,
-      };
-
+      return { faceId: false, dynamicQr: false, rfid: true, staticQr: false };
     case "STATIC_QR":
-      return {
-        mode: "STATIC_QR",
-        modeLabel: "Physical Bus & Seat QR",
-        modeDescription: "Physical QR posters on bus doors and seats scanned by student phones within 150m geofence.",
-        studentPassBadge: "STATIC_QR",
-        isStudentDoorScannerActive: true,
-        isStudentShowQrActive: false,
-        studentQrConnectLabel: "Scan Bus QR",
-        isConductorBusQrActive: true, // Conductor prints & displays door QR posters
-        conductorScannerRole: "BACKUP_EXCEPTION",
-        conductorGateMirroringEnabled: true,
-        isDriverGateCameraActive: false,
-        driverCameraStandbyReason: "Institutional attendance policy is set to Bus Door QR. Students scan via phone within geofence.",
-        isRfidIssuancePrimary: false,
-        isEsp32ProvisioningPrimary: false,
-      };
-
-    case "ALL":
-      return {
-        mode: "ALL",
-        modeLabel: "Hybrid Multi-Modal",
-        modeDescription: "All validation channels active simultaneously (Face ID, Dynamic QR, RFID, Bus Door QR).",
-        studentPassBadge: "HYBRID",
-        isStudentDoorScannerActive: true,
-        isStudentShowQrActive: true,
-        studentQrConnectLabel: "QR & Passes",
-        isConductorBusQrActive: true,
-        conductorScannerRole: "HYBRID",
-        conductorGateMirroringEnabled: true,
-        isDriverGateCameraActive: true,
-        isRfidIssuancePrimary: true,
-        isEsp32ProvisioningPrimary: true,
-      };
-
+      return { faceId: false, dynamicQr: false, rfid: false, staticQr: true };
     case "FACE_ID":
+      return { faceId: true, dynamicQr: false, rfid: false, staticQr: false };
+    case "ALL":
     default:
-      return {
-        mode: "FACE_ID",
-        modeLabel: "Autonomous Face ID",
-        modeDescription: "Ceiling-mounted dual-gate AI cameras autonomously log boardings and alightings.",
-        studentPassBadge: "FACE_ID",
-        isStudentDoorScannerActive: false,
-        isStudentShowQrActive: false, // Collapsible backup only
-        studentQrConnectLabel: "Backup Pass",
-        isConductorBusQrActive: false, // Door posters not required
-        conductorScannerRole: "BACKUP_EXCEPTION",
-        conductorGateMirroringEnabled: true,
-        isDriverGateCameraActive: true,
-        isRfidIssuancePrimary: false,
-        isEsp32ProvisioningPrimary: false,
-      };
+      return { faceId: true, dynamicQr: true, rfid: true, staticQr: true };
   }
 }
 
+/**
+ * Evaluates the authoritative page activation rules for a given transit attendance mode and lock config.
+ */
+export function getModalityPageRules(
+  mode: TransitAttendanceMode = "FACE_ID",
+  customLocks?: ValidationLocksConfig
+): ModalityPageRules {
+  const effectiveMode = mode || "FACE_ID";
+  const locks = resolveValidationLocks(effectiveMode, customLocks);
+  const activeCount = [locks.faceId, locks.dynamicQr, locks.rfid, locks.staticQr].filter(Boolean).length;
+
+  let badge: "FACE_ID" | "DYNAMIC_QR" | "RFID" | "STATIC_QR" | "HYBRID" = "HYBRID";
+  if (activeCount === 1) {
+    if (locks.faceId) badge = "FACE_ID";
+    else if (locks.dynamicQr) badge = "DYNAMIC_QR";
+    else if (locks.rfid) badge = "RFID";
+    else if (locks.staticQr) badge = "STATIC_QR";
+  }
+
+  let studentQrConnectLabel = "Backup Pass";
+  if (locks.dynamicQr && locks.staticQr) {
+    studentQrConnectLabel = "QR & Passes";
+  } else if (locks.dynamicQr) {
+    studentQrConnectLabel = "QR Pass";
+  } else if (locks.staticQr) {
+    studentQrConnectLabel = "Scan Bus QR";
+  } else if (locks.rfid) {
+    studentQrConnectLabel = "Smart Card";
+  }
+
+  let driverCameraStandbyReason: string | undefined = undefined;
+  if (!locks.faceId) {
+    if (locks.dynamicQr && activeCount === 1) {
+      driverCameraStandbyReason = "Institutional attendance policy is set to Dynamic QR Pass. Conductor handles boarding scans.";
+    } else if (locks.rfid && activeCount === 1) {
+      driverCameraStandbyReason = "Institutional attendance policy is set to RFID Smart Cards. Door reader handles tap-ins.";
+    } else if (locks.staticQr && activeCount === 1) {
+      driverCameraStandbyReason = "Institutional attendance policy is set to Bus Door QR. Students scan via phone within geofence.";
+    } else {
+      driverCameraStandbyReason = "Face ID Biometric lock is currently disabled in Transport Settings.";
+    }
+  }
+
+  let label = "Multi-Modal Parallel Gate";
+  let description = "Multiple gate validation locks active simultaneously across fleet vehicles.";
+  if (activeCount === 4) {
+    label = "Universal Parallel Gate (All 4 Active)";
+    description = "Autonomous Face ID, Dynamic QR, RFID Smart Cards, and Bus Door QR active simultaneously.";
+  } else if (activeCount === 1) {
+    if (locks.faceId) {
+      label = "Autonomous Face ID";
+      description = "Ceiling-mounted dual-gate AI cameras autonomously log boardings and alightings.";
+    } else if (locks.dynamicQr) {
+      label = "Dynamic Rotating QR";
+      description = "Students present rolling time-synced QR tokens on their phones; conductors scan at bus doors.";
+    } else if (locks.rfid) {
+      label = "RFID Smart Card";
+      description = "Students tap physical Mifare/NFC smart cards on vehicle door readers.";
+    } else if (locks.staticQr) {
+      label = "Physical Bus & Seat QR";
+      description = "Physical QR posters on bus doors and seats scanned by student phones within geofence.";
+    }
+  }
+
+  return {
+    mode: effectiveMode,
+    locks,
+    modeLabel: label,
+    modeDescription: description,
+    studentPassBadge: badge,
+    isStudentDoorScannerActive: locks.staticQr,
+    isStudentShowQrActive: locks.dynamicQr,
+    studentQrConnectLabel,
+    isConductorBusQrActive: locks.staticQr,
+    conductorScannerRole: locks.dynamicQr ? (activeCount > 1 ? "HYBRID" : "PRIMARY") : "BACKUP_EXCEPTION",
+    conductorGateMirroringEnabled: true,
+    isDriverGateCameraActive: locks.faceId,
+    driverCameraStandbyReason,
+    isRfidIssuancePrimary: locks.rfid,
+    isEsp32ProvisioningPrimary: locks.rfid || locks.faceId,
+  };
+}
+
 const STORAGE_KEY = "campusfleet_attendance_mode";
+const STORAGE_LOCKS_KEY = "campusfleet_validation_locks";
 const CHANNEL_NAME = "campusfleet_attendance_policy";
 
 /**
- * React hook to reactively subscribe to the active institutional attendance policy.
+ * React hook to reactively subscribe to the active institutional attendance policy and validation locks.
  */
 export function useAttendancePolicy() {
   const [mode, setMode] = useState<TransitAttendanceMode>(() => {
@@ -158,7 +179,22 @@ export function useAttendancePolicy() {
         }
       } catch {}
     }
-    return "FACE_ID";
+    return "ALL";
+  });
+
+  const [locks, setLocks] = useState<ValidationLocksConfig>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedLocks = localStorage.getItem(STORAGE_LOCKS_KEY);
+        if (savedLocks) {
+          const parsed = JSON.parse(savedLocks);
+          if (parsed && typeof parsed === "object") {
+            return resolveValidationLocks(undefined, parsed);
+          }
+        }
+      } catch {}
+    }
+    return DEFAULT_VALIDATION_LOCKS;
   });
 
   const [loading, setLoading] = useState(true);
@@ -172,12 +208,16 @@ export function useAttendancePolicy() {
         const res = await fetch("/api/fleet/settings");
         if (!res.ok) return;
         const data = await res.json();
-        if (data.success && data.settings?.attendanceMode) {
-          const remoteMode = data.settings.attendanceMode as TransitAttendanceMode;
+        if (data.success && data.settings) {
+          const remoteMode = (data.settings.attendanceMode || "ALL") as TransitAttendanceMode;
+          const remoteLocks = resolveValidationLocks(remoteMode, data.settings.validationLocks);
+
           if (isMounted) {
             setMode(remoteMode);
+            setLocks(remoteLocks);
             try {
               localStorage.setItem(STORAGE_KEY, remoteMode);
+              localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(remoteLocks));
             } catch {}
           }
         }
@@ -194,10 +234,20 @@ export function useAttendancePolicy() {
       if (typeof window !== "undefined" && "BroadcastChannel" in window) {
         channel = new BroadcastChannel(CHANNEL_NAME);
         channel.onmessage = (event) => {
-          if (event?.data?.mode && isMounted) {
+          if (!isMounted || !event?.data) return;
+
+          if (event.data.mode) {
             setMode(event.data.mode);
             try {
               localStorage.setItem(STORAGE_KEY, event.data.mode);
+            } catch {}
+          }
+
+          if (event.data.locks) {
+            const resolved = resolveValidationLocks(event.data.mode, event.data.locks);
+            setLocks(resolved);
+            try {
+              localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(resolved));
             } catch {}
           }
         };
@@ -210,20 +260,26 @@ export function useAttendancePolicy() {
     };
   }, []);
 
-  const rules = getModalityPageRules(mode);
-  return { mode, rules, loading };
+  const rules = getModalityPageRules(mode, locks);
+  return { mode, locks, rules, loading };
 }
 
 /**
  * Dispatches a policy change broadcast across all browser tabs.
  */
-export function broadcastAttendanceModeChange(mode: TransitAttendanceMode) {
+export function broadcastAttendanceModeChange(
+  mode: TransitAttendanceMode,
+  locks?: ValidationLocksConfig
+) {
   try {
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY, mode);
+      const cleanLocks = resolveValidationLocks(mode, locks);
+      localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(cleanLocks));
+
       if ("BroadcastChannel" in window) {
         const channel = new BroadcastChannel(CHANNEL_NAME);
-        channel.postMessage({ mode });
+        channel.postMessage({ mode, locks: cleanLocks });
         channel.close();
       }
     }

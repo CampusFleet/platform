@@ -167,3 +167,4 @@ export function clearOnboardingDraft(userId?: string): void {
     console.warn("[OnboardingDraft] Could not clear draft:", err);
   }
 }
+

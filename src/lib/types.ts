@@ -820,6 +820,21 @@ export interface DynamicRoutePlan {
 
 export type TransitAttendanceMode = "FACE_ID" | "DYNAMIC_QR" | "RFID" | "STATIC_QR" | "ALL";
 
+/** Independent Attendance & Gate Validation Modality Locks */
+export interface ValidationLocksConfig {
+  faceId: boolean;
+  dynamicQr: boolean;
+  rfid: boolean;
+  staticQr: boolean;
+}
+
+export const DEFAULT_VALIDATION_LOCKS: ValidationLocksConfig = {
+  faceId: true,
+  dynamicQr: true,
+  rfid: true,
+  staticQr: true,
+};
+
 /** Transport admin configurable settings */
 export interface TransportSettings {
   id: string;
@@ -827,6 +842,7 @@ export interface TransportSettings {
   autoAssignmentEnabled: boolean;
   seatSelectionMode: SeatSelectionMode;
   attendanceMode?: TransitAttendanceMode;
+  validationLocks?: ValidationLocksConfig;
   minFillPercent: number;
   maxRideTimeMins: number;
   capacityBufferPercent: number;

@@ -1385,7 +1385,7 @@ export default function StudentOnboardingPage() {
                 return;
               }
               if (!photoUrl && !localPreviewUrl) {
-                showToast("error", "Official live camera photo & Face ID verification required.", "Photo Required");
+                showToast("error", "Official commuter pass photo required.", "Photo Required");
                 return;
               }
               setActiveStep(3);

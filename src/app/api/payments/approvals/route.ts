@@ -31,15 +31,23 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    // Non-staff can only see their own submissions
-    if (!isStaffOrAdmin && studentIdFilter) {
+    // Non-staff can only see their OWN submissions: the student ID is resolved from
+    // the session, so a different ?studentId= cannot be used to read other students' payments.
+    if (!isStaffOrAdmin) {
+      const { data: ownStudent } = await supabaseAdmin
+        .from("students")
+        .select("id")
+        .eq("user_id", session.userId)
+        .maybeSingle();
+      if (!ownStudent?.id || (studentIdFilter && studentIdFilter !== ownStudent.id)) {
+        return NextResponse.json(
+          { success: false, error: "Insufficient permissions." },
+          { status: 403 }
+        );
+      }
+      query = query.eq("student_id", ownStudent.id);
+    } else if (studentIdFilter) {
       query = query.eq("student_id", studentIdFilter);
-    } else if (!isStaffOrAdmin) {
-      // Deny broad listing for non-staff
-      return NextResponse.json(
-        { success: false, error: "Insufficient permissions." },
-        { status: 403 }
-      );
     }
 
     if (status && status !== "ALL") {
@@ -274,19 +282,8 @@ export async function POST(request: NextRequest) {
           .eq("id", submission.student_id);
       }
 
-      // ── Create Financial Ledger Entry ─────────────────────────────────
-      try {
-        await supabaseAdmin.from("payment_transactions").insert({
-          receipt_number: submission.receipt_number || `RCP-${Date.now().toString().slice(-6)}`,
-          student_id: submission.student_id,
-          amount: approvedAmount,
-          status: "PAID",
-          payment_method: "UPI",
-          transaction_ref: submission.transaction_id,
-        });
-      } catch (txnErr) {
-        console.warn("Ledger insert notice:", txnErr);
-      }
+      // The approved payment_submissions row is the financial ledger entry
+      // (the legacy payment_transactions table no longer exists).
 
       // ── Send Notification ─────────────────────────────────────────────
       try {
@@ -322,7 +319,7 @@ export async function POST(request: NextRequest) {
         await supabaseAdmin.from("audit_logs").insert({
           action: "PAYMENT_APPROVED",
           user_id: session.userId,
-          details: {
+          new_value: {
             submissionId,
             studentId: submission.student_id,
             approvedAmount,
@@ -402,7 +399,7 @@ export async function POST(request: NextRequest) {
         await supabaseAdmin.from("audit_logs").insert({
           action: "PAYMENT_REJECTED",
           user_id: session.userId,
-          details: {
+          new_value: {
             submissionId,
             studentId: submission.student_id,
             rejectedAmount: submission.amount,

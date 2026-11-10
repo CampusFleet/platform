@@ -13,7 +13,7 @@ import {
   recordBusGateEvent,
   reportSecurityIncident,
 } from "@/lib/biometrics";
-import { supabaseAdmin } from "@/lib/supabaseClient";
+import { persistGateAttendance } from "./persist";
 
 /**
  * Unified Multi-Modal Transit Attendance Validation Engine.
@@ -81,7 +81,6 @@ export class AttendanceEngine {
     context: ValidationContext
   ): Promise<UnifiedAttendanceExecutionResult> {
     const gateType = context.gateType || "GATE_IN";
-    const today = new Date().toISOString().split("T")[0];
 
     // 1. Run Strategy Validation
     const outcome = await this.validate(modality, payload, context);
@@ -112,49 +111,33 @@ export class AttendanceEngine {
         console.warn("Gate event recording error:", gateErr);
       }
 
-      // 2. Mark Attendance Record
-      try {
-        const attendanceMethod =
-          modality === "BIOMETRIC_FACE_ID"
-            ? "BIOMETRIC_FACE_ID"
-            : modality === "RFID"
-            ? "RFID"
-            : "QR_SCAN";
+      // 2 + 3. Mark attendance record and update the reservation (live-schema columns)
+      const attendanceMethod =
+        modality === "BIOMETRIC_FACE_ID"
+          ? "BIOMETRIC_FACE_ID"
+          : modality === "RFID"
+          ? "RFID_VERIFIED"
+          : "QR_SCAN";
+      const unlockedBy =
+        modality === "BIOMETRIC_FACE_ID" ? "FACE_ID" : modality === "RFID" ? "RFID" : modality;
 
-        await (supabaseAdmin as any).from("attendance_records").upsert(
-          {
-            student_id: studentId,
-            bus_id: context.busId,
-            date: today,
-            status: "PRESENT",
-            method: attendanceMethod,
-            stop_name: context.stopName || null,
-            boarding_time: new Date().toISOString(),
-          },
-          { onConflict: "student_id,date" }
-        );
-        attendanceMarked = true;
+      try {
+        const persisted = await persistGateAttendance({
+          studentId,
+          busId: context.busId,
+          tripId: context.tripId || null,
+          gateType,
+          method: attendanceMethod,
+          unlockedBy,
+          latitude: context.latitude,
+          longitude: context.longitude,
+          stopName: context.stopName || null,
+          verifiedBy: context.operatorId || null,
+        });
+        attendanceMarked = persisted.attendanceMarked;
+        reservationUpdated = persisted.reservationUpdated;
       } catch (attErr) {
-        console.warn("Attendance record upsert error:", attErr);
-      }
-
-      // 3. Update Bus Reservation Status
-      try {
-        const nextReservationStatus = gateType === "GATE_OUT" ? "ALIGHTED" : "BOARDED";
-        await (supabaseAdmin as any)
-          .from("bus_reservations")
-          .update({
-            status: nextReservationStatus,
-            boarding_time: new Date().toISOString(),
-            boarding_lat: context.latitude,
-            boarding_lng: context.longitude,
-            boarding_stop_name: context.stopName || null,
-          })
-          .eq("student_id", studentId)
-          .in("reservation_date", [today]);
-        reservationUpdated = true;
-      } catch (resErr) {
-        console.warn("Reservation update error:", resErr);
+        console.warn("Attendance persistence error:", attErr);
       }
 
       return {

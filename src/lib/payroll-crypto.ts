@@ -10,8 +10,12 @@ function getEncryptionKey(): Buffer {
   const secret =
     process.env.PAYROLL_ENCRYPTION_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.JWT_SECRET ||
-    "campusfleet-payroll-default-fallback-key-2026";
+    process.env.JWT_SECRET;
+
+  // No committed fallback key: bank/UPI data must not be encrypted with a public key.
+  if (!secret) {
+    throw new Error("PAYROLL_ENCRYPTION_KEY (or SUPABASE_SERVICE_ROLE_KEY) must be configured.");
+  }
 
   return crypto.scryptSync(secret, "campusfleet-salt-iv-9821", 32);
 }

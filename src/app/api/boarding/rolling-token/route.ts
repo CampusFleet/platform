@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { generateRollingBusPayload, DEFAULT_TIME_STEP_SECONDS } from "@/lib/rolling-bus-crypto";
+import { supabaseAdmin } from "@/lib/supabaseClient";
+import { isSafeId } from "@/lib/security/safe-id";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/boarding/rolling-token
@@ -17,18 +21,38 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Only on-bus crew / transport operations may display the rolling door QR.
+  // A student who could mint tokens could "board" remotely.
+  if (!["conductor", "driver", "transport_admin", "transport_manager", "admin"].includes(session.role)) {
+    return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const busId = searchParams.get("busId");
-  const busNumber = searchParams.get("busNumber") || `Bus ${busId || "Vehicle"}`;
 
-  if (!busId) {
+  if (!busId || !isSafeId(busId)) {
     return NextResponse.json(
-      { success: false, error: "Missing busId parameter." },
+      { success: false, error: "Missing or invalid busId parameter." },
       { status: 400 }
     );
   }
 
-  const payload = generateRollingBusPayload(busId, busNumber, undefined, DEFAULT_TIME_STEP_SECONDS);
+  const { data: bus } = await supabaseAdmin
+    .from("buses")
+    .select("id, bus_number")
+    .eq("id", busId)
+    .maybeSingle();
+  if (!bus) {
+    return NextResponse.json({ success: false, error: "Bus not found." }, { status: 404 });
+  }
+
+  let payload;
+  try {
+    payload = generateRollingBusPayload(String(bus.id), `Bus ${bus.bus_number}`, undefined, DEFAULT_TIME_STEP_SECONDS);
+  } catch (err: any) {
+    console.error("[rolling-token]", err?.message);
+    return NextResponse.json({ success: false, error: "Rolling QR is not configured on the server." }, { status: 503 });
+  }
 
   return NextResponse.json(
     {

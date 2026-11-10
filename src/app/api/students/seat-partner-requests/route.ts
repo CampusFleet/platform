@@ -348,12 +348,7 @@ export async function POST(req: NextRequest) {
           title: "👥 Seat Partner Invitation",
           message: `${senderName} wants to sit together on Bus ${numBusId}! Review and accept in Seat Preferences to pair adjacent seats.`,
           type: "COMPANION_INVITE",
-          metadata: {
-            requestId: inserted.id,
-            senderId: resolvedSenderId,
-            senderName,
-            busId: numBusId,
-          },
+          // notifications has no metadata column; request details live in seat_partner_requests
         });
       } catch (notifErr) {
         console.warn("Notification insert error (non-fatal):", notifErr);

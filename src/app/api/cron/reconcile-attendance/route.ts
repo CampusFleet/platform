@@ -1,36 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedCron } from "@/lib/security/cron-auth";
+import { POST as mergesPost } from "@/app/api/merges/route";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/cron/reconcile-attendance - Stateless daily scheduled cron job
+// GET /api/cron/reconcile-attendance - Scheduled daily reconciliation (CRON_SECRET required)
 export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ success: false, message: "Unauthorized cron request." }, { status: 401 });
+  }
+
   try {
-    const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      // Allow local or matching secret
-    }
-
-    const host = req.headers.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const apiUrl = `${protocol}://${host}/api/merges`;
-
-    // Trigger reconciliation and auto-detection
-    const response = await fetch(apiUrl, {
+    // Call the merges handler in-process (no HTTP hop built from the untrusted Host header).
+    const internalReq = new NextRequest("http://internal.campusfleet/api/merges", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "RECONCILE_AND_DETECT",
-        reviewerName: "AUTOMATED_MIDDAY_CRON",
-      }),
+      headers: {
+        "content-type": "application/json",
+        authorization: req.headers.get("authorization") || "",
+      },
+      body: JSON.stringify({ action: "RECONCILE_AND_DETECT" }),
     });
 
+    const response = await mergesPost(internalReq);
     const data = await response.json();
 
     return NextResponse.json({
-      success: true,
+      success: response.ok,
       timestamp: new Date().toISOString(),
       cronResult: data,
-    });
+    }, { status: response.ok ? 200 : response.status });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error.message || "Cron reconciliation failed" },

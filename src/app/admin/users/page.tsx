@@ -32,7 +32,7 @@ export default async function UserAndRBACManagementPage() {
       .select("id, full_name, email, role, phone, campus_id, provider, created_at")
       .order("created_at", { ascending: false }),
     supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, user_id, full_name, email, phone, campus, campus_id, created_at")
       .order("created_at", { ascending: false }),
   ]);

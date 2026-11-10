@@ -296,7 +296,8 @@ export async function syncConversationsFromDatabase(): Promise<void> {
   // 3. Query physical buses from Supabase database (Bus Number Groups)
   const { data: buses } = await supabaseAdmin
     .from("buses")
-    .select("id, bus_number, registration_no, capacity, campus_id")
+    // buses has no campus_id; the campus comes from the bus's current route
+    .select("id, bus_number, registration_no, capacity, routes(campus_id)")
     .order("bus_number");
 
   if (buses && buses.length > 0) {
@@ -319,7 +320,7 @@ export async function syncConversationsFromDatabase(): Promise<void> {
               avatarBg: "bg-amber-600 text-white",
               busId: String(bus.id),
               busNumber: bus.bus_number,
-              campusId: bus.campus_id,
+              campusId: (bus as any).routes?.campus_id || undefined,
               isAutoAssigned: true,
               updatedAt: now,
             },
@@ -457,12 +458,11 @@ export async function getUserConversations(userId: string, userRole: string): Pr
     // A. Check user profile for direct campus linkage
     const { data: userRec } = await supabaseAdmin
       .from("users")
-      .select("id, role, campus_id, campus")
+      .select("id, role, campus_id")
       .eq("id", userId)
       .maybeSingle();
 
     if (userRec?.campus_id) userCampusIds.add(userRec.campus_id);
-    if (userRec?.campus) userCampusIds.add(userRec.campus);
 
     const isSupervisor = ["transport_admin", "transport_manager", "admin"].includes(userRole);
 
@@ -483,7 +483,7 @@ export async function getUserConversations(userId: string, userRole: string): Pr
         const { data: studentBookings } = await supabaseAdmin
           .from("bus_reservations")
           .select("bus_id, buses(bus_number)")
-          .or(`student_id.eq.${student.id},user_id.eq.${userId}`)
+          .eq("student_id", student.id)
           .order("created_at", { ascending: false })
           .limit(3);
 
@@ -508,17 +508,7 @@ export async function getUserConversations(userId: string, userRole: string): Pr
 
     // C. Check teacher record
     if (userRole === "teacher") {
-      const { data: assignedClasses } = await supabaseAdmin
-        .from("classes")
-        .select("id, campus_id")
-        .eq("assigned_teacher_id", userId);
-      if (assignedClasses) {
-        for (const ac of assignedClasses) {
-          userClassIds.add(ac.id);
-          if (ac.campus_id) userCampusIds.add(ac.campus_id);
-        }
-      }
-
+      // classes has no teacher/campus columns; class_teachers is the teacher ↔ class mapping
       const { data: teacherMappers } = await supabaseAdmin
         .from("class_teachers")
         .select("class_id")
@@ -532,14 +522,24 @@ export async function getUserConversations(userId: string, userRole: string): Pr
 
     // D. Check driver / conductor crew records
     if (userRole === "driver" || userRole === "conductor") {
-      const { data: crewBuses } = await supabaseAdmin
-        .from("buses")
-        .select("bus_number, campus_id")
-        .or(`driver_id.eq.${userId},conductor_id.eq.${userId}`);
-      if (crewBuses) {
-        for (const cb of crewBuses) {
-          userBusNumbers.add(String(cb.bus_number));
-          if (cb.campus_id) userCampusIds.add(cb.campus_id);
+      // Crew ↔ bus comes from trips.driver_id / conductor_id (→ staff.id), not from buses
+      const { data: staffRec } = await supabaseAdmin
+        .from("staff")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (staffRec?.id) {
+        const { data: crewTrips } = await supabaseAdmin
+          .from("trips")
+          .select("buses(bus_number), routes(campus_id)")
+          .or(`driver_id.eq.${staffRec.id},conductor_id.eq.${staffRec.id}`)
+          .order("trip_date", { ascending: false })
+          .limit(10);
+        for (const ct of crewTrips || []) {
+          const bNum = (ct as any)?.buses?.bus_number;
+          const cId = (ct as any)?.routes?.campus_id;
+          if (bNum) userBusNumbers.add(String(bNum));
+          if (cId) userCampusIds.add(cId);
         }
       }
     }

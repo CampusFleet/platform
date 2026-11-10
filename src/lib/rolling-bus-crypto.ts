@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { cacheGet, cacheSet } from "@/lib/redis";
+import { redis } from "@/lib/redis";
 
 /**
  * CampusFleet Dynamic Rolling Bus QR Cryptographic Protocol
@@ -16,13 +16,25 @@ import { cacheGet, cacheSet } from "@/lib/redis";
  * - Immune to screenshot sharing / remote proxy attendance
  */
 
-// Default 32-character secret key (overrideable via env BUS_ROLLING_SECRET_KEY)
-export const DEFAULT_32_CHAR_SECRET = (
-  process.env.BUS_ROLLING_SECRET_KEY || "ad785f824932507aaa8b8fa72f4bc3b4"
-).slice(0, 32).padEnd(32, "X");
+/**
+ * Master secret shared with the bus display (ESP32) firmware.
+ * SERVER-ONLY: must come from BUS_ROLLING_SECRET_KEY. There is deliberately no
+ * hardcoded fallback — a committed default would let anyone mint valid tokens.
+ * This module must never be imported by a "use client" component.
+ */
+export function getRollingMasterSecret(): string {
+  const secret = process.env.BUS_ROLLING_SECRET_KEY;
+  if (!secret || secret.length < 32) {
+    throw new Error("BUS_ROLLING_SECRET_KEY must be set (32+ characters) to issue or verify rolling bus QR tokens.");
+  }
+  return secret.slice(0, 32);
+}
 
 // Default rolling window time step in seconds (e.g. 2s or 3s)
 export const DEFAULT_TIME_STEP_SECONDS = 2;
+
+/** Accepted clock drift in steps (±6 s at a 2 s step). */
+export const DEFAULT_TOLERANCE_STEPS = 3;
 
 export interface RollingBusPayload {
   version: "CF-QR-v1";
@@ -48,7 +60,7 @@ export interface VerificationResult {
  * Derives a dedicated 32-character HMAC secret key for a specific vehicle asset
  * to isolate vehicle credentials (preventing cross-bus forgery).
  */
-export function getBusSecretKey(busId: string, masterKey: string = DEFAULT_32_CHAR_SECRET): string {
+export function getBusSecretKey(busId: string, masterKey: string = getRollingMasterSecret()): string {
   return crypto
     .createHmac("sha256", masterKey)
     .update(`BUS_SALT:${busId}`)
@@ -61,7 +73,7 @@ export function getBusSecretKey(busId: string, masterKey: string = DEFAULT_32_CH
  * 16 hex characters = 64 bits of cryptographic entropy, rendering brute force
  * computationally impossible in a 2-second lifetime window.
  */
-export function computeRollingToken(busId: string, timeBlock: number, secretKey: string = DEFAULT_32_CHAR_SECRET): string {
+export function computeRollingToken(busId: string, timeBlock: number, secretKey: string = getRollingMasterSecret()): string {
   const busKey = getBusSecretKey(busId, secretKey);
   const message = `CFLEET:${busId}:${timeBlock}`;
   return crypto
@@ -78,7 +90,7 @@ export function computeRollingToken(busId: string, timeBlock: number, secretKey:
 export function generateRollingBusPayload(
   busId: string | number,
   busNumber: string | number = `Bus ${busId}`,
-  secretKey: string = DEFAULT_32_CHAR_SECRET,
+  secretKey: string = getRollingMasterSecret(),
   stepSeconds: number = DEFAULT_TIME_STEP_SECONDS
 ): RollingBusPayload {
   const cleanBusId = String(busId);
@@ -111,14 +123,16 @@ export function generateRollingBusPayload(
  * Supports:
  * - Scanned string format: `cf://b/{busId}?t={timeBlock}&k={token}`
  * - Scanned JSON format: `{"type":"ROLLING_BUS_QR","busId":"...","timeBlock":...,"token":"..."}`
- * - Tolerance window: Checks current timeBlock +/- toleranceWindows (default: +/- 2 steps)
- * - Anti-Replay: Atomic single-use claim in Redis
+ * - Tolerance window: current timeBlock ± DEFAULT_TOLERANCE_STEPS (±6 s)
+ * - Constant-time signature comparison
+ * - Anti-Replay: atomic single-use claim per student per bus per time block (Redis SET NX);
+ *   fails closed in production when Redis is unavailable
  */
 export async function verifyRollingBusToken(
   scannedData: string | { busId: string; timeBlock?: number; timestampSec?: number; token: string },
   studentId?: string,
-  toleranceSteps: number = 10,
-  secretKey: string = DEFAULT_32_CHAR_SECRET,
+  toleranceSteps: number = DEFAULT_TOLERANCE_STEPS,
+  secretKey: string = getRollingMasterSecret(),
   stepSeconds: number = DEFAULT_TIME_STEP_SECONDS
 ): Promise<VerificationResult> {
   let busId = "";
@@ -177,8 +191,9 @@ export async function verifyRollingBusToken(
   }
 
   // 3. Cryptographic Signature Match
-  const expectedToken = computeRollingToken(busId, scannedTimeBlock, secretKey);
-  if (scannedToken !== expectedToken) {
+  const expectedToken = Buffer.from(computeRollingToken(busId, scannedTimeBlock, secretKey), "utf8");
+  const receivedToken = Buffer.from(scannedToken, "utf8");
+  if (expectedToken.length !== receivedToken.length || !crypto.timingSafeEqual(expectedToken, receivedToken)) {
     return {
       valid: false,
       busId,
@@ -187,14 +202,18 @@ export async function verifyRollingBusToken(
     };
   }
 
-  // 4. Anti-Replay Protection via Redis
-  // Ensure that this exact (busId + timeBlock + token) cannot be used multiple times
-  // by different students sharing screenshots or forwarded images.
-  if (studentId) {
-    const replayKey = `replay:bus_qr:${busId}:${scannedTimeBlock}:${scannedToken}:${studentId}`;
+  // 4. Anti-Replay Protection via Redis (atomic SET NX).
+  // A token is accepted once per student per bus per time block. Screenshot sharing
+  // between students is limited by the ±6 s freshness window; callers must also
+  // check that the scanning student is assigned to this bus.
+  if (!studentId) {
+    return { valid: false, busId, error: "Student identity is required for rolling QR verification.", code: "CORRUPTED_PAYLOAD" };
+  }
+  const replayKey = `replay:bus_qr:${busId}:${scannedTimeBlock}:${studentId}`;
+  if (redis) {
     try {
-      const alreadyUsed = await cacheGet(replayKey);
-      if (alreadyUsed) {
+      const claimed = await redis.set(replayKey, "CONSUMED", { nx: true, ex: 120 });
+      if (claimed !== "OK") {
         return {
           valid: false,
           busId,
@@ -202,11 +221,13 @@ export async function verifyRollingBusToken(
           code: "REPLAY_ATTACK_DETECTED",
         };
       }
-      // Mark consumed for 60 seconds (well past the 2-second lifetime window)
-      await cacheSet(replayKey, "CONSUMED", 60);
-    } catch {
-      // In-memory fallback if Redis is unreachable
+    } catch (err) {
+      console.error("[rolling-bus-crypto] Redis replay check failed:", err);
+      return { valid: false, busId, error: "Verification service temporarily unavailable. Please rescan.", code: "REPLAY_ATTACK_DETECTED" };
     }
+  } else if (process.env.NODE_ENV === "production") {
+    // Fail closed: without Redis we cannot enforce single use.
+    return { valid: false, busId, error: "Verification service temporarily unavailable. Please rescan.", code: "REPLAY_ATTACK_DETECTED" };
   }
 
   return {

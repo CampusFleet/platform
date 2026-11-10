@@ -89,9 +89,9 @@ export default async function TeacherAttendancePage() {
   if (studentIds.length > 0) {
     const { data: attRecords } = await supabaseAdmin
       .from("attendance_records")
-      .select("id, student_id, trip_id, scanned_at, buses(bus_number)")
+      .select("id, student_id, trip_id, scanned_at:timestamp, buses(bus_number)")
       .in("student_id", studentIds)
-      .gte("scanned_at", startOfDay)
+      .gte("timestamp", startOfDay)
       .lte("scanned_at", endOfDay)
       .order("scanned_at", { ascending: false });
 

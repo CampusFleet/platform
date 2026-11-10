@@ -8,6 +8,8 @@ import {
   computeFleetOrchestrationPlan,
 } from "@/lib/route-optimizer";
 import { Bus, Route, Booking } from "@/lib/types";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isAuthorizedCron } from "@/lib/security/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -104,10 +106,64 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/merges - Reconcile Attendance & Detect, Approve, or Reject
+// Live bus_reservations statuses (CHECK constraint): ASSIGNED, SEAT_SELECTED, BOARDED, ALIGHTED, ABSENT, CANCELLED, SWITCHED.
+// Riders who still need a seat on an outgoing run:
+const ACTIVE_RESERVATION_STATUSES = ["ASSIGNED", "SEAT_SELECTED", "BOARDED"];
+// Riders who have not boarded yet (safe to cancel when pruned as absentees):
+const PRE_BOARDING_STATUSES = ["ASSIGNED", "SEAT_SELECTED"];
+// attendance_records statuses that prove the student actually travelled in the morning:
+const PRESENT_ATTENDANCE_STATUSES = ["BOARDED", "PRESENT", "WRONG_BUS_TAP"];
+
+/** Live occupancy of a bus for one date: active reservations on that bus. */
+async function countActiveRiders(busId: number | string, date: string, shiftIds: string[]): Promise<number> {
+  let q = supabaseAdmin
+    .from("bus_reservations")
+    .select("id", { count: "exact", head: true })
+    .eq("bus_id", busId)
+    .eq("reservation_date", date)
+    .in("status", ACTIVE_RESERVATION_STATUSES);
+  if (shiftIds.length > 0) q = q.in("shift_id", shiftIds);
+  const { count } = await q;
+  return count || 0;
+}
+
+/**
+ * Moves the source bus's riders for (date, outgoing shifts) onto the target bus.
+ * Seats are cleared because seat codes from one bus are not valid/free on another;
+ * SEAT_SELECTED riders go back to ASSIGNED so they pick a new seat on boarding.
+ */
+async function reassignRiders(sourceBusId: number | string, targetBusId: number | string, date: string, shiftIds: string[]) {
+  const scope = (q: any) => {
+    q = q.eq("bus_id", sourceBusId).eq("reservation_date", date);
+    return shiftIds.length > 0 ? q.in("shift_id", shiftIds) : q;
+  };
+  const { error: e1 } = await scope(
+    supabaseAdmin.from("bus_reservations").update({ bus_id: targetBusId, chosen_seat: null, status: "ASSIGNED" })
+  ).eq("status", "SEAT_SELECTED");
+  const { error: e2 } = await scope(
+    supabaseAdmin.from("bus_reservations").update({ bus_id: targetBusId, chosen_seat: null })
+  ).in("status", ["ASSIGNED", "BOARDED"]);
+  const err = e1 || e2;
+  if (err) throw new Error(`Failed to reassign riders: ${err.message}`);
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const userSession = await getSessionFromRequest(req);
+    const isCron = !userSession && isAuthorizedCron(req);
+    if (!isCron && (!userSession || !["admin", "transport_admin", "transport_manager"].includes(userSession.role))) {
+      return NextResponse.json({ success: false, message: "Forbidden." }, { status: userSession ? 403 : 401 });
+    }
+    const session = userSession || {
+      userId: null as unknown as string,
+      email: null as unknown as string,
+      role: "system_cron",
+    };
+    // reviewed_by / reconciled_by are FKs to users(id): the session user, or NULL for the scheduled job.
+    const reviewerId: string | null = userSession?.userId || null;
+
     const body = await req.json();
-    const { action, suggestionId, reviewerName, rejectionReason, maxDetourMinutes = 15 } = body;
+    const { action, suggestionId, rejectionReason, maxDetourMinutes = 15 } = body;
     const today = getTodayIST();
 
     // =========================================================================
@@ -115,6 +171,13 @@ export async function POST(req: NextRequest) {
     // (Approach C: Full Dynamic Attendance-Reconciled Hybrid Pipeline)
     // =========================================================================
     if (action === "RECONCILE_AND_DETECT" || action === "DETECT") {
+      // 0. Outgoing shifts (campus → home)
+      const { data: outgoingShifts } = await supabaseAdmin
+        .from("shifts")
+        .select("id")
+        .eq("direction", "CAMPUS_TO_HOME")
+        .neq("is_active", false);
+
       // 1. Fetch all operational buses
       const { data: rawBuses, error: busErr } = await supabaseAdmin
         .from("buses")
@@ -135,25 +198,35 @@ export async function POST(req: NextRequest) {
         .select("*")
         .eq("is_active", true);
 
-      // 4. Fetch morning attendance records for today (to determine who is actually on campus)
-      const { data: morningAttendance } = await supabaseAdmin
+      // 4. Verified morning attendance for TODAY (IST day, as UTC instant range)
+      const dayStartIso = new Date(`${today}T00:00:00+05:30`).toISOString();
+      const dayEndIso = new Date(new Date(dayStartIso).getTime() + 24 * 3600 * 1000).toISOString();
+      const { data: morningAttendance, error: attErr } = await supabaseAdmin
         .from("attendance_records")
-        .select("student_id, status, timestamp");
+        .select("student_id, status")
+        .gte("timestamp", dayStartIso)
+        .lt("timestamp", dayEndIso)
+        .in("status", PRESENT_ATTENDANCE_STATUSES);
+      if (attErr) throw attErr;
 
-      // Attendees who boarded today
       const todayAttendees = new Set<string>();
       for (const rec of morningAttendance || []) {
-        if (rec.student_id && (rec.timestamp?.startsWith(today) || !rec.timestamp)) {
-          todayAttendees.add(rec.student_id);
-        }
+        if (rec.student_id) todayAttendees.add(rec.student_id);
       }
 
-      // 5. Fetch outgoing shift auto-reservations for today
-      const { data: rawBookings } = await supabaseAdmin
-        .from("bus_reservations_full")
-        .select("*")
-        .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
+      // 5. Today's OUTGOING (campus → home) reservations only
+      const outgoingShiftIds = (outgoingShifts || []).map((s) => s.id);
+      const { data: rawBookings, error: bookErr } = outgoingShiftIds.length
+        ? await supabaseAdmin
+            .from("bus_reservations_full")
+            .select("*")
+            .eq("reservation_date", today)
+            .in("shift_id", outgoingShiftIds)
+            .in("status", ACTIVE_RESERVATION_STATUSES)
+        : { data: [] as any[], error: null };
+      if (bookErr) throw bookErr;
 
+      // The optimizer's Booking model uses CONFIRMED for "holds a place"; map live statuses onto it.
       const outgoingBookings = (rawBookings || []).map((b) => ({
         id: b.id,
         bookingCode: b.booking_code,
@@ -162,16 +235,17 @@ export async function POST(req: NextRequest) {
         busId: b.bus_id,
         bookingDate: b.reservation_date || b.booking_date,
         boardingStopId: b.boarding_stop_id,
-        status: b.status,
+        status: b.status === "BOARDED" ? "BOARDED" : "CONFIRMED",
         createdAt: b.created_at,
       })) as Booking[];
 
-      // In case no attendance was logged yet today (e.g. testing), treat all currently confirmed students as attendees
-      // to avoid pruning 100% of students in simulation environments
-      const effectiveAttendees =
-        todayAttendees.size > 0
-          ? todayAttendees
-          : new Set(outgoingBookings.slice(0, Math.max(1, Math.floor(outgoingBookings.length * 0.75))).map((b) => b.studentId));
+      // Formula: active outgoing riders = registered − VERIFIED morning absentees.
+      // If no attendance has been recorded yet today we cannot verify anyone as absent,
+      // so nobody is pruned (no guessed/simulated attendance).
+      const attendanceAvailable = todayAttendees.size > 0;
+      const effectiveAttendees = attendanceAvailable
+        ? todayAttendees
+        : new Set(outgoingBookings.map((b) => b.studentId));
 
       // 6. Map routes into domain structure
       const domainRoutes: Route[] = (rawRoutes || []).map((r) => ({
@@ -230,14 +304,19 @@ export async function POST(req: NextRequest) {
       );
 
       // 9. Prune absentee students from outgoing reservations if actual attendees were found
-      if (orchestrationPlan.summary.prunedStudentIds.length > 0) {
-        await supabaseAdmin
+      // Only today's not-yet-boarded outgoing reservations are cancelled — never other days or shifts.
+      if (attendanceAvailable && orchestrationPlan.summary.prunedStudentIds.length > 0) {
+        const { error: pruneErr } = await supabaseAdmin
           .from("bus_reservations")
           .update({
-            status: "CANCELLED",
+            status: "ABSENT",
+            cancelled_at: new Date().toISOString(),
           })
           .in("student_id", orchestrationPlan.summary.prunedStudentIds)
-          .in("status", ["CONFIRMED", "WAITLISTED"]);
+          .eq("reservation_date", today)
+          .in("shift_id", outgoingShiftIds)
+          .in("status", PRE_BOARDING_STATUSES);
+        if (pruneErr) throw pruneErr;
       }
 
       // 10. Persist detected opportunities into bus_merge_suggestions
@@ -258,6 +337,7 @@ export async function POST(req: NextRequest) {
             .from("bus_merge_suggestions")
             .insert({
               orchestration_type: "INTRA_CORRIDOR_DISASSEMBLY",
+              trip_date: today,
               merge_point_id: d.mergePointId.startsWith("AUTO") ? null : d.mergePointId,
               route_id: d.routeId,
               source_bus_id: String(d.sourceBusId),
@@ -293,6 +373,7 @@ export async function POST(req: NextRequest) {
             .from("bus_merge_suggestions")
             .insert({
               orchestration_type: "ROUTE_STITCH_CONSOLIDATION",
+              trip_date: today,
               merge_point_id: null,
               route_id: s.primaryRouteId,
               secondary_route_id: s.secondaryRouteId,
@@ -327,7 +408,8 @@ export async function POST(req: NextRequest) {
         reconciled_outgoing_passengers: orchestrationPlan.summary.reconciledOutgoingPassengers,
         opportunities_detected: insertedSuggestions.length,
         fuel_saved_liters: orchestrationPlan.totalFuelSavedLiters,
-        reconciled_by: reviewerName || "ORCHESTRATION_ENGINE",
+        outgoing_shift_id: outgoingShiftIds.length === 1 ? outgoingShiftIds[0] : null,
+        reconciled_by: reviewerId,
       });
 
       return NextResponse.json({
@@ -372,7 +454,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: "One or both buses not found." }, { status: 404 });
       }
 
-      const combined = (sourceBus.occupancy || 0) + (targetBus.occupancy || 0);
+      // Live occupancy from today's reservations (buses.occupancy is a stale cached column)
+      const mergeDate: string = suggestion.trip_date || today;
+      const { data: outShiftsForApprove } = await supabaseAdmin
+        .from("shifts")
+        .select("id")
+        .eq("direction", "CAMPUS_TO_HOME");
+      const approveShiftIds = (outShiftsForApprove || []).map((s) => s.id);
+      const sourceRiders = await countActiveRiders(sourceBus.id, mergeDate, approveShiftIds);
+      const targetRiders = await countActiveRiders(targetBus.id, mergeDate, approveShiftIds);
+      const combined = sourceRiders + targetRiders;
       if (combined > (targetBus.capacity || 50)) {
         return NextResponse.json(
           {
@@ -383,24 +474,19 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 1. Mark suggestion as APPROVED
-      await supabaseAdmin
+      // 1. Reassign today's outgoing riders from source bus to target bus (fails loudly)
+      await reassignRiders(sourceBus.id, targetBus.id, mergeDate, approveShiftIds);
+
+      // 2. Mark suggestion as APPROVED
+      const { error: approveErr } = await supabaseAdmin
         .from("bus_merge_suggestions")
         .update({
           status: "APPROVED",
-          reviewed_by: reviewerName || "Transport Dispatcher",
+          reviewed_by: reviewerId,
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", suggestionId);
-
-      // 2. Reassign active reservations from source bus to target bus
-      await supabaseAdmin
-        .from("bus_reservations")
-        .update({
-          bus_id: targetBus.id,
-        })
-        .eq("bus_id", sourceBus.id)
-        .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
+      if (approveErr) throw approveErr;
 
       // 3. Mark source bus as STANDBY_DISASSEMBLED and zero out its occupancy
       await supabaseAdmin
@@ -424,14 +510,16 @@ export async function POST(req: NextRequest) {
           : "EXECUTE_INTRA_CORRIDOR_DISASSEMBLY";
 
       await supabaseAdmin.from("audit_logs").insert({
-        user_role: "transport_manager",
+        user_id: session.userId,
+        user_email: session.email,
+        user_role: session.role,
         action: actionName,
         entity: "BusMergeSuggestion",
         entity_id: suggestionId,
         reason: `Executed ${suggestion.orchestration_type}: Bus ${sourceBus.bus_number || sourceBus.id} stood down. Passengers re-assigned to Bus ${targetBus.bus_number || targetBus.id}. Saved ~${suggestion.estimated_fuel_saved_liters || 0}L fuel.`,
         previous_value: {
-          sourceOccupancy: sourceBus.occupancy,
-          targetOccupancy: targetBus.occupancy,
+          sourceOccupancy: sourceRiders,
+          targetOccupancy: targetRiders,
         },
         new_value: {
           targetOccupancy: combined,
@@ -457,22 +545,28 @@ export async function POST(req: NextRequest) {
       let executedCount = 0;
       let totalFuelSaved = 0;
 
+      const { data: outShiftsForAll } = await supabaseAdmin
+        .from("shifts")
+        .select("id")
+        .eq("direction", "CAMPUS_TO_HOME");
+      const allShiftIds = (outShiftsForAll || []).map((s) => s.id);
+
       for (const sug of pendingSuggestions || []) {
+        // Only act on suggestions for today (stale suggestions from earlier days are skipped)
+        const sugDate: string = sug.trip_date || today;
+        if (sugDate !== today) continue;
+
         // Fetch buses
         const { data: tBus } = await supabaseAdmin.from("buses").select("*").eq("id", sug.target_bus_id).single();
         const { data: sBus } = await supabaseAdmin.from("buses").select("*").eq("id", sug.source_bus_id).single();
 
-        if (tBus && sBus && sBus.status !== "STANDBY_DISASSEMBLED" && sBus.status !== "MAINTENANCE") {
-          const combined = (sBus.occupancy || 0) + (tBus.occupancy || 0);
+        if (tBus && sBus && sBus.status !== "STANDBY_DISASSEMBLED" && sBus.status !== "MAINTENANCE" && tBus.status !== "STANDBY_DISASSEMBLED") {
+          const combined =
+            (await countActiveRiders(sBus.id, sugDate, allShiftIds)) +
+            (await countActiveRiders(tBus.id, sugDate, allShiftIds));
           if (combined <= (tBus.capacity || 50)) {
             // Reassign reservations
-            await supabaseAdmin
-              .from("bus_reservations")
-              .update({
-                bus_id: tBus.id,
-              })
-              .eq("bus_id", sBus.id)
-              .in("status", ["CONFIRMED", "BOARDED", "WAITLISTED"]);
+            await reassignRiders(sBus.id, tBus.id, sugDate, allShiftIds);
 
             // Stand down source bus
             await supabaseAdmin
@@ -491,7 +585,7 @@ export async function POST(req: NextRequest) {
               .from("bus_merge_suggestions")
               .update({
                 status: "APPROVED",
-                reviewed_by: reviewerName || "Auto-Pilot Orchestrator",
+                reviewed_by: reviewerId,
                 reviewed_at: new Date().toISOString(),
               })
               .eq("id", sug.id);
@@ -523,13 +617,15 @@ export async function POST(req: NextRequest) {
         .update({
           status: "REJECTED",
           rejection_reason: rejectionReason || "Operational decision by transport manager.",
-          reviewed_by: reviewerName || "Transport Manager",
+          reviewed_by: reviewerId,
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", suggestionId);
 
       await supabaseAdmin.from("audit_logs").insert({
-        user_role: "transport_manager",
+        user_id: session.userId,
+        user_email: session.email,
+        user_role: session.role,
         action: "REJECT_BUS_MERGE",
         entity: "BusMergeSuggestion",
         entity_id: suggestionId,

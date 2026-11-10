@@ -388,10 +388,16 @@ export function StepProfileAndId({
               Class Section *
             </label>
             <CustomDropdown
-              disabled={!selectedYear}
+              disabled={!selectedYear || sectionOptions.length === 0}
               options={sectionOptions}
               value={selectedSection}
-              placeholder={!selectedYear ? "Select Semester first" : "Select Section"}
+              placeholder={
+                !selectedYear
+                  ? "Select Semester first"
+                  : sectionOptions.length === 0
+                  ? "No section exists for this specialization & semester — contact Transport Admin"
+                  : "Select Section"
+              }
               onChange={onSectionChange}
             />
           </div>

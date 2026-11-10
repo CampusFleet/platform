@@ -163,8 +163,7 @@ export async function POST(req: NextRequest) {
           .from("users")
           .update({
             photo_url: avatarDataUrl,
-            avatar_url: avatarDataUrl,
-            updated_at: new Date().toISOString(),
+            photo_locked: true,
           })
           .eq("id", session.userId);
 
@@ -172,7 +171,6 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin
           .from("students")
           .update({
-            photo_url: avatarDataUrl,
             photo_locked: true,
           })
           .eq("id", resolvedStudentId);

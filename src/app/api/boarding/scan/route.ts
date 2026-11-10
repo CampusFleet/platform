@@ -2,16 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getDayOfWeekIST, getCurrentTimeIST } from "@/lib/time-manager";
 import { createAttendanceId } from "@/lib/id";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { verifyStudentPass } from "@/lib/security/student-pass";
+import { isSafeId } from "@/lib/security/safe-id";
 
 /**
  * QR-Based Bus Boarding (Attendance Architecture)
  * Business Rule: If a student has a class scheduled at the boarding time,
  * boarding MUST be rejected immediately with explicit lecture details.
  */
+const SCANNER_ROLES = ["conductor", "driver", "transport_admin", "transport_manager", "admin"];
+
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, status: "UNAUTHORIZED", message: "Authentication required." }, { status: 401 });
+    }
+    if (!SCANNER_ROLES.includes(session.role)) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Only bus crew can verify boarding passes." }, { status: 403 });
+    }
+
     const body = await req.json();
-    const { rawCode, qrData, tripId, busId, conductorName = "Conductor Command Terminal", action = "CONFIRM_BOARDING" } = body;
+    const { rawCode, qrData, tripId, busId, action = "CONFIRM_BOARDING" } = body;
+    // The verifier identity comes from the session, never from the request body.
+    const conductorName = session.fullName || session.email || session.userId;
     const scanPayload = rawCode || qrData;
 
     if (!scanPayload) {
@@ -41,21 +56,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Dynamic 1-Minute Anti-Screenshot Security Validation
-    if (parsedPayload?.window) {
-      const currentWindow = Math.floor(Date.now() / 60000);
-      const windowDiff = Math.abs(currentWindow - Number(parsedPayload.window));
-      // Allow 2 windows of skew (120s buffer) to tolerate client clock drift or slight latency
-      if (windowDiff > 2) {
+    // Dynamic pass anti-forgery / anti-screenshot: the server-issued HMAC must verify.
+    // (Plain student IDs and ID-card verification URLs remain a manual exception path:
+    // the conductor confirms identity against the official photo before boarding.)
+    const isDynamicPass =
+      parsedPayload &&
+      (parsedPayload.type === "DYNAMIC_PASS" || parsedPayload.window !== undefined || parsedPayload.sig !== undefined || parsedPayload.bookingId !== undefined);
+    if (isDynamicPass) {
+      const pass = verifyStudentPass(parsedPayload);
+      if (!pass.valid) {
         return NextResponse.json(
           {
             success: false,
-            status: "EXPIRED_QR",
-            code: "EXPIRED_DYNAMIC_PASS",
-            message: "SECURITY ALERT: Expired dynamic pass (>1 min old screenshot). Please ask student to show their live dynamic pass.",
+            status: pass.code === "EXPIRED_PASS" ? "EXPIRED_QR" : "REJECTED",
+            code: pass.code === "EXPIRED_PASS" ? "EXPIRED_DYNAMIC_PASS" : pass.code,
+            message: `SECURITY ALERT: ${pass.message}`,
             studentName: parsedPayload.studentName || undefined,
           },
-          { status: 400 }
+          { status: pass.code === "EXPIRED_PASS" ? 400 : 403 }
         );
       }
     }
@@ -68,6 +86,12 @@ export async function POST(req: NextRequest) {
     if (!searchId) {
       return NextResponse.json(
         { success: false, status: "INVALID_INPUT", message: "Student ID missing from QR code." },
+        { status: 400 }
+      );
+    }
+    if (!isSafeId(searchId) || (tripId && !isSafeId(tripId))) {
+      return NextResponse.json(
+        { success: false, status: "INVALID_INPUT", message: "Malformed identifier in scanned code." },
         { status: 400 }
       );
     }
@@ -287,7 +311,7 @@ export async function POST(req: NextRequest) {
 
     // 7a. Create verified attendance record with UNLOCKED status
     const attendanceId = createAttendanceId();
-    await supabaseAdmin.from("attendance_records").insert({
+    const { error: attendanceInsertError } = await supabaseAdmin.from("attendance_records").insert({
       id: attendanceId,
       student_id: student.id,
       trip_id: tripId,
@@ -301,9 +325,15 @@ export async function POST(req: NextRequest) {
       lock_status: "UNLOCKED",
       unlocked_by: "MANUAL_OVERRIDE",
       unlock_timestamp: timestamp,
-      // HACK: for backwards compatibility if booking_id was required in DB schema
-      booking_id: attendanceId 
     });
+
+    if (attendanceInsertError) {
+      console.error("[QR_ATTENDANCE] attendance insert failed:", attendanceInsertError.message);
+      return NextResponse.json(
+        { success: false, status: "ERROR", message: "Could not record attendance. Please retry the scan." },
+        { status: 500 }
+      );
+    }
 
     // Update Smart Transit bus_reservations status to BOARDED and UNLOCKED
     try {

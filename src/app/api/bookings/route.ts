@@ -441,7 +441,7 @@ export async function POST(req: NextRequest) {
         action: "BOOKING_CONFIRMED",
         entity: "Booking",
         entity_id: newBooking.id,
-        details: {
+        new_value: {
           bookingCode,
           busNumber: bus.bus_number,
           seatNumber: allocatedSeat,

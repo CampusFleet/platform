@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
 import { createAttendanceId } from "@/lib/id";
+import { getSessionFromRequest } from "@/lib/jwt";
 
 /**
  * Digital Seat-Hold, Campus Roaming & Bus Departure Recall API
@@ -151,10 +152,38 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const CREW_ACTION_ROLES = ["conductor", "driver", "transport_admin", "transport_manager", "admin"];
+const RIDER_ACTIONS = ["CONFIRM_ONBOARD", "RUNNING_TO_BUS"];
+
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
+    }
     const body = await req.json();
-    const { action, tripId, bookingId, studentId, conductorName = "Conductor Console", message } = body;
+    const { action, tripId, message } = body;
+    let { bookingId, studentId } = body;
+    const isCrew = CREW_ACTION_ROLES.includes(session.role);
+
+    if (!isCrew) {
+      // Riders may only answer the departure alarm for themselves.
+      if (!RIDER_ACTIONS.includes(action)) {
+        return NextResponse.json({ success: false, message: "Forbidden." }, { status: 403 });
+      }
+      const { data: ownStudent } = await supabaseAdmin
+        .from("students")
+        .select("id")
+        .eq("user_id", session.userId)
+        .maybeSingle();
+      if (!ownStudent?.id) {
+        return NextResponse.json({ success: false, message: "No student profile for this account." }, { status: 404 });
+      }
+      studentId = ownStudent.id;
+      bookingId = undefined;
+    }
+    // Who triggered crew actions comes from the session, not the request body.
+    const conductorName = isCrew ? session.fullName || session.email : "Commuter";
 
     const timestamp = new Date().toISOString();
     const invalidateTrip = async (id: string) => { if (id) await cacheDel(`roaming:trip:${id}`); };
@@ -297,8 +326,8 @@ export async function POST(req: NextRequest) {
       if (tripId) await invalidateTrip(tripId);
       // Audit Log
       await supabaseAdmin.from("audit_logs").insert({
-        user_id: studentId || "student",
-        user_role: "student",
+        user_id: session.userId,
+        user_role: session.role,
         action: "ONBOARD_CONFIRMED_BY_STUDENT",
         entity: "Booking",
         entity_id: bookingId || "N/A",
@@ -340,7 +369,7 @@ export async function POST(req: NextRequest) {
       if (tripId) await invalidateTrip(tripId);
       // Audit Log
       await supabaseAdmin.from("audit_logs").insert({
-        user_id: studentId || "student",
+        user_id: session.userId,
         user_role: "student",
         action: "STUDENT_RUNNING_TO_BUS",
         entity: "Booking",
@@ -417,8 +446,8 @@ export async function POST(req: NextRequest) {
 
       // Immutable Audit Log entry for ACID audit compliance
       await supabaseAdmin.from("audit_logs").insert({
-        user_id: conductorName || "conductor",
-        user_role: "conductor",
+        user_id: session.userId,
+        user_role: session.role,
         action: "BUS_DEPARTURE_ALERT_TRIGGERED",
         entity: "Trip",
         entity_id: tripId,
@@ -451,8 +480,8 @@ export async function POST(req: NextRequest) {
 
       // Audit Log resolution for ACID compliance
       await supabaseAdmin.from("audit_logs").insert({
-        user_id: conductorName || "conductor",
-        user_role: "conductor",
+        user_id: session.userId,
+        user_role: session.role,
         action: "BUS_DEPARTURE_ALERT_DISMISSED",
         entity: "Trip",
         entity_id: tripId,

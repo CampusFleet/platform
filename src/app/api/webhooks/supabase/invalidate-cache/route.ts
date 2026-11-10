@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cacheDel } from "@/lib/redis";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +12,13 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     // Basic authorization check: verify webhook secret
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = req.headers.get("Authorization") || "";
     const expectedToken = process.env.SUPABASE_WEBHOOK_SECRET;
-    
-    // In development, you might not have the secret set up yet. 
-    // If it's set in env, enforce it.
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+
+    // Fail closed: an unset secret must not turn this into an open endpoint.
+    const expected = Buffer.from(`Bearer ${expectedToken || ""}`, "utf8");
+    const received = Buffer.from(authHeader, "utf8");
+    if (!expectedToken || expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 

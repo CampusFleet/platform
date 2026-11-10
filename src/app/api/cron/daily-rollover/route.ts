@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeDailyRollover } from "@/lib/daily-rollover";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isAuthorizedCron } from "@/lib/security/cron-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const getSession = isAuthorizedCron(req) ? null : await getSessionFromRequest(req);
+  if (!isAuthorizedCron(req) && (!getSession || !["admin", "transport_admin", "transport_manager"].includes(getSession.role))) {
+    return NextResponse.json({ success: false, message: "Unauthorized." }, { status: 401 });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date");
@@ -71,22 +77,26 @@ export async function POST(req: NextRequest) {
       // Body is optional
     }
 
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    // If CRON_SECRET is configured, check token if called externally
-    if (cronSecret && authHeader) {
-      const token = authHeader.replace("Bearer ", "").trim();
-      if (token !== cronSecret && token !== "bypass_local_dev") {
-        return NextResponse.json({ success: false, message: "Unauthorized cron request." }, { status: 401 });
-      }
+    // Callers: the scheduler (CRON_SECRET bearer) or a signed-in user's store doing the
+    // idempotent "lazy init" for today. Only managers may force a re-run.
+    const isCron = isAuthorizedCron(req);
+    const session = isCron ? null : await getSessionFromRequest(req);
+    if (!isCron && !session) {
+      return NextResponse.json({ success: false, message: "Unauthorized cron request." }, { status: 401 });
     }
+    const canForce = isCron || (session && ["admin", "transport_admin", "transport_manager"].includes(session.role));
 
     const { targetDate, force, triggeredBy = "API_REQUEST" } = body;
 
-    const result = await executeDailyRollover(targetDate, {
-      force: Boolean(force),
-      triggeredBy,
+    // Non-managers may only initialise today (IST), never arbitrary dates.
+    const todayIst = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().split("T")[0];
+    if (!canForce && targetDate && targetDate !== todayIst) {
+      return NextResponse.json({ success: false, message: "Forbidden." }, { status: 403 });
+    }
+
+    const result = await executeDailyRollover(canForce ? targetDate : todayIst, {
+      force: Boolean(force) && Boolean(canForce),
+      triggeredBy: isCron ? "CRON" : `${triggeredBy}:${session?.role}`,
     });
 
     return NextResponse.json(result, { status: result.success ? 200 : 500 });

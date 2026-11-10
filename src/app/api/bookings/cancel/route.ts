@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
         action: "BOOKING_CANCELLED",
         entity: "Booking",
         entity_id: bookingId,
-        details: {
+        new_value: {
           bookingCode: booking.booking_code,
           seatNumber: booking.seat_number,
           reason,

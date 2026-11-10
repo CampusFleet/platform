@@ -13,7 +13,7 @@ export async function GET(
     const classId = params.id;
     const { data: allocations, error } = await supabaseAdmin
       .from("class_teachers")
-      .select("id, is_primary, created_at, users(id, full_name, email, phone, role)")
+      .select("id, is_primary, created_at:assigned_at, users(id, full_name, email, phone, role)")
       .eq("class_id", classId);
 
     if (error) throw error;

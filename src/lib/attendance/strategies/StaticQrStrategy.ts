@@ -6,6 +6,7 @@ import {
 } from "../types";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm } from "@/lib/utils";
+import { orEqFilter } from "@/lib/security/safe-id";
 
 export class StaticQrStrategy implements AttendanceValidationStrategy<StaticQrPayload> {
   public readonly modality = "STATIC_QR" as const;
@@ -34,14 +35,24 @@ export class StaticQrStrategy implements AttendanceValidationStrategy<StaticQrPa
         };
       }
 
-      // Geofence Radius Validation
+      // Geofence Radius Validation — fail closed: a static poster QR proves nothing
+      // about presence, so both the commuter and bus coordinates are mandatory.
       const maxRadiusMeters = payload.maxRadiusMeters ?? 150;
-      if (
-        typeof payload.commuterLat === "number" &&
-        typeof payload.commuterLng === "number" &&
-        typeof context.latitude === "number" &&
-        typeof context.longitude === "number"
-      ) {
+      const hasCoords =
+        Number.isFinite(payload.commuterLat) &&
+        Number.isFinite(payload.commuterLng) &&
+        Number.isFinite(context.latitude) &&
+        Number.isFinite(context.longitude);
+      if (!hasCoords) {
+        return {
+          isValid: false,
+          status: "OUT_OF_GEOFENCE",
+          modality: this.modality,
+          studentId: payload.studentId,
+          reason: "Static QR requires live GPS from both the commuter phone and the bus to verify proximity",
+        };
+      }
+      {
         const distKm = calculateDistanceKm(
           payload.commuterLat,
           payload.commuterLng,
@@ -61,11 +72,20 @@ export class StaticQrStrategy implements AttendanceValidationStrategy<StaticQrPa
         }
       }
 
-      // Fetch student record
+      // Fetch student record (filter value is validated to prevent PostgREST filter injection)
+      const studentFilter = orEqFilter(["id", "student_id_code"], payload.studentId);
+      if (!studentFilter) {
+        return {
+          isValid: false,
+          status: "INVALID_CREDENTIAL",
+          modality: this.modality,
+          reason: "Malformed student identifier in static QR payload",
+        };
+      }
       const { data: student, error } = await (supabaseAdmin as any)
         .from("students")
-        .select("id, full_name, student_id, primary_route_id, is_active")
-        .or(`id.eq.${payload.studentId},student_id.eq.${payload.studentId}`)
+        .select("id, full_name, student_id_code, primary_route_id, transport_access_suspended")
+        .or(studentFilter)
         .maybeSingle();
 
       if (error || !student) {
@@ -77,7 +97,7 @@ export class StaticQrStrategy implements AttendanceValidationStrategy<StaticQrPa
         };
       }
 
-      if (student.is_active === false) {
+      if (student.transport_access_suspended === true) {
         return {
           isValid: false,
           status: "EXPIRED_PASS",
@@ -94,7 +114,7 @@ export class StaticQrStrategy implements AttendanceValidationStrategy<StaticQrPa
         student: {
           id: student.id,
           name: student.full_name,
-          studentIdCode: student.student_id,
+          studentIdCode: student.student_id_code,
           primaryRouteId: student.primary_route_id,
         },
         message: "Static bus/seat QR validated within geofenced proximity",

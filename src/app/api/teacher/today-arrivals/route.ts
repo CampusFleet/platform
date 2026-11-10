@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Fetch all enrolled students for the target class(es), ordered ascending by name
     let studentQuery = supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, full_name, class_id, class_name, email, phone")
       .order("full_name", { ascending: true });
 
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     const tripIds = Array.from(new Set((attendances || []).map((a) => a.trip_id).filter(Boolean)));
 
     const { data: buses } = busIds.length > 0
-      ? await supabaseAdmin.from("buses").select("id, bus_number, plate_number, name").in("id", busIds)
+      ? await supabaseAdmin.from("buses").select("id, bus_number, plate_number:registration_no").in("id", busIds)
       : { data: [] };
 
     const { data: trips } = tripIds.length > 0

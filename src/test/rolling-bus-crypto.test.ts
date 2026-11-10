@@ -1,20 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Test-only secret (the module has no hardcoded fallback and requires the env var)
+const DEFAULT_32_CHAR_SECRET = "test-rolling-secret-0123456789ab"; // exactly 32 chars
+process.env.BUS_ROLLING_SECRET_KEY = DEFAULT_32_CHAR_SECRET;
+
 import {
   generateRollingBusPayload,
   verifyRollingBusToken,
   computeRollingToken,
   getBusSecretKey,
-  DEFAULT_32_CHAR_SECRET,
+  getRollingMasterSecret,
 } from "@/lib/rolling-bus-crypto";
 
-// Mock Redis
+// Mock Redis (atomic SET NX semantics)
 const mockRedisStore = new Map<string, any>();
 vi.mock("@/lib/redis", () => ({
-  cacheGet: vi.fn(async (key: string) => mockRedisStore.get(key) || null),
-  cacheSet: vi.fn(async (key: string, val: any) => {
-    mockRedisStore.set(key, val);
-    return "OK";
-  }),
+  redis: {
+    set: vi.fn(async (key: string, val: any, opts?: { nx?: boolean }) => {
+      if (opts?.nx && mockRedisStore.has(key)) return null;
+      mockRedisStore.set(key, val);
+      return "OK";
+    }),
+  },
 }));
 
 describe("CampusFleet Dynamic Rolling Bus QR Cryptography", () => {
@@ -104,5 +111,38 @@ describe("CampusFleet Dynamic Rolling Bus QR Cryptography", () => {
     const res2 = await verifyRollingBusToken(payload.qrPayloadString, "stud-999");
     expect(res2.valid).toBe(false);
     expect(res2.code).toBe("REPLAY_ATTACK_DETECTED");
+  });
+});
+
+describe("Rolling QR hardening", () => {
+  beforeEach(() => mockRedisStore.clear());
+
+  it("uses the configured secret, never a hardcoded default", () => {
+    expect(getRollingMasterSecret()).toBe(DEFAULT_32_CHAR_SECRET.slice(0, 32));
+    const saved = process.env.BUS_ROLLING_SECRET_KEY;
+    delete process.env.BUS_ROLLING_SECRET_KEY;
+    expect(() => getRollingMasterSecret()).toThrow(/BUS_ROLLING_SECRET_KEY/);
+    process.env.BUS_ROLLING_SECRET_KEY = saved;
+  });
+
+  it("rejects tokens signed with a different key", async () => {
+    const timeBlock = Math.floor(Date.now() / 1000 / 2);
+    const forged = computeRollingToken("42", timeBlock, "attacker-key-attacker-key-attacker!");
+    const result = await verifyRollingBusToken({ busId: "42", timeBlock, token: forged }, "stud-1");
+    expect(result.valid).toBe(false);
+    expect(result.code).toBe("INVALID_TOKEN");
+  });
+
+  it("rejects tokens older than the default ±6 s window", async () => {
+    const timeBlock = Math.floor(Date.now() / 1000 / 2) - 10; // ~20 s old
+    const token = computeRollingToken("42", timeBlock);
+    const result = await verifyRollingBusToken({ busId: "42", timeBlock, token }, "stud-1");
+    expect(result.code).toBe("EXPIRED_OR_DRIFT");
+  });
+
+  it("requires a student identity for replay protection", async () => {
+    const payload = generateRollingBusPayload("42", "Bus 42");
+    const result = await verifyRollingBusToken(payload.qrPayloadString);
+    expect(result.valid).toBe(false);
   });
 });

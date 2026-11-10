@@ -51,14 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .select("id, is_primary, users(id, full_name, email, phone)")
       .eq("class_id", classId);
 
-    // 4. Timetable slots
-    const { data: timetable } = await supabaseAdmin
-      .from("class_timetables")
-      .select("*, users(full_name)")
-      .eq("class_id", classId)
-      .order("start_time", { ascending: true });
-
-    // 5. Shift Schedules from relational table
+    // 4. Shift Schedules (class_timetables was replaced by class_shift_schedules) from relational table
     const { data: scheds } = await supabaseAdmin
       .from("class_shift_schedules")
       .select("*")
@@ -123,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         .from("class_teachers")
         .select("is_primary")
         .eq("class_id", classId)
-        .eq("teacher_id", session.id)
+        .eq("teacher_id", session.userId)
         .maybeSingle();
 
       if (!allocation || !allocation.is_primary) {
@@ -195,6 +188,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const session = await getSession();
+    if (!session || !["admin", "transport_admin", "transport_manager"].includes(session.role)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: session ? 403 : 401 });
+    }
     const classId = params.id;
 
     // Unassign students from class

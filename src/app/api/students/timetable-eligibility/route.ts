@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSession } from "@/lib/jwt";
+import { resolveStudentScope } from "@/lib/security/student-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -21,14 +22,17 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const targetStudentId = searchParams.get("studentId") || session.studentId || session.id;
+    const scope = await resolveStudentScope(session, searchParams.get("studentId"));
+    if (!scope.ok) {
+      return NextResponse.json({ success: false, error: scope.error }, { status: scope.status });
+    }
     const shiftId = searchParams.get("shiftId");
 
-    // 1. Fetch student record with class_id
+    // 1. Fetch student record with class_id (students has no class_name column; it lives on students_full)
     const { data: student, error: studentError } = await supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, full_name, class_id, class_name")
-      .or(`id.eq.${targetStudentId},user_id.eq.${targetStudentId}`)
+      .eq("id", scope.studentId)
       .limit(1)
       .maybeSingle();
 

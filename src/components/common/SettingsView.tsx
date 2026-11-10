@@ -737,22 +737,21 @@ export function SettingsView() {
   }, [academicData.courses, selectedCourseId]);
 
   const sectionOptions = useMemo(() => {
-    if (selectedSpecializationId && profileForm.semester) {
-      const matched = (academicData.classes || []).filter(
-        c => c.specialization_id === selectedSpecializationId && c.semester === profileForm.semester
-      );
-      if (matched.length > 0) {
-        return matched.map(c => ({
-          value: c.section,
-          label: `Section ${c.section} (${c.name || c.section})`,
-        }));
-      }
-    }
-    return (academicData.sections || []).map(s => ({
-      value: s.code || s.name,
-      label: `Section ${s.code || s.name}`,
-    }));
-  }, [academicData.classes, academicData.sections, selectedSpecializationId, profileForm.semester]);
+    // Only sections that exist for this specialization + semester (no global A–H fallback)
+    if (!selectedSpecializationId || !profileForm.semester) return [];
+    const semNum = parseInt(String(profileForm.semester).replace(/\D/g, ""), 10);
+    return (academicData.classes || [])
+      .filter(
+        c => c.specialization_id === selectedSpecializationId &&
+             (c.semester === profileForm.semester || (!isNaN(semNum) && c.semester_num === semNum)) &&
+             c.is_active !== false
+      )
+      .sort((a, b) => String(a.section).localeCompare(String(b.section)))
+      .map(c => ({
+        value: c.section,
+        label: `Section ${c.section} (${c.name || c.section})`,
+      }));
+  }, [academicData.classes, selectedSpecializationId, profileForm.semester]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();

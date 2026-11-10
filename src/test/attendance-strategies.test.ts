@@ -12,6 +12,8 @@ import {
   reportSecurityIncident,
 } from "@/lib/biometrics";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { currentPassWindow, signStudentPass } from "@/lib/security/student-pass";
+import { chain } from "./helpers/supabase-chain";
 
 vi.mock("@/lib/biometrics", () => ({
   DEFAULT_FACE_MATCH_THRESHOLD: 0.35,
@@ -115,29 +117,40 @@ describe("Step 2: Modular Multi-Modal Attendance Strategy Architecture", () => {
     });
 
     it("rejects expired dynamic tokens (>2 min old screenshot)", async () => {
-      const oldWindow = Math.floor(Date.now() / 60000) - 5; // 5 minutes ago
+      const oldWindow = currentPassWindow() - 5; // 5 minutes ago, correctly signed
       const outcome = await strategy.validate(
         {
-          rawToken: JSON.stringify({ studentId: "stu-101", window: oldWindow }),
+          rawToken: JSON.stringify({ studentId: "stu-101", window: oldWindow, sig: signStudentPass("stu-101", oldWindow) }),
         },
         baseContext
       );
       expect(outcome.isValid).toBe(false);
       expect(outcome.status).toBe("EXPIRED_PASS");
-      expect(outcome.reason).toContain("Expired dynamic pass");
+      expect((outcome as any).reason).toContain("Expired dynamic pass");
+    });
+
+    it("rejects an unsigned or forged dynamic pass", async () => {
+      const w = currentPassWindow();
+      const unsigned = await strategy.validate({ rawToken: JSON.stringify({ studentId: "stu-101", window: w }) }, baseContext);
+      expect(unsigned.isValid).toBe(false);
+      const forged = await strategy.validate(
+        { rawToken: JSON.stringify({ studentId: "stu-101", window: w, sig: signStudentPass("stu-999", w) }) },
+        baseContext
+      );
+      expect(forged.isValid).toBe(false);
     });
 
     it("authenticates live dynamic pass for active student", async () => {
-      const currentWindow = Math.floor(Date.now() / 60000);
+      const currentWindow = currentPassWindow();
       const mockSelect = vi.fn().mockReturnValue({
         or: vi.fn().mockReturnValue({
           maybeSingle: vi.fn().mockResolvedValue({
             data: {
               id: "stu-101",
               full_name: "Rohan Verma",
-              student_id: "STU-042",
+              student_id_code: "STU-042",
               primary_route_id: "route-2",
-              is_active: true,
+              transport_access_suspended: false,
             },
             error: null,
           }),
@@ -147,7 +160,7 @@ describe("Step 2: Modular Multi-Modal Attendance Strategy Architecture", () => {
 
       const outcome = await strategy.validate(
         {
-          rawToken: JSON.stringify({ studentId: "stu-101", window: currentWindow }),
+          rawToken: JSON.stringify({ studentId: "stu-101", window: currentWindow, sig: signStudentPass("stu-101", currentWindow) }),
         },
         baseContext
       );
@@ -287,17 +300,13 @@ describe("Step 2: Modular Multi-Modal Attendance Strategy Architecture", () => {
         isAuthorized: true,
       });
 
-      const mockUpsert = vi.fn().mockResolvedValue({ data: null, error: null });
-      const mockUpdate = vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({ data: null, error: null }),
-        }),
-      });
-
+      // Live schema: today's reservation on bus 40 exists; no prior attendance row.
+      const reservations = chain({ data: [{ id: "res-1", bus_id: 40, trip_id: null, status: "ASSIGNED" }] });
+      const attendance = chain({ data: null });
       (supabaseAdmin.from as any).mockImplementation((table: string) => {
-        if (table === "attendance_records") return { upsert: mockUpsert };
-        if (table === "bus_reservations") return { update: mockUpdate };
-        return {};
+        if (table === "attendance_records") return attendance;
+        if (table === "bus_reservations") return reservations;
+        return chain();
       });
 
       const result = await engine.execute(

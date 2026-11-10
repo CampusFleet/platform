@@ -126,20 +126,19 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Log to audit trail in PostgreSQL
+    // audit_logs.id is a UUID with a database default (typed "aud_…" IDs would be rejected)
     await supabaseAdmin.from("audit_logs").insert({
-      id: createAuditLogId(),
       action: "CREW_ASSIGNED",
-      performed_by: assignedBy || "Transport Operations Staff",
-      entity_type: "TRIP_CREW",
+      reason: `Crew assigned by ${assignedBy || "Transport Operations Staff"}`,
+      entity: "TRIP_CREW",
       entity_id: tripId || busId,
-      details: {
+      new_value: {
         driverId,
         driverName: validatedDriverName,
         conductorId,
         conductorName: validatedConductorName,
         assignedAt: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
 
     return NextResponse.json({

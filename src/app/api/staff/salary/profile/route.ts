@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isSafeId } from "@/lib/security/safe-id";
 import {
   encryptSensitiveField,
   maskBankAccount,
@@ -14,17 +16,29 @@ export const dynamic = "force-dynamic";
  * GET /api/staff/salary/profile?staffId=...&userId=...
  * Retrieves current staff member's compensation profile and payout history
  */
+// Payroll administrators may view/edit any staff member; everyone else only themselves.
+const PAYROLL_ADMIN_ROLES = ["admin", "transport_admin"];
+
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+    }
+    const isPayrollAdmin = PAYROLL_ADMIN_ROLES.includes(session.role);
+
     const { searchParams } = new URL(req.url);
-    const staffId = searchParams.get("staffId");
-    const userId = searchParams.get("userId");
+    const staffId = isPayrollAdmin ? searchParams.get("staffId") : null;
+    const userId = isPayrollAdmin ? searchParams.get("userId") || (staffId ? null : session.userId) : session.userId;
 
     if (!staffId && !userId) {
       return NextResponse.json(
         { success: false, error: "Missing staffId or userId parameter." },
         { status: 400 }
       );
+    }
+    if ((staffId && !isSafeId(staffId)) || (userId && !isSafeId(userId))) {
+      return NextResponse.json({ success: false, error: "Invalid identifier." }, { status: 400 });
     }
 
     let query = supabaseAdmin.from("staff_payroll_full").select("*");
@@ -99,10 +113,17 @@ export async function GET(req: NextRequest) {
  */
 export async function PUT(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+    }
+    const isPayrollAdmin = PAYROLL_ADMIN_ROLES.includes(session.role);
+
     const body = await req.json();
+    // Non-admins can only change their OWN payout destination (prevents salary redirection).
+    const staffId: string | undefined = isPayrollAdmin ? body.staffId : undefined;
+    const userId: string | undefined = isPayrollAdmin ? body.userId || (staffId ? undefined : session.userId) : session.userId;
     const {
-      staffId,
-      userId,
       payoutMethod = "BANK_ACCOUNT",
       accountHolderName,
       bankName,
@@ -135,6 +156,13 @@ export async function PUT(req: NextRequest) {
       .select("id, role, full_name, user_id")
       .eq("id", targetStaffId)
       .maybeSingle();
+
+    if (!existingStaff) {
+      return NextResponse.json({ success: false, error: "Staff record not found." }, { status: 404 });
+    }
+    if (!isPayrollAdmin && existingStaff.user_id !== session.userId) {
+      return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+    }
 
     const role = existingStaff?.role || "driver";
     const holderName = accountHolderName?.trim() || existingStaff?.full_name || "Staff Member";

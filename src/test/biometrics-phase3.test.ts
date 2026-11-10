@@ -8,6 +8,7 @@ import {
   reportSecurityIncident,
 } from "@/lib/biometrics";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { chain } from "./helpers/supabase-chain";
 
 vi.mock("@/lib/jwt", () => ({
   getSessionFromRequest: vi.fn(),
@@ -96,22 +97,13 @@ describe("Phase 3: Autonomous Dual-Gate Telematics API (/api/biometrics/verify-g
       createdAt: new Date().toISOString(),
     });
 
-    // Mock attendance & reservation upserts
-    const mockUpsert = vi.fn().mockResolvedValue({ data: null, error: null });
-    const mockUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        in: vi.fn().mockResolvedValue({ data: null, error: null }),
-      }),
-    });
-
+    // Live schema: student has today's reservation on bus 40, no attendance yet
+    const reservations = chain({ data: [{ id: "res-1", bus_id: 40, trip_id: "trip-bus-40-today", status: "ASSIGNED" }] });
+    const attendance = chain({ data: null });
     (supabaseAdmin.from as any).mockImplementation((table: string) => {
-      if (table === "attendance_records") {
-        return { upsert: mockUpsert };
-      }
-      if (table === "bus_reservations") {
-        return { update: mockUpdate };
-      }
-      return {};
+      if (table === "attendance_records") return attendance;
+      if (table === "bus_reservations") return reservations;
+      return chain();
     });
 
     const validEmbedding = Array.from({ length: 512 }, () => 0.05);
@@ -138,6 +130,16 @@ describe("Phase 3: Autonomous Dual-Gate Telematics API (/api/biometrics/verify-g
     expect(json.isAuthorized).toBe(true);
     expect(json.student.name).toBe("Rohan Verma");
     expect(json.student.studentIdCode).toBe("STU-042");
+    expect(json.attendanceMarked).toBe(true);
+    expect(json.reservationUpdated).toBe(true);
+
+    // The attendance insert must use real attendance_records columns
+    const insertCall = (attendance as any).__calls.find((c: any) => c.method === "insert");
+    expect(insertCall.args[0]).toEqual(
+      expect.objectContaining({ student_id: "stu-101", bus_id: 40, method: "BIOMETRIC_FACE_ID", status: "BOARDED" })
+    );
+    expect(insertCall.args[0]).not.toHaveProperty("date");
+    expect(insertCall.args[0]).not.toHaveProperty("is_verified");
 
     expect(recordBusGateEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -227,6 +229,10 @@ describe("Phase 3: Autonomous Dual-Gate Telematics API (/api/biometrics/verify-g
         confidence: 88.0,
       },
     ]);
+
+    (supabaseAdmin.from as any).mockImplementation(() =>
+      chain({ data: [{ id: "res-1", bus_id: 40, trip_id: null, status: "BOARDED" }] })
+    );
 
     (recordBusGateEvent as any).mockResolvedValue({
       id: "alight-event-uuid",

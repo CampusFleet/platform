@@ -183,45 +183,20 @@ export default function StudentOnboardingPage() {
       return false;
     };
 
-    if (selectedSpecializationId) {
-      const matched = academicData.classes.filter(
-        c => c.specialization_id === selectedSpecializationId && isSemesterMatch(c)
-      );
-      if (matched.length > 0) {
-        return matched.map(m => ({
-          id: m.section_id || m.id,
-          code: m.section,
-          name: m.section_name || `Section ${m.section}`,
-          classId: m.id,
-        }));
-      }
-    }
-    if (selectedBranchId) {
-      const matched = academicData.classes.filter(
-        c => c.branch_id === selectedBranchId && isSemesterMatch(c)
-      );
-      if (matched.length > 0) {
-        return matched.map(m => ({
-          id: m.section_id || m.id,
-          code: m.section,
-          name: m.section_name || `Section ${m.section}`,
-          classId: m.id,
-        }));
-      }
-    }
-    if (academicData.sections && academicData.sections.length > 0) {
-      return academicData.sections.map(s => ({
-        id: s.id,
-        code: s.code,
-        name: s.name,
+    // Only sections that exist as a class for THIS specialization + semester.
+    // (No branch-wide or global A–H fallback: that showed other specializations'
+    // sections and let students pick a section with no class.)
+    if (!selectedSpecializationId) return [];
+    return academicData.classes
+      .filter(c => c.specialization_id === selectedSpecializationId && isSemesterMatch(c) && c.is_active !== false)
+      .sort((a, b) => String(a.section).localeCompare(String(b.section)))
+      .map(m => ({
+        id: m.section_id || m.id,
+        code: m.section,
+        name: m.section_name || `Section ${m.section}`,
+        classId: m.id,
       }));
-    }
-    return ["A", "B", "C", "D", "E", "F"].map(sec => ({
-      id: sec,
-      code: sec,
-      name: `Section ${sec}`,
-    }));
-  }, [academicData.classes, academicData.sections, selectedSpecializationId, selectedBranchId, selectedYear]);
+  }, [academicData.classes, selectedSpecializationId, selectedYear]);
 
   const currentMatchedClass = useMemo(() => {
     if (selectedClassId) {
@@ -244,13 +219,7 @@ export default function StudentOnboardingPage() {
              c.section === selectedSection
       ) || null;
     }
-    if (selectedBranchId && selectedYear && selectedSection) {
-      return academicData.classes.find(
-        c => c.branch_id === selectedBranchId &&
-             isSemesterMatch(c) &&
-             c.section === selectedSection
-      ) || null;
-    }
+    // No branch-level match: a section belongs to one specialization's class.
     return null;
   }, [academicData.classes, selectedClassId, selectedSpecializationId, selectedBranchId, selectedYear, selectedSection]);
 

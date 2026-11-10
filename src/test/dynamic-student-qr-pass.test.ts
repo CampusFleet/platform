@@ -4,6 +4,10 @@ import { GET as studentVerifyGet } from "@/app/api/students/verify/route";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 
+vi.mock("@/lib/jwt", () => ({
+  getSessionFromRequest: vi.fn(async () => ({ userId: "user-conductor", role: "conductor", fullName: "Test Conductor" })),
+}));
+
 // Helper to construct NextRequest with json body
 function mockPostRequest(body: any): NextRequest {
   return new NextRequest("http://localhost:3000/api/boarding/scan", {

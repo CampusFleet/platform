@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    const { data: buses } = await supabaseAdmin.from("buses").select("id, bus_number, plate_number, name, status");
+    const { data: buses } = await supabaseAdmin.from("buses").select("id, bus_number, plate_number:registration_no, status");
     const busMap = new Map((buses || []).map((b) => [b.id, b]));
 
     const formatted = (logs || []).map((l) => {
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       return {
         id: l.id,
         busId: l.bus_id,
-        busName: b ? (b.bus_number || b.plate_number || b.name) : l.bus_id,
+        busName: b ? (b.bus_number || b.plate_number) : l.bus_id,
         busStatus: b?.status,
         maintenanceType: l.maintenance_type,
         serviceDate: l.service_date,

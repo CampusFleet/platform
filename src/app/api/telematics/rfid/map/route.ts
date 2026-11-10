@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("audit_logs").insert({
         user_role: session.role,
         action: cleanRfid ? "MAP_RFID_CARD" : "UNMAP_RFID_CARD",
-        details: {
+        new_value: {
           adminUserId: session.userId,
           adminEmail: session.email,
           studentId: student.id,

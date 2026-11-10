@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { allocateSeatWithPreferences } from "@/lib/seat-allocation-engine";
+import { resolveStudentScope } from "@/lib/security/student-scope";
 import type { Bus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -19,16 +20,15 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
-    const studentId = req.nextUrl.searchParams.get("studentId") || session?.userId;
-
-    if (!studentId) {
-      return NextResponse.json({ success: false, message: "studentId required." }, { status: 400 });
+    const scope = await resolveStudentScope(session, req.nextUrl.searchParams.get("studentId"));
+    if (!scope.ok) {
+      return NextResponse.json({ success: false, message: scope.error }, { status: scope.status });
     }
 
     const { data: student } = await supabaseAdmin
       .from("students")
       .select("id, seat_row_preference, seat_position_preference, preferred_partner_student_id, preferred_partner_name")
-      .or(`id.eq.${studentId},user_id.eq.${studentId}`)
+      .eq("id", scope.studentId)
       .maybeSingle();
 
     return NextResponse.json({
@@ -52,11 +52,11 @@ export async function PUT(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
     const body = await req.json();
-    const studentId = body.studentId || session?.userId;
-
-    if (!studentId) {
-      return NextResponse.json({ success: false, message: "studentId required." }, { status: 400 });
+    const scope = await resolveStudentScope(session, body.studentId);
+    if (!scope.ok) {
+      return NextResponse.json({ success: false, message: scope.error }, { status: scope.status });
     }
+    const studentId = scope.studentId;
 
     const {
       rowPreference = "NO_PREFERENCE",
@@ -74,7 +74,7 @@ export async function PUT(req: NextRequest) {
         preferred_partner_student_id: partnerStudentId,
         preferred_partner_name: partnerName,
       })
-      .or(`id.eq.${studentId},user_id.eq.${studentId}`);
+      .eq("id", studentId);
 
     // 2. Check if student has an active reservation for today to auto-assign seat
     const today = new Date().toISOString().split("T")[0];

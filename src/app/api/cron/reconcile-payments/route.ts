@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { isAuthorizedCron } from "@/lib/security/cron-auth";
 
 export async function GET(request: NextRequest) {
-  // 1. Verify Cron Secret to prevent unauthorized access
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  
-  // Also allow manual trigger via query param for testing by admins
-  const { searchParams } = new URL(request.url);
-  const testKey = searchParams.get("testKey");
-  
-  if (
-    (!cronSecret || authHeader !== `Bearer ${cronSecret}`) && 
-    testKey !== process.env.CRON_SECRET
-  ) {
+  // 1. Verify Cron Secret (header only — secrets in query strings end up in access logs)
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -109,7 +100,7 @@ export async function GET(request: NextRequest) {
         await supabaseAdmin.from("audit_logs").insert({
           action: "RAZORPAY_CRON_RECONCILED",
           user_id: payment.notes?.userId || studentId,
-          details: { paymentId, orderId, amountPaid },
+          new_value: { paymentId, orderId, amountPaid },
         });
 
         reconciledCount++;

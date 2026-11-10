@@ -166,13 +166,42 @@ export default function DigitalPassView({
   const isBoarded = activeBooking?.status === "BOARDED";
   const isStandingPassenger = activeBooking?.passengerType === "STANDING_TILL_MERGE";
 
+  // Server-signed rotating pass token (HMAC, 60 s window) — refreshed before each window ends
+  const [signedPass, setSignedPass] = useState<{ studentId: string; window: number; sig: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      let nextInMs = 15000;
+      try {
+        const res = await fetch("/api/students/pass-token", { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled && data?.success && data.pass) {
+          setSignedPass({ studentId: data.pass.studentId, window: data.pass.window, sig: data.pass.sig });
+          nextInMs = Math.min(Number(data.pass.refreshInMs) || 15000, 60000);
+        }
+      } catch {
+        // Network hiccup: retry shortly
+      }
+      if (!cancelled) timer = setTimeout(refresh, nextInMs);
+    };
+    refresh();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
   // Dynamic QR Token Payload for Conductor Scanner
   const qrPayload = useMemo(() => {
     if (!activeBooking) return "";
     return JSON.stringify({
+      type: "DYNAMIC_PASS",
+      window: signedPass?.window,
+      sig: signedPass?.sig,
       bookingId: activeBooking.id,
       bookingCode: activeBooking.bookingCode,
-      studentId: activeStudent?.id || "st-student",
+      studentId: signedPass?.studentId || activeStudent?.id || "st-student",
       studentName: activeStudent?.fullName || currentUser?.fullName || "Student Passenger",
       tripId: activeBooking.tripId,
       seatNumber: activeBooking.seatNumber || (isStandingPassenger ? "STAND" : "1A"),
@@ -183,7 +212,7 @@ export default function DigitalPassView({
       issuedAt: activeBooking.createdAt,
       hash: `SEC-${(activeBooking.id || "pass").slice(0, 8)}-${(activeBooking.bookingCode || "gehu").toLowerCase()}`,
     });
-  }, [activeBooking, activeStudent, currentUser, isStandingPassenger]);
+  }, [activeBooking, activeStudent, currentUser, isStandingPassenger, signedPass]);
 
   const identityQrPayload = useMemo(() => {
     return JSON.stringify({

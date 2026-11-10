@@ -37,7 +37,8 @@ export async function findOrCreateUser({
   provider,
 }: FindOrCreateUserParams): Promise<{ user: AuthUserResult; isNewUser: boolean }> {
   const cleanEmail = (email || "").trim().toLowerCase();
-  const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").trim().toLowerCase();
+  // Server-only bootstrap admin identity (not NEXT_PUBLIC_*: it must not ship in the browser bundle)
+  const adminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
 
   // For conductor security and student verification, reject casual Google OAuth avatars (lh3.googleusercontent.com)
   // Only accept genuine institutional student photos.

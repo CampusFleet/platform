@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isSafeId } from "@/lib/security/safe-id";
+import { STUDENT_ADMIN_ROLES } from "@/lib/security/student-scope";
 
 // PATCH /api/students/[id]/class
 export async function PATCH(
@@ -7,7 +10,15 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Class assignment is an administrative action
+    const session = await getSessionFromRequest(req);
+    if (!session || !STUDENT_ADMIN_ROLES.includes(session.role)) {
+      return NextResponse.json({ success: false, message: "Forbidden." }, { status: session ? 403 : 401 });
+    }
     const studentId = params.id;
+    if (!isSafeId(studentId)) {
+      return NextResponse.json({ success: false, message: "Invalid student identifier." }, { status: 400 });
+    }
     const body = await req.json();
     const { classId } = body;
 

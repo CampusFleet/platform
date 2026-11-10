@@ -31,13 +31,22 @@ export default async function SubscriptionsAndBillingPage({
 
   const [
     { data: dbStudents },
-    { data: dbPayments },
     { data: dbZones },
   ] = await Promise.all([
-    supabaseAdmin.from("students_full").select("*").or(`user_id.eq.${session.userId},id.eq.${(session as any).studentId || 'null'}`),
-    supabaseAdmin.from("payments").select("*").order("created_at", { ascending: false }).limit(100),
+    supabaseAdmin.from("students_full").select("*").eq("user_id", session.userId),
     supabaseAdmin.from("transit_zones").select("*").order("code"),
   ]);
+
+  // Only this student's own payment submissions (the legacy `payments` table was dropped).
+  const ownStudentId = dbStudents?.[0]?.id;
+  const { data: dbPayments } = ownStudentId
+    ? await supabaseAdmin
+        .from("payment_submissions")
+        .select("*")
+        .eq("student_id", ownStudentId)
+        .order("created_at", { ascending: false })
+        .limit(100)
+    : { data: [] as any[] };
 
   const activeStudentRow = dbStudents?.[0];
   const isStudentSubscribed =

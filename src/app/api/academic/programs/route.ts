@@ -5,19 +5,22 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // 1. Fetch departments from database
-    const { data: dbDepartments, error: deptErr } = await supabaseAdmin
-      .from("academic_departments")
-      .select("id, code, name, degree_level")
-      .eq("is_active", true)
+    // 1. Courses (academic_departments was replaced by the normalized academic_courses table)
+    const { data: dbCourses } = await supabaseAdmin
+      .from("academic_courses")
+      .select("id, code, name, total_semesters")
       .order("name", { ascending: true });
 
-    // 2. Fetch semesters from database
-    const { data: dbSemesters, error: semErr } = await supabaseAdmin
-      .from("academic_semesters")
-      .select("id, code, name, order_index")
-      .eq("is_active", true)
-      .order("order_index", { ascending: true });
+    const dbDepartments = (dbCourses || []).map((c) => ({ id: c.id, code: c.code, name: c.name }));
+
+    // 2. Semesters (academic_semesters no longer exists): 1..max(total_semesters)
+    const maxSemesters = Math.max(0, ...(dbCourses || []).map((c) => Number(c.total_semesters) || 0));
+    const dbSemesters = Array.from({ length: maxSemesters }, (_, i) => ({
+      id: `semester-${i + 1}`,
+      code: `SEM${i + 1}`,
+      name: `Semester ${i + 1}`,
+      order_index: i + 1,
+    }));
 
     // 3. Fetch any additional distinct courses and years created by admins in classes table
     const { data: dbClasses } = await supabaseAdmin

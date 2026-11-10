@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("audit_logs").insert({
         user_role: session.role,
         action: cleanDeviceId ? "MAP_ESP32_TO_BUS" : "UNMAP_ESP32_FROM_BUS",
-        details: {
+        new_value: {
           adminUserId: session.userId,
           busId,
           busNumber: updatedBus.bus_number,

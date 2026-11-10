@@ -5,6 +5,8 @@ import {
   ValidationOutcome,
 } from "../types";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { verifyStudentPass } from "@/lib/security/student-pass";
+import { orEqFilter } from "@/lib/security/safe-id";
 
 export class DynamicQrStrategy implements AttendanceValidationStrategy<DynamicQrPayload> {
   public readonly modality = "DYNAMIC_QR" as const;
@@ -41,24 +43,25 @@ export class DynamicQrStrategy implements AttendanceValidationStrategy<DynamicQr
         }
       }
 
-      // Dynamic 1-Minute Anti-Screenshot Security Validation
-      const windowVal = payload.window ?? parsed?.window;
-      if (windowVal !== undefined && typeof windowVal === "number") {
-        const currentWindow = Math.floor(Date.now() / 60000);
-        const windowDiff = Math.abs(currentWindow - windowVal);
-        // Allow 2 windows of skew (120s buffer) to tolerate client clock drift
-        if (windowDiff > 2) {
-          return {
-            isValid: false,
-            status: "EXPIRED_PASS",
-            modality: this.modality,
-            studentId: targetStudentId,
-            reason: "SECURITY ALERT: Expired dynamic pass (>1 min old screenshot). Please show live dynamic pass.",
-          };
-        }
+      // Dynamic pass: the server-issued HMAC signature is mandatory. The rotating
+      // window alone is client-computable, so it cannot prove the pass is genuine.
+      const pass = verifyStudentPass({
+        studentId: targetStudentId,
+        window: payload.window ?? parsed?.window,
+        sig: payload.hmacSignature ?? parsed?.sig,
+      });
+      if (!pass.valid) {
+        return {
+          isValid: false,
+          status: pass.code === "EXPIRED_PASS" ? "EXPIRED_PASS" : "INVALID_CREDENTIAL",
+          modality: this.modality,
+          studentId: targetStudentId,
+          reason: `SECURITY ALERT: ${pass.message}`,
+        };
       }
 
-      if (!targetStudentId) {
+      const studentFilter = orEqFilter(["id", "student_id_code"], targetStudentId);
+      if (!targetStudentId || !studentFilter) {
         return {
           isValid: false,
           status: "INVALID_CREDENTIAL",
@@ -70,8 +73,8 @@ export class DynamicQrStrategy implements AttendanceValidationStrategy<DynamicQr
       // Fetch student from database
       const { data: student, error } = await (supabaseAdmin as any)
         .from("students")
-        .select("id, full_name, student_id, primary_route_id, is_active")
-        .or(`id.eq.${targetStudentId},student_id.eq.${targetStudentId}`)
+        .select("id, full_name, student_id_code, primary_route_id, transport_access_suspended")
+        .or(studentFilter)
         .maybeSingle();
 
       if (error || !student) {
@@ -84,7 +87,7 @@ export class DynamicQrStrategy implements AttendanceValidationStrategy<DynamicQr
         };
       }
 
-      if (student.is_active === false) {
+      if (student.transport_access_suspended === true) {
         return {
           isValid: false,
           status: "EXPIRED_PASS",
@@ -101,7 +104,7 @@ export class DynamicQrStrategy implements AttendanceValidationStrategy<DynamicQr
         student: {
           id: student.id,
           name: student.full_name,
-          studentIdCode: student.student_id,
+          studentIdCode: student.student_id_code,
           primaryRouteId: student.primary_route_id,
         },
         message: "Dynamic rotating QR pass verified successfully",

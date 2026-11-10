@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSession } from "@/lib/jwt";
+import { isSafeId } from "@/lib/security/safe-id";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,13 @@ export async function POST(req: NextRequest) {
       ? (session.studentId || session.userId)
       : (studentId || session.studentId || session.userId);
 
-    // Fetch student's class_id
+    if (!isSafeId(targetStudentId)) {
+      return NextResponse.json({ success: false, error: "Invalid student identifier." }, { status: 400 });
+    }
+
+    // Fetch student's class_id (class_name only exists on the students_full view)
     const { data: student } = await supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, full_name, class_id, class_name")
       .or(`id.eq.${targetStudentId},user_id.eq.${targetStudentId}`)
       .limit(1)

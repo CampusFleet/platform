@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
       .update(rawBody)
       .digest("hex");
 
-    if (expectedSignature !== signature) {
+    const expectedBuf = Buffer.from(expectedSignature, "utf8");
+    const receivedBuf = Buffer.from(signature, "utf8");
+    if (expectedBuf.length !== receivedBuf.length || !crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
       return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 400 });
     }
 
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin.from("audit_logs").insert({
         action: "RAZORPAY_WEBHOOK_PROCESSED",
         user_id: payment.notes?.userId || studentId,
-        details: { paymentId, orderId, amountPaid },
+        new_value: { paymentId, orderId, amountPaid },
       });
     }
 

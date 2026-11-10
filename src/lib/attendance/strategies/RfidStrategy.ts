@@ -28,7 +28,7 @@ export class RfidStrategy implements AttendanceValidationStrategy<RfidPayload> {
       // Query student paired to this RFID card
       const { data: student, error } = await (supabaseAdmin as any)
         .from("students")
-        .select("id, full_name, student_id, primary_route_id, is_active, rfid_card_id")
+        .select("id, full_name, student_id_code, primary_route_id, transport_access_suspended, rfid_card_id")
         .eq("rfid_card_id", normalizedUid)
         .maybeSingle();
 
@@ -41,7 +41,7 @@ export class RfidStrategy implements AttendanceValidationStrategy<RfidPayload> {
         };
       }
 
-      if (student.is_active === false) {
+      if (student.transport_access_suspended === true) {
         return {
           isValid: false,
           status: "EXPIRED_PASS",
@@ -58,7 +58,7 @@ export class RfidStrategy implements AttendanceValidationStrategy<RfidPayload> {
         student: {
           id: student.id,
           name: student.full_name,
-          studentIdCode: student.student_id,
+          studentIdCode: student.student_id_code,
           primaryRouteId: student.primary_route_id,
           rfidCardId: student.rfid_card_id,
         },

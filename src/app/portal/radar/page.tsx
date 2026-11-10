@@ -178,7 +178,8 @@ export default async function LiveRadarPage({
 
   const trips: Trip[] = (dbTrips || []).map((t: any) => ({
     id: t.id,
-    tripCode: t.trip_code,
+    // AGENTS.md: trip_code is internal-only and must never reach student clients.
+    tripCode: "",
     shiftId: t.shift_id,
     routeId: t.route_id || "",
     busId: t.bus_id || "",

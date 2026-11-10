@@ -27,23 +27,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Missing bus identifier." }, { status: 400 });
     }
 
-    // 1. Resolve authentic student ID (from students table)
-    const studentOrFilter = [
-      `user_id.eq.${session.userId}`,
-      `id.eq.${session.userId}`,
-      session.email ? `email.eq.${session.email}` : null,
-    ].filter(Boolean).join(",");
-
-    const { data: dbStudents } = await supabaseAdmin
+    // 1. Resolve the student profile owned by this session (students has no email column)
+    const { data: studentRecord } = await supabaseAdmin
       .from("students")
-      .select("id, user_id, full_name, primary_route_id, primary_stop_id")
-      .or(studentOrFilter)
-      .limit(1);
+      .select("id, user_id, full_name, primary_route_id, primary_stop_id, transport_access_suspended")
+      .eq("user_id", session.userId)
+      .maybeSingle();
 
-    const studentRecord = dbStudents?.[0];
-    const resolvedStudentId = studentRecord?.id || session.userId;
+    if (!studentRecord?.id) {
+      return NextResponse.json({ success: false, message: "No student profile found for this account." }, { status: 404 });
+    }
+    if (studentRecord.transport_access_suspended) {
+      return NextResponse.json({ success: false, message: "Your transport access is suspended." }, { status: 403 });
+    }
+    const resolvedStudentId: string = studentRecord.id;
 
-    // 2. Resolve bus asset and foreign key ID
+    // 2. Resolve bus asset (must exist — no hardcoded fallback buses)
     const rawBusId = String(busId).trim();
     const numericBusId = parseInt(rawBusId.replace(/\D/g, ""), 10);
 
@@ -57,32 +56,37 @@ export async function POST(req: NextRequest) {
       dbBus = foundBuses?.[0];
     }
 
-    if (!dbBus && rawBusId) {
-      const { data: foundBuses } = await supabaseAdmin
-        .from("buses")
-        .select("id, bus_number, capacity, seat_layout, teacher_seats_count, current_route_id")
-        .eq("id", rawBusId)
-        .limit(1);
-      dbBus = foundBuses?.[0];
+    if (!dbBus) {
+      return NextResponse.json({ success: false, message: "Unknown bus in scanned QR code." }, { status: 404 });
     }
 
-    const resolvedBusId: number | null = dbBus ? dbBus.id : (!isNaN(numericBusId) ? numericBusId : null);
-    const resolvedBusNumber: string = dbBus ? String(dbBus.bus_number) : (rawBusId || "42");
+    const resolvedBusId: number = dbBus.id;
+    const resolvedBusNumber: string = String(dbBus.bus_number);
 
     // 3. Cryptographic Dynamic Rolling QR Verification (ESP32 In-Bus Display)
     let isRollingVerified = false;
     if (rollingPayload || rollingToken) {
-      const cryptoResult = await verifyRollingBusToken(
-        rollingPayload || rollingToken,
-        resolvedStudentId,
-        10 // toleranceSteps = 10 (+/- 20s window for smooth camera scan)
-      );
+      let cryptoResult;
+      try {
+        cryptoResult = await verifyRollingBusToken(rollingPayload || rollingToken, resolvedStudentId);
+      } catch (cfgErr: any) {
+        console.error("[board-self-service] rolling QR misconfigured:", cfgErr?.message);
+        return NextResponse.json({ success: false, message: "Dynamic QR boarding is not configured." }, { status: 503 });
+      }
 
       if (!cryptoResult.valid) {
         return NextResponse.json({
           success: false,
           status: cryptoResult.code || "INVALID_ROLLING_TOKEN",
           message: cryptoResult.error || "Dynamic QR verification failed.",
+        }, { status: 403 });
+      }
+      // The signed token names the bus whose screen was scanned; it must match the claimed bus.
+      if (String(cryptoResult.busId) !== String(resolvedBusId)) {
+        return NextResponse.json({
+          success: false,
+          status: "BUS_MISMATCH",
+          message: "This dynamic QR belongs to a different bus.",
         }, { status: 403 });
       }
       isRollingVerified = true;
@@ -127,9 +131,10 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (!liveTelematics && busLatitude && busLongitude) {
-        liveTelematics = { latitude: Number(busLatitude), longitude: Number(busLongitude) };
-      }
+      // NOTE: client-supplied busLatitude/busLongitude are ignored — the bus position
+      // must come from the bus GPS unit, otherwise the geofence can be spoofed.
+      void busLatitude;
+      void busLongitude;
 
       if (liveTelematics && typeof liveTelematics.latitude === "number" && typeof liveTelematics.longitude === "number") {
         const distToBusKm = calculateDistanceKm(
@@ -147,9 +152,12 @@ export async function POST(req: NextRequest) {
           isNearBus = false;
         }
       } else {
-        // Fall back to trusting physical scan if telematics device is offline
-        isNearBus = true;
-        nearestStopName = "Physical Bus Scan (Telematics Offline)";
+        // Fail closed: without live bus GPS a static poster scan cannot prove presence.
+        return NextResponse.json({
+          success: false,
+          status: "BUS_GPS_UNAVAILABLE",
+          message: `Bus ${resolvedBusNumber} GPS is offline, so a static QR scan cannot be verified. Please ask the conductor to scan your pass.`,
+        }, { status: 409 });
       }
 
       if (!isNearBus) {
@@ -165,46 +173,63 @@ export async function POST(req: NextRequest) {
     const { data: resResult } = await supabaseAdmin
       .from("bus_reservations")
       .select("*, buses(*)")
-      .or(`student_id.eq.${resolvedStudentId},student_id.eq.${session.userId}`)
+      .eq("student_id", resolvedStudentId)
       .in("reservation_date", allowedDates)
       .neq("status", "CANCELLED")
       .order("created_at", { ascending: false });
 
     const reservations = resResult || [];
-    const targetReservation = reservations.find((r) => 
-      String(r.bus_id) === String(resolvedBusId) || 
-      String(r.bus_id) === String(resolvedBusNumber) ||
-      String(r.bus_id) === String(rawBusId)
-    ) || (reservations.length > 0 ? reservations[0] : null);
+    const targetReservation = reservations.find((r) => String(r.bus_id) === String(resolvedBusId)) || null;
+
+    // Self-service boarding is only for the bus the student is assigned to today.
+    // Boarding a different bus (roaming) must go through the conductor scanner.
+    if (!targetReservation && reservations.length > 0) {
+      return NextResponse.json({
+        success: false,
+        status: "WRONG_BUS",
+        message: `You are not assigned to Bus ${resolvedBusNumber} today. Please ask the conductor to approve roaming boarding.`,
+      }, { status: 403 });
+    }
 
     // 6. Resolve Trip ID (ensuring FK compliance: must exist in trips or be NULL)
+    // Only today's trips on this bus qualify (never attach to an old completed trip).
     let resolvedTripId: string | null = targetReservation?.trip_id || null;
-    if (!resolvedTripId && resolvedBusId) {
-      const { data: activeTrip } = await supabaseAdmin
+    let resolvedShiftId: string | null = targetReservation?.shift_id || null;
+    if (!resolvedTripId) {
+      const { data: todaysTrip } = await supabaseAdmin
         .from("trips")
-        .select("id")
+        .select("id, shift_id, status")
         .eq("bus_id", resolvedBusId)
-        .in("status", ["IN_PROGRESS", "ACTIVE", "SCHEDULED"])
-        .order("created_at", { ascending: false })
+        .in("trip_date", allowedDates)
+        .neq("status", "CANCELLED")
+        .order("started_at", { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
-
-      if (activeTrip?.id) {
-        resolvedTripId = activeTrip.id;
-      } else {
-        const { data: anyTrip } = await supabaseAdmin
-          .from("trips")
-          .select("id")
-          .eq("bus_id", resolvedBusId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        resolvedTripId = anyTrip?.id || null;
-      }
+      resolvedTripId = todaysTrip?.id || null;
+      resolvedShiftId = resolvedShiftId || todaysTrip?.shift_id || null;
     }
 
     // 7. Check Teacher Reserved Seats
-    const chosenSeat = seatId || targetReservation?.chosen_seat || "12A";
+    // No invented default seat: an unseated rider stays unseated until they pick one.
+    const chosenSeat: string | null = (typeof seatId === "string" && seatId.trim()) || targetReservation?.chosen_seat || null;
+
+    // A seat already held by another rider on this bus today cannot be claimed.
+    if (chosenSeat && chosenSeat !== targetReservation?.chosen_seat) {
+      const { data: seatHolder } = await supabaseAdmin
+        .from("bus_reservations")
+        .select("id")
+        .eq("bus_id", resolvedBusId)
+        .in("reservation_date", allowedDates)
+        .eq("chosen_seat", chosenSeat)
+        .neq("status", "CANCELLED")
+        .neq("student_id", resolvedStudentId)
+        .limit(1)
+        .maybeSingle();
+      if (seatHolder) {
+        return NextResponse.json({ success: false, message: `Seat ${chosenSeat} is already taken. Please choose another seat.` }, { status: 409 });
+      }
+    }
+
     if (chosenSeat && dbBus) {
       const busSeats = generateSeatLayout(dbBus.capacity, dbBus.seat_layout || "NONE");
       const nTeachers = typeof dbBus.teacher_seats_count === "number" ? dbBus.teacher_seats_count : 0;
@@ -222,8 +247,9 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
 
     // 8. Update or Insert bus_reservations (Guarantees the Student Portal shows BOARDED)
+    let reservationId: string | null = targetReservation?.id || null;
     if (targetReservation?.id) {
-      await supabaseAdmin
+      const { error: resUpdErr } = await supabaseAdmin
         .from("bus_reservations")
         .update({
           status: "BOARDED",
@@ -236,19 +262,32 @@ export async function POST(req: NextRequest) {
           unlock_timestamp: nowIso,
         })
         .eq("id", targetReservation.id);
+      if (resUpdErr) {
+        console.error("[board-self-service] reservation update failed:", resUpdErr.message);
+        return NextResponse.json({ success: false, message: "Could not update your reservation. Please retry." }, { status: 500 });
+      }
     } else {
-      // Auto-create reservation so attendance is recorded on the student's dashboard
-      const newResId = createBookingId();
-      const boardingStop = studentRecord?.primary_stop_id || "stop-lamachaur";
-      await supabaseAdmin
+      // Auto-create today's reservation on this bus. Requires a real stop and today's shift
+      // (no hardcoded stop/shift fallbacks).
+      const boardingStop = studentRecord.primary_stop_id;
+      if (!boardingStop || !resolvedShiftId) {
+        return NextResponse.json({
+          success: false,
+          status: "NO_ACTIVE_TRIP",
+          message: `No trip is scheduled for Bus ${resolvedBusNumber} right now. Please ask the conductor to board you.`,
+        }, { status: 409 });
+      }
+      const newResId = crypto.randomUUID();
+      reservationId = newResId;
+      const { error: resInsErr } = await supabaseAdmin
         .from("bus_reservations")
         .insert({
           id: newResId,
           student_id: resolvedStudentId,
           trip_id: resolvedTripId,
-          bus_id: resolvedBusId || 52,
+          bus_id: resolvedBusId,
           boarding_stop_id: boardingStop,
-          shift_id: "shift-1",
+          shift_id: resolvedShiftId,
           reservation_date: today,
           assigned_by: "AI_AUTO",
           status: "BOARDED",
@@ -260,15 +299,20 @@ export async function POST(req: NextRequest) {
           distance_meters: calculatedDistMeters,
           unlock_timestamp: nowIso,
         });
+      if (resInsErr) {
+        console.error("[board-self-service] reservation insert failed:", resInsErr.message);
+        return NextResponse.json({ success: false, message: "Could not create your reservation. Please ask the conductor." }, { status: 500 });
+      }
     }
 
     // 9. Add verified attendance record to attendance_records
     const attendanceId = `att-self-${Date.now()}`;
-    await supabaseAdmin.from("attendance_records").insert({
+    const { error: attInsErr } = await supabaseAdmin.from("attendance_records").insert({
       id: attendanceId,
       student_id: resolvedStudentId,
+      reservation_id: reservationId,
       trip_id: resolvedTripId,
-      bus_id: resolvedBusId || 52,
+      bus_id: resolvedBusId,
       method: isRollingVerified ? "ROLLING_ENCRYPTED_QR" : "QR_SCAN", 
       status: "BOARDED",
       verified_by: isRollingVerified ? `ESP32 Rolling Display (Bus ${resolvedBusNumber})` : "Self-Service QR Scanner",
@@ -284,6 +328,10 @@ export async function POST(req: NextRequest) {
       distance_meters: calculatedDistMeters,
       unlock_timestamp: nowIso,
     });
+    if (attInsErr) {
+      console.error("[board-self-service] attendance insert failed:", attInsErr.message);
+      return NextResponse.json({ success: false, message: "Could not record attendance. Please retry." }, { status: 500 });
+    }
 
     // 10. Cache attendance unlock state in Redis
     try {
@@ -291,7 +339,7 @@ export async function POST(req: NextRequest) {
         lockStatus: "UNLOCKED",
         unlockedBy: isRollingVerified ? "ROLLING_BUS_QR" : "LOCATION_DISTANCE",
         distanceMeters: calculatedDistMeters,
-        busId: resolvedBusId || 52,
+        busId: resolvedBusId,
         busNumber: resolvedBusNumber,
         tripId: resolvedTripId,
         timestamp: nowIso,

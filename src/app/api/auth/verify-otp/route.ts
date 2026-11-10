@@ -4,7 +4,6 @@ import { signToken, createSessionCookie } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { findOrCreateUser } from "@/lib/account-service";
 import { redis } from "@/lib/redis";
-import { createUserId } from "@/lib/id";
 
 // In-memory brute-force protection
 const verifyAttempts = new Map<string, { count: number; windowStart: number }>();
@@ -116,14 +115,13 @@ export async function POST(req: NextRequest) {
       });
       user = result.user;
     } catch (userErr) {
-      console.warn("findOrCreateUser fallback triggered:", userErr);
-      const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").toLowerCase();
-      user = {
-        id: createUserId(),
-        email: cleanEmail,
-        full_name: cleanEmail.split("@")[0],
-        role: cleanEmail === adminEmail ? "admin" : "student",
-      };
+      // Fail closed: never mint a session (let alone an admin one) for a user
+      // that could not be loaded from or saved to the database.
+      console.error("findOrCreateUser failed during OTP login:", userErr);
+      return NextResponse.json(
+        { success: false, error: "Sign-in is temporarily unavailable. Please try again shortly." },
+        { status: 503 }
+      );
     }
 
     // Create JWT session

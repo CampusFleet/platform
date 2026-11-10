@@ -9,6 +9,15 @@ vi.mock("@/lib/supabaseClient", () => ({
   supabaseAdmin: mockSupabaseAdmin,
 }));
 
+vi.mock("@/lib/jwt", () => ({
+  getSessionFromRequest: vi.fn(async (req: any) => {
+    const body = await req.clone().json().catch(() => ({}));
+    return ["CONFIRM_ONBOARD", "RUNNING_TO_BUS"].includes(body.action)
+      ? { userId: body.studentId, role: "student", fullName: "Student" }
+      : { userId: "user-conductor", role: "conductor", fullName: "Vikram Conductor" };
+  }),
+}));
+
 vi.mock("@/lib/redis", () => ({
   redis: {
     keys: vi.fn().mockResolvedValue([]),
@@ -24,6 +33,7 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
     bus_departure_alerts: any[];
     audit_logs: any[];
     bookings: any[];
+    students: any[];
     bus_reservations: any[];
     notifications: any[];
     trips: any[];
@@ -67,6 +77,7 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
         },
       ],
       bookings: [],
+      students: [{ id: "stud-01", user_id: "stud-01" }],
       bus_departure_alerts: [],
       audit_logs: [],
       notifications: [],
@@ -90,6 +101,12 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
         then: vi.fn().mockImplementation((resolve) => {
           const rows = (dbTables as any)[table] || [];
           return Promise.resolve(resolve({ data: rows, error: null }));
+        }),
+        maybeSingle: vi.fn().mockImplementation(() => {
+          const sid = (builder.eq.mock.calls.find((c: any[]) => c[0] === "user_id") || [])[1];
+          const rows = (dbTables as any)[table] || [];
+          const row = table === "students" ? { id: sid, user_id: sid } : rows[0] || null;
+          return Promise.resolve({ data: row, error: null });
         }),
         single: vi.fn().mockImplementation(() => {
           if (table === "trips") {
@@ -172,6 +189,7 @@ describe("Bus Departure Notification System & ACID Properties (Standard SQL)", (
     const audit = dbTables.audit_logs[0];
     expect(audit.action).toBe("BUS_DEPARTURE_ALERT_TRIGGERED");
     expect(audit.user_role).toBe("conductor");
+    expect(audit.user_id).toBe("user-conductor");
     expect(audit.entity).toBe("Trip");
     expect(audit.entity_id).toBe("trip-alpha-001");
     expect(audit.new_value.status).toBe("ACTIVE");

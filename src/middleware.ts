@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { resolveApiAccess, safeEqual, STAFF } from "@/lib/security/api-access";
 
 /**
  * Next.js Middleware — Route Protection via JWT validation.
  * Protects portal, admin, staff, driver, conductor routes.
- * Public routes (login, home, API) pass through.
+ * API routes require a session by default; see src/lib/security/api-access.ts
+ * for the public / device / role rules.
  *
  * Security features (Cloudflare Audit compliant):
  * - CSRF origin verification on state-changing requests
@@ -20,14 +22,6 @@ const PROTECTED_PREFIXES = [
   "/driver",
   "/conductor",
   "/teacher",
-];
-
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/api",
-  "/_next",
-  "/favicon.ico",
 ];
 
 // Allowed origins for CSRF checks — configured from environment
@@ -142,8 +136,36 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // Allow API routes through to their route handlers
+  // Validate JWT from cookie if present
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  const session = token ? await verifyToken(token) : null;
+
+  // ── API authentication & role gate (deny by default) ────────────────
   if (pathname.startsWith("/api")) {
+    const access = resolveApiAccess(pathname, req.method);
+
+    if (access.kind === "device") {
+      // Bus hardware (ESP32 / GPS) authenticates with x-device-key; people with a session.
+      const deviceKey = process.env.TELEMATICS_DEVICE_KEY || "";
+      const presented = req.headers.get("x-device-key") || "";
+      const isDevice = deviceKey.length >= 32 && safeEqual(presented, deviceKey);
+      const isRead = req.method === "GET" || req.method === "HEAD";
+      const sessionAllowed = session && (isRead || (STAFF as readonly string[]).includes(session.role));
+      if (!isDevice && !sessionAllowed) {
+        return NextResponse.json(
+          { success: false, error: session ? "Forbidden." : "Authentication required." },
+          { status: session ? 403 : 401 }
+        );
+      }
+    } else if (access.kind === "session") {
+      if (!session) {
+        return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+      }
+      if (access.roles && !access.roles.includes(session.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+      }
+    }
+
     // Add request ID header for audit trail correlation
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-request-id", crypto.randomUUID());
@@ -151,10 +173,6 @@ export async function middleware(req: NextRequest) {
       request: { headers: requestHeaders },
     });
   }
-
-  // Validate JWT from cookie if present
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  const session = token ? await verifyToken(token) : null;
 
   // Root Homepage ("/") & Login ("/login") Handling
   if (pathname === "/" || pathname === "/login") {

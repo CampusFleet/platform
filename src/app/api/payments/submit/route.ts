@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin.from("audit_logs").insert({
         action: isAutoApproved ? "RAZORPAY_PAYMENT_CONFIRMED" : "PAYMENT_RECORDED",
         user_id: session.userId,
-        details: {
+        new_value: {
           transactionId: cleanTransactionId,
           amount: submittedAmount,
           autoApproved: isAutoApproved,

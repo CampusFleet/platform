@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
-import { supabaseAdmin } from "@/lib/supabaseClient";
+import { persistGateAttendance } from "@/lib/attendance/persist";
 import {
   matchStudentFace,
   recordBusGateEvent,
@@ -33,9 +33,12 @@ const verifyGateSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
-    // Allow driver, conductor, transport_admin, or service call
+    // Only on-bus crew and transport operations staff may submit gate camera events
     if (!session) {
       return NextResponse.json({ success: false, message: "Unauthorized." }, { status: 401 });
+    }
+    if (!["driver", "conductor", "transport_admin", "transport_manager", "admin"].includes(session.role)) {
+      return NextResponse.json({ success: false, message: "Forbidden." }, { status: 403 });
     }
 
     const body = await req.json();
@@ -94,52 +97,28 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // If Gate In (Boarding), mark attendance in attendance_records & bus_reservations
-      if (gateType === "GATE_IN") {
-        try {
-          const today = new Date().toISOString().split("T")[0];
-
-          // 1. Insert or update attendance_records
-          await supabaseAdmin
-            .from("attendance_records")
-            .upsert(
-              {
-                student_id: matchedCandidate.studentId,
-                bus_id: busId,
-                trip_id: tripId || null,
-                date: today,
-                status: "PRESENT",
-                boarding_method: "BIOMETRIC_FACE_ID",
-                boarding_latitude: latitude,
-                boarding_longitude: longitude,
-                boarding_stop_name: stopName || "Face ID Gate",
-                boarded_at: new Date().toISOString(),
-                is_verified: true,
-              },
-              { onConflict: "student_id,date" }
-            );
-
-          // 2. Update bus_reservations status to BOARDED
-          await supabaseAdmin
-            .from("bus_reservations")
-            .update({
-              status: "BOARDED",
-              boarding_time: new Date().toISOString(),
-              boarding_lat: latitude,
-              boarding_lng: longitude,
-              boarding_stop_name: stopName || null,
-            })
-            .eq("student_id", matchedCandidate.studentId)
-            .in("reservation_date", [today]);
-        } catch (attErr) {
-          console.warn("Attendance auto-sync error (non-fatal):", attErr);
-        }
-      }
+      // Persist attendance (GATE_IN → BOARDED, GATE_OUT → ALIGHTED) using live-schema columns
+      const persisted = await persistGateAttendance({
+        studentId: matchedCandidate.studentId,
+        busId,
+        tripId: tripId || null,
+        gateType,
+        method: "BIOMETRIC_FACE_ID",
+        unlockedBy: "FACE_ID",
+        latitude,
+        longitude,
+        stopName: stopName || null,
+        verifiedBy: session.fullName || session.userId,
+      });
 
       return NextResponse.json({
         success: true,
         matched: true,
         isAuthorized: true,
+        attendanceMarked: persisted.attendanceMarked,
+        alreadyMarked: persisted.alreadyMarked,
+        reservationUpdated: persisted.reservationUpdated,
+        isAssignedBus: persisted.isAssignedBus,
         gateType,
         student: {
           id: matchedCandidate.studentId,

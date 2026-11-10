@@ -39,7 +39,8 @@ export interface PayoutExecutionResult {
 function getRazorpayCredentials() {
   const keyId = (process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").trim();
   const keySecret = (process.env.RAZORPAY_KEY_SECRET || "").trim();
-  const accountNumber = (process.env.RAZORPAYX_ACCOUNT_NUMBER || "2323230044556677").trim();
+  // No hardcoded fallback: payouts must never be routed through an account that isn't configured.
+  const accountNumber = (process.env.RAZORPAYX_ACCOUNT_NUMBER || "").trim();
   const isTestKey = keyId.startsWith("rzp_test_");
 
   return { keyId, keySecret, accountNumber, isTestKey };
@@ -206,7 +207,19 @@ export async function executeSalaryPayout(params: PayoutExecutionParams): Promis
     };
   }
 
-  // 3. Live RazorpayX Payout Execution
+  // 3. Live RazorpayX Payout Execution (requires a configured source account)
+  if (!accountNumber) {
+    return {
+      success: false,
+      payoutRef,
+      gatewayFundAccountId: fundAccountId,
+      status: "FAILED",
+      gateway: "RAZORPAYX",
+      netAmount: totalAmount,
+      recipientMasked,
+      failureReason: "RAZORPAYX_ACCOUNT_NUMBER is not configured on the server.",
+    };
+  }
   try {
     const payoutPayload = {
       account_number: accountNumber,

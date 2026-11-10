@@ -234,10 +234,8 @@ export function UnifiedAppHeader({
 
   const portalViewRole = role || currentUser?.role || "student";
   const userAccountRole = currentUser?.role || portalViewRole;
-  const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "adityapandey.dev.in@gmail.com").toLowerCase();
-  const isActualAdmin =
-    userAccountRole === "admin" ||
-    currentUser?.email?.toLowerCase() === adminEmail;
+  // Admin UI is driven by the server-issued role only (no email-based elevation in the client).
+  const isActualAdmin = userAccountRole === "admin";
 
   // Active student identity matching
   const activeStudent = currentUser

@@ -84,10 +84,9 @@ CampusFleetStore.prototype.switchRole = function (this: CampusFleetStore, newRol
         studentId: newRole === "student" ? dbUser.id : undefined,
       };
     } else {
-      const adminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "").toLowerCase();
       this.currentUser = {
         id: createUserId(),
-        email: newRole === "admin" ? (adminEmail || "admin@gehu.ac.in") : `${newRole}@gehu.ac.in`,
+        email: `${newRole}@gehu.ac.in`,
         fullName: `${newRole.charAt(0).toUpperCase() + newRole.slice(1)} User`,
         role: newRole,
         studentId: newRole === "student" ? createStudentId() : undefined,

@@ -17,7 +17,14 @@ import {
   Zap,
 } from "lucide-react";
 import { Bus, Trip, Route } from "@/lib/types";
-import { generateRollingBusPayload, DEFAULT_TIME_STEP_SECONDS } from "@/lib/rolling-bus-crypto";
+// Rolling tokens are minted server-side only (/api/boarding/rolling-token).
+// Never import rolling-bus-crypto here: it would ship the HMAC secret to the browser.
+interface RollingQrState {
+  qrPayloadString: string;
+  timestampSec: number;
+  stepSeconds: number;
+  token: string;
+}
 
 interface BusQrTabProps {
   activeTrip: Trip;
@@ -28,27 +35,42 @@ interface BusQrTabProps {
 export function BusQrTab({ activeTrip, bus, route }: BusQrTabProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeView, setActiveView] = useState<"LIVE_ROLLING" | "DOOR_POSTER" | "SEAT_SHEET">("LIVE_ROLLING");
-  const [rollingData, setRollingData] = useState(() => 
-    bus ? generateRollingBusPayload(String(bus.id), String(bus.busNumber), undefined, DEFAULT_TIME_STEP_SECONDS) : null
-  );
+  const [rollingData, setRollingData] = useState<RollingQrState | null>(null);
 
-  // Live Cryptographic Rolling Ticker (Updates dynamically with server-synchronized time)
+  // Live rolling ticker: fetch a server-minted token, then refetch at the next step boundary.
   useEffect(() => {
     if (!bus || activeView !== "LIVE_ROLLING") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const tick = () => {
-      const payload = generateRollingBusPayload(
-        String(bus.id),
-        String(bus.busNumber),
-        undefined,
-        DEFAULT_TIME_STEP_SECONDS
-      );
-      setRollingData(payload);
+    const tick = async () => {
+      let nextInMs = 1000;
+      try {
+        const res = await fetch(
+          `/api/boarding/rolling-token?busId=${encodeURIComponent(String(bus.id))}&busNumber=${encodeURIComponent(String(bus.busNumber))}`,
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        if (!cancelled && data?.success && data.payload) {
+          setRollingData({
+            qrPayloadString: data.payload.qrPayloadString,
+            timestampSec: data.payload.timestampSec,
+            stepSeconds: data.payload.stepSeconds,
+            token: data.payload.token,
+          });
+          nextInMs = Math.max(250, Number(data.remainingInStepSec || 1) * 1000 + 50);
+        }
+      } catch {
+        // Retry on the next tick
+      }
+      if (!cancelled) timer = setTimeout(tick, nextInMs);
     };
 
     tick();
-    const interval = setInterval(tick, 500); // 500ms poll for high precision transitions
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [bus, activeView]);
 
   if (!bus) return null;

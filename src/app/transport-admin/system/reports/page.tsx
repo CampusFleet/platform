@@ -13,8 +13,24 @@ export default async function StaffSystemReportsPage() {
     { data: dbPayments },
   ] = await Promise.all([
     supabaseAdmin.from("bus_reservations_full").select("*").order("created_at", { ascending: false }).limit(500),
-    supabaseAdmin.from("payments").select("*").order("created_at", { ascending: false }).limit(200),
+    // The legacy `payments` table was dropped; report on payment_submissions instead.
+    supabaseAdmin
+      .from("payment_submissions_full")
+      .select("id, receipt_number, transaction_id, full_name, student_name, zone_code, amount, verified_amount, gateway_source, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
+
+  const payments = (dbPayments || []).map((p: any) => ({
+    id: p.id,
+    receiptNumber: p.receipt_number || p.transaction_id || p.id,
+    studentName: p.full_name || p.student_name || "",
+    planName: p.zone_code || "",
+    amount: Number(p.verified_amount ?? p.amount) || 0,
+    paymentMethod: p.gateway_source || "UPI",
+    createdAt: p.created_at,
+    status: p.status === "APPROVED" ? "PAID" : p.status,
+  }));
 
   const bookings: Booking[] = (dbBookings || []).map((b: any) => ({
     id: b.id,
@@ -36,7 +52,7 @@ export default async function StaffSystemReportsPage() {
       initialBookings={bookings}
       initialStudents={data.students}
       initialBuses={data.buses}
-      initialPayments={dbPayments || []}
+      initialPayments={payments}
       initialMaintenance={[]}
     />
   );

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Fetch students for student roll / ID codes
     const { data: students } = await supabaseAdmin
-      .from("students")
+      .from("students_full")
       .select("id, user_id, full_name, student_id_code, department, semester")
       .limit(60);
 

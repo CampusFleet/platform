@@ -2,9 +2,24 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "campusfleet-dev-secret-change-in-production-32chars!"
-);
+/**
+ * Signing key for session JWTs. There is no hardcoded fallback in production:
+ * a committed default would let anyone forge an admin session.
+ * Outside production a fixed dev-only key is allowed so the edge middleware and
+ * Node route handlers agree; it is never accepted when NODE_ENV === "production".
+ */
+const DEV_FALLBACK_SECRET =
+  process.env.NODE_ENV === "production" ? "" : "campusfleet-local-development-only-jwt-key";
+let cachedSecret: Uint8Array | null = null;
+function getJwtSecret(): Uint8Array {
+  if (cachedSecret) return cachedSecret;
+  const secret = process.env.JWT_SECRET || DEV_FALLBACK_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must be set to at least 32 characters.");
+  }
+  cachedSecret = new TextEncoder().encode(secret);
+  return cachedSecret;
+}
 
 const COOKIE_NAME = "campusfleet_session";
 const TOKEN_EXPIRY = "24h"; // Reduced from 7d for security — silent refresh handles UX
@@ -38,7 +53,7 @@ export async function signToken(payload: Omit<SessionPayload, "iat" | "exp" | "j
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setJti(jti)
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 }
 
 /**
@@ -47,7 +62,7 @@ export async function signToken(payload: Omit<SessionPayload, "iat" | "exp" | "j
  */
 export async function verifyToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET, {
+    const { payload } = await jwtVerify(token, getJwtSecret(), {
       issuer: ISSUER,
       audience: AUDIENCE,
     });

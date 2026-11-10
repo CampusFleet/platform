@@ -4,10 +4,26 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { store } from "@/lib/store";
 import { Student, TransitZone, Campus, Stop, Route } from "@/lib/types";
-import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Info, X } from "lucide-react";
+import {
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  X,
+  Sparkles,
+  ShieldCheck,
+  ArrowRight,
+  BusFront,
+} from "lucide-react";
 import { isStudentSubscriptionActive } from "@/lib/subscription-utils";
 import { detectCommuterZoneAndStop } from "@/lib/zone-detector";
 import { createStudentId } from "@/lib/id";
+import {
+  saveOnboardingDraft,
+  loadOnboardingDraft,
+  clearOnboardingDraft,
+} from "@/lib/onboarding-cache";
 import {
   OnboardingHeader,
   OnboardingStepNav,
@@ -35,6 +51,13 @@ export default function StudentOnboardingPage() {
 
   // Active Wizard Step: 1 = Home & Route, 2 = Profile & ID, 3 = Payment & Pass Activation
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
+
+  // Payment Verification State (Razorpay return handling)
+  const [paymentVerificationState, setPaymentVerificationState] = useState<
+    "IDLE" | "VERIFYING" | "SUCCESS" | "ERROR"
+  >("IDLE");
+  const [isDraftRestored, setIsDraftRestored] = useState(false);
+  const [isDraftCleared, setIsDraftCleared] = useState(false);
 
   // Toast Notification state
   const [toast, setToast] = useState<OnboardingToast | null>(null);
@@ -578,6 +601,7 @@ export default function StudentOnboardingPage() {
     const sig = params.get("razorpay_signature");
 
     if (paymentId && linkId && sig) {
+      setPaymentVerificationState("VERIFYING");
       setIsRazorpayLoading(true);
       fetch("/api/payments/razorpay/verify-link", {
         method: "POST",
@@ -594,7 +618,14 @@ export default function StudentOnboardingPage() {
         .then(data => {
           setIsRazorpayLoading(false);
           if (data.success) {
-            showToast("success", "🎉 Payment Verified! Your semester transit pass is officially unlocked. Opening Commuter Hub...", "Access Granted");
+            // 1. Mark in sessionStorage so client layout never triggers a redirect loop
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem("campusfleet_pass_just_activated", "true");
+            }
+            // 2. Clear any persisted onboarding draft
+            clearOnboardingDraft(currentUser?.id);
+
+            // 3. Clean URL parameters without reloading
             window.history.replaceState({}, document.title, window.location.pathname);
             
             const targetId = data.studentId || activeStudent?.id;
@@ -606,24 +637,33 @@ export default function StudentOnboardingPage() {
             }
             setServerStudent(prev => prev ? { ...prev, hasActiveSubscription: true, paymentStatus: "APPROVED" } : null);
 
-            // Hard reload to /portal so PortalLayout re-evaluates server authentication with the freshly active pass
+            // 4. Set state to SUCCESS (renders celebration view)
+            setPaymentVerificationState("SUCCESS");
+            showToast("success", "🎉 Payment Verified! Your semester transit pass is officially unlocked.", "Access Granted");
+
+            // 5. Clean, single transition to /portal after celebration
             setTimeout(() => {
               window.location.href = "/portal";
-            }, 1200);
+            }, 2400);
           } else {
+            setPaymentVerificationState("ERROR");
             showToast("error", data.error || "Failed to verify transaction.", "Verification Failed");
           }
         })
         .catch(err => {
           setIsRazorpayLoading(false);
+          setPaymentVerificationState("ERROR");
           showToast("error", err.message || "Network error verifying payment.", "Network Error");
         });
     }
-  }, [router, activeStudent?.id, currentUser?.id]);
+  }, [activeStudent?.id, currentUser?.id]);
 
   // Auto-redirect to Commuter Hub if commuter already has an active transit pass
   useEffect(() => {
     if (!dataLoaded) return;
+    // Never auto-redirect if actively processing or celebrating payment
+    if (paymentVerificationState === "VERIFYING" || paymentVerificationState === "SUCCESS") return;
+
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     const hasRazorpayParams = params.has("razorpay_payment_id") || params.has("razorpay_payment_link_id");
     if (hasRazorpayParams) return; // Don't redirect while actively verifying a payment callback
@@ -631,7 +671,7 @@ export default function StudentOnboardingPage() {
     if (isPassApproved || activeStudent?.hasActiveSubscription || activeStudent?.paymentStatus === "APPROVED") {
       router.replace("/portal");
     }
-  }, [dataLoaded, isPassApproved, activeStudent, router]);
+  }, [dataLoaded, isPassApproved, activeStudent, router, paymentVerificationState]);
 
   // Save profile and trigger Razorpay Checkout
   const handleSaveAndCheckout = async () => {
@@ -802,6 +842,156 @@ export default function StudentOnboardingPage() {
     }
   }, [dataLoaded, activeStudent, currentUser, academicData.classes, stops]);
 
+  // ── Draft Restoration on Mount (Survives Refresh, Navigation, and Tab Sleeping) ──
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("razorpay_payment_id") || params.has("razorpay_payment_link_id")) {
+      return; // Actively verifying payment, do not override
+    }
+
+    const draft = loadOnboardingDraft(currentUser?.id);
+    if (draft) {
+      if (draft.activeStep) setActiveStep(draft.activeStep);
+      if (draft.homeAddress) {
+        setHomeAddress(draft.homeAddress);
+        setAddressSearchQuery(draft.addressSearchQuery || draft.homeAddress);
+      }
+      if (draft.homeLat && draft.homeLng) {
+        setHomeLat(draft.homeLat);
+        setHomeLng(draft.homeLng);
+      }
+      if (draft.primaryStopId) setPrimaryStopId(draft.primaryStopId);
+      if (draft.autoAssignedStopId) setAutoAssignedStopId(draft.autoAssignedStopId);
+      if (draft.selectedZoneCode) setSelectedZoneCode(draft.selectedZoneCode);
+      if (draft.assignedRouteName) setAssignedRouteName(draft.assignedRouteName);
+      if (draft.assignedRouteId) setAssignedRouteId(draft.assignedRouteId);
+      if (draft.walkingDistanceMeters) setWalkingDistanceMeters(draft.walkingDistanceMeters);
+      if (draft.walkingTimeMins) setWalkingTimeMins(draft.walkingTimeMins);
+      if (draft.semesterFee) setSemesterFee(draft.semesterFee);
+
+      if (draft.fullName) setFullName(draft.fullName);
+      if (draft.phone) setPhone(draft.phone);
+      if (draft.studentIdCode) setStudentIdCode(draft.studentIdCode);
+      if (draft.campusId) setCampusId(draft.campusId);
+      if (draft.campus) setCampus(draft.campus);
+      if (draft.department) setDepartment(draft.department);
+      if (draft.semester) setSemester(draft.semester);
+      if (draft.selectedCourseId) setSelectedCourseId(draft.selectedCourseId);
+      if (draft.selectedBranchId) setSelectedBranchId(draft.selectedBranchId);
+      if (draft.selectedSpecializationId) setSelectedSpecializationId(draft.selectedSpecializationId);
+      if (draft.selectedYear) setSelectedYear(draft.selectedYear);
+      if (draft.selectedSection) setSelectedSection(draft.selectedSection);
+      if (draft.selectedClassId) setSelectedClassId(draft.selectedClassId);
+      if (draft.emergencyName) setEmergencyName(draft.emergencyName);
+      if (draft.emergencyPhone) setEmergencyPhone(draft.emergencyPhone);
+      if (draft.photoUrl) {
+        setPhotoUrl(draft.photoUrl);
+        setLocalPreviewUrl(draft.localPreviewUrl || draft.photoUrl);
+      }
+      setIsDraftRestored(true);
+    }
+  }, [currentUser?.id]);
+
+  // ── Real-Time Auto-Save with 300ms Debounce ───────────────────────────
+  useEffect(() => {
+    if (!dataLoaded || isDraftCleared) return;
+    if (isPassApproved || paymentVerificationState === "SUCCESS" || paymentVerificationState === "VERIFYING") return;
+
+    const timer = setTimeout(() => {
+      saveOnboardingDraft(currentUser?.id, {
+        version: 1,
+        activeStep,
+        homeAddress,
+        addressSearchQuery,
+        homeLat,
+        homeLng,
+        primaryStopId,
+        autoAssignedStopId,
+        selectedZoneCode,
+        assignedRouteName,
+        assignedRouteId,
+        walkingDistanceMeters,
+        walkingTimeMins,
+        semesterFee,
+        fullName,
+        phone,
+        studentIdCode,
+        campusId,
+        campus,
+        department,
+        semester,
+        selectedCourseId,
+        selectedBranchId,
+        selectedSpecializationId,
+        selectedYear,
+        selectedSection,
+        selectedClassId,
+        emergencyName,
+        emergencyPhone,
+        photoUrl,
+        localPreviewUrl: localPreviewUrl?.startsWith("blob:") ? "" : localPreviewUrl,
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [
+    dataLoaded,
+    isDraftCleared,
+    isPassApproved,
+    paymentVerificationState,
+    currentUser?.id,
+    activeStep,
+    homeAddress,
+    addressSearchQuery,
+    homeLat,
+    homeLng,
+    primaryStopId,
+    autoAssignedStopId,
+    selectedZoneCode,
+    assignedRouteName,
+    assignedRouteId,
+    walkingDistanceMeters,
+    walkingTimeMins,
+    semesterFee,
+    fullName,
+    phone,
+    studentIdCode,
+    campusId,
+    campus,
+    department,
+    semester,
+    selectedCourseId,
+    selectedBranchId,
+    selectedSpecializationId,
+    selectedYear,
+    selectedSection,
+    selectedClassId,
+    emergencyName,
+    emergencyPhone,
+    photoUrl,
+    localPreviewUrl,
+  ]);
+
+  // Reset Draft Helper
+  const handleResetDraft = () => {
+    clearOnboardingDraft(currentUser?.id);
+    setIsDraftCleared(true);
+    setIsDraftRestored(false);
+    setActiveStep(1);
+    setPhone("");
+    setPhotoUrl("");
+    setLocalPreviewUrl("");
+    setStudentIdCode("");
+    setSelectedClassId("");
+    setSelectedSection("");
+    setSelectedYear("");
+    setSelectedSpecializationId("");
+    setSelectedBranchId("");
+    setSelectedCourseId("");
+    showToast("info", "Onboarding form reset. You can start fresh.", "Draft Cleared");
+  };
+
   // Initial smart auto-stop detection as soon as stops & routes are available
   useEffect(() => {
     if (stops.length > 0 && homeLat && homeLng && !autoAssignedStopId) {
@@ -886,6 +1076,107 @@ export default function StudentOnboardingPage() {
     });
   }, [stops, campus, campusId, campuses]);
 
+  if (paymentVerificationState === "VERIFYING") {
+    return (
+      <div className="min-h-screen bg-gray-50/80 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 rounded-3xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto shadow-inner">
+            <Loader2 className="w-8 h-8 animate-spin" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
+              Verifying Payment with Razorpay
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              Securing digital transit credentials and activating zero-touch Face ID clearance. Please do not close this window...
+            </p>
+          </div>
+          <div className="w-full bg-gray-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 w-2/3 animate-pulse rounded-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (paymentVerificationState === "SUCCESS") {
+    return (
+      <div className="min-h-screen bg-gray-50/80 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4">
+        <div className="max-w-lg w-full p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800/80 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in-95 duration-300 relative overflow-hidden">
+          {/* Ambient Glow */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Success Check Badge */}
+          <div className="relative mx-auto w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+            <CheckCircle2 className="w-9 h-9 stroke-[2.5]" />
+          </div>
+
+          <div className="space-y-1 relative z-10">
+            <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              Clearance Granted
+            </span>
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white pt-2">
+              Transit Pass Activated! 🎉
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 max-w-sm mx-auto leading-relaxed">
+              Your semester transit pass, dynamic QR commuter ID, and zero-touch Face ID are now active on all fleet buses.
+            </p>
+          </div>
+
+          {/* Pass Identity Card */}
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-left flex items-center gap-3.5 relative z-10">
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={fullName}
+                className="w-14 h-16 rounded-xl object-cover border border-emerald-500/40 shadow-xs shrink-0"
+              />
+            ) : (
+              <div className="w-14 h-16 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 shrink-0">
+                <BusFront className="w-7 h-7" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <h4 className="font-extrabold text-sm text-gray-900 dark:text-white truncate">
+                {fullName || "Student Commuter"}
+              </h4>
+              <p className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                ERP ID: {studentIdCode || "230111075"}
+              </p>
+              <div className="flex items-center gap-2 pt-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span>Stop: {assignedStop?.name || "Assigned Stop"}</span>
+                <span>•</span>
+                <span>Zone {selectedZoneCode.replace("ZONE_", "")}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Automatic Redirect Progress */}
+          <div className="space-y-3 relative z-10">
+            <div className="w-full bg-gray-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 w-full animate-pulse rounded-full" />
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 flex items-center justify-center gap-1.5 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              Redirecting to your Commuter Hub...
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/portal";
+              }}
+              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <span>Open My Commute Hub Now</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black text-emerald-600">
@@ -930,6 +1221,23 @@ export default function StudentOnboardingPage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Draft Restored Banner */}
+        {isDraftRestored && !isDraftCleared && (activeStep > 1 || Boolean(phone || photoUrl)) && (
+          <div className="mx-3 sm:mx-0 px-3.5 py-2.5 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-xs text-emerald-900 dark:text-emerald-200 shadow-2xs">
+            <div className="flex items-center gap-2 truncate">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="truncate">Draft restored from your last session (Step {activeStep} of 3)</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetDraft}
+              className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline shrink-0 cursor-pointer"
+            >
+              Reset Form
+            </button>
           </div>
         )}
 

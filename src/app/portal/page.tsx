@@ -1,7 +1,7 @@
 import { getSession } from "@/lib/jwt";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabaseClient";
-import { getOrFetchWithCache } from "@/lib/redis";
+import { getOrFetchWithCache, cacheGet, cacheDel } from "@/lib/redis";
 import UnifiedCommuteHub from "@/components/portal/UnifiedCommuteHub";
 import type { Student, Bus, Route, Stop, Shift, Trip, Booking, Staff } from "@/lib/types";
 
@@ -21,6 +21,12 @@ export default async function StudentPortalPage() {
     session.email ? `email.eq.${session.email}` : null,
   ].filter(Boolean).join(",");
 
+  // Fast-check Redis active subscription flag to bypass any stale row or replica lag
+  const cachedSub = await cacheGet(`student:subscription:${session.userId}`);
+  if (cachedSub === true) {
+    await cacheDel(`portal:student_row:${session.userId}`);
+  }
+
   const dbStudents = await getOrFetchWithCache({
     key: `portal:student_row:${session.userId}`,
     ttl: 60,
@@ -39,6 +45,7 @@ export default async function StudentPortalPage() {
 
   // New or unsubscribed students are guided directly to Unified Onboarding & Pass Activation
   const isStudentSubscribed =
+    cachedSub === true ||
     Boolean(activeStudentRow?.has_active_subscription) ||
     activeStudentRow?.payment_status === "APPROVED" ||
     activeStudentRow?.payment_status === "COMPLETED";

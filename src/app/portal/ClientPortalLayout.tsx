@@ -175,6 +175,11 @@ export default function ClientPortalLayout({
   useEffect(() => {
     // If the server explicitly said we are subscribed, SKIP ALL REDIRECTS!
     if (initialIsSubscribed) return;
+
+    // Fast-path: If pass was just activated in this session, skip any redirection loop
+    if (typeof window !== "undefined" && window.sessionStorage.getItem("campusfleet_pass_just_activated") === "true") {
+      return;
+    }
     
     if (isStudent) {
       // Seamlessly guide unsubscribed, new, or re-registered students to the Unified Onboarding & Pass Activation gateway
@@ -188,6 +193,9 @@ export default function ClientPortalLayout({
 
   // Fallback safety watchdog: if student access is blocked on /portal, guarantee automatic redirect to /portal/onboarding
   useEffect(() => {
+    if (typeof window !== "undefined" && window.sessionStorage.getItem("campusfleet_pass_just_activated") === "true") {
+      return;
+    }
     if (isAccessBlocked && !isOnboardingPage && !isPaymentPage) {
       const timer = setTimeout(() => {
         router.replace("/portal/onboarding");

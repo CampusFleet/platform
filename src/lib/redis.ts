@@ -252,6 +252,8 @@ export async function markStudentSubscriptionActiveInCache({
     ...validIds.flatMap((id) => [
       cacheDel(`student:profile:${id}`),
       cacheDel(`student:${id}`),
+      cacheDel(`portal:student_row:${id}`),
+      cacheDel(`portal:student_row:${id.toLowerCase()}`),
     ]),
   ]);
 }

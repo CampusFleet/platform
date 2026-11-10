@@ -88,6 +88,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { course, year, section, assignedTeacherId } = body;
 
+    // Every class belongs to a campus; default to the primary campus.
+    let campusId: string | null = typeof body.campusId === "string" && body.campusId ? body.campusId : null;
+    if (!campusId) {
+      const { data: primary } = await supabaseAdmin
+        .from("campuses")
+        .select("id")
+        .eq("is_primary", true)
+        .limit(1)
+        .maybeSingle();
+      campusId = primary?.id || null;
+    }
+    if (!campusId) {
+      return NextResponse.json({ success: false, message: "A campus is required for the class." }, { status: 400 });
+    }
+
     if (!course || !year || !section) {
       return NextResponse.json(
         { success: false, message: "Course, Year, and Section are required." },
@@ -97,11 +112,12 @@ export async function POST(req: NextRequest) {
 
     const name = `${course.trim()} - ${year.trim()} (Sec ${section.trim().toUpperCase()})`;
 
-    // Check duplicate
+    // Check duplicate (same name at the same campus)
     const { data: existing } = await supabaseAdmin
       .from("classes")
       .select("id, name")
       .eq("name", name)
+      .eq("campus_id", campusId)
       .maybeSingle();
 
     if (existing) {
@@ -123,6 +139,7 @@ export async function POST(req: NextRequest) {
       name,
       is_active: true,
       semester: year.trim(),
+      campus_id: campusId,
     };
     if (secRow?.id) {
       insertPayload.section_id = secRow.id;

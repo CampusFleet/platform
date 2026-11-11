@@ -55,6 +55,7 @@ async function loadOrtLibrary(): Promise<any> {
       if (ort?.env?.wasm) {
         ort.env.wasm.wasmPaths = "/wasm/ort/";
         ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
       }
       resolve(ort);
     };
@@ -71,6 +72,7 @@ async function loadOrtLibrary(): Promise<any> {
         if (ort?.env?.wasm) {
           ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/";
           ort.env.wasm.numThreads = 1;
+          ort.env.wasm.proxy = false;
         }
         resolve(ort);
       };
@@ -102,6 +104,7 @@ export async function getFaceEmbeddingSession(): Promise<any> {
       if (ort.env?.wasm) {
         ort.env.wasm.wasmPaths = "/wasm/ort/";
         ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
       }
 
       // Fetch model array buffer directly (bypasses URL origin bugs on mobile browsers)
@@ -111,9 +114,9 @@ export async function getFaceEmbeddingSession(): Promise<any> {
       }
       const modelBuffer = await modelRes.arrayBuffer();
 
-      // Execute with WebAssembly backend for robust shape and dynamic batch handling
+      // Execute with WebAssembly backend for maximum performance, fallback to WebGL
       onnxSession = await ort.InferenceSession.create(modelBuffer, {
-        executionProviders: ["wasm"],
+        executionProviders: ["wasm", "webgl"],
         graphOptimizationLevel: "all",
       });
 

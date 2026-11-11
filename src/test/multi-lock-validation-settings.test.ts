@@ -88,3 +88,4 @@ describe("Institutional Multi-Lock Gate Validation Policy", () => {
     expect(rules.modeLabel).toContain("Universal Parallel Gate");
   });
 });
+

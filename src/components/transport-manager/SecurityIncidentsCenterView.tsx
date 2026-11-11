@@ -41,6 +41,7 @@ export function SecurityIncidentsCenterView({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedIncidentForResolution, setSelectedIncidentForResolution] = useState<BusSecurityIncident | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState<string>("");
+  const [falseAlert, setFalseAlert] = useState<boolean>(false);
   const [isSubmittingResolution, setIsSubmittingResolution] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -65,25 +66,23 @@ export function SecurityIncidentsCenterView({
       fetchIncidents();
     }
 
-    // Cross-tab real-time sync via BroadcastChannel
-    let channel: BroadcastChannel | null = null;
+    // Cross-device live updates (Server-Sent Events); slow polling stays as a safety net.
+    let source: EventSource | null = null;
     try {
-      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-        channel = new BroadcastChannel("campusfleet_security_incidents");
-        channel.onmessage = (event) => {
-          if (event?.data?.type === "NEW_INCIDENT") {
-            fetchIncidents();
-          }
-        };
+      if (typeof window !== "undefined" && "EventSource" in window) {
+        source = new EventSource("/api/ops/stream");
+        const refresh = () => fetchIncidents();
+        source.addEventListener("INCIDENT", refresh);
+        source.addEventListener("INCIDENT_RESOLVED", refresh);
       }
-    } catch (e) {
-      // fallback
+    } catch {
+      // SSE unavailable: polling below still works
     }
 
-    const interval = setInterval(fetchIncidents, 8000);
+    const interval = setInterval(fetchIncidents, 30000);
     return () => {
       clearInterval(interval);
-      if (channel) channel.close();
+      source?.close();
     };
   }, [fetchIncidents, initialIncidents.length]);
 
@@ -122,7 +121,8 @@ export function SecurityIncidentsCenterView({
   const handleUpdateStatus = async (
     incidentId: string,
     targetStatus: IncidentStatus,
-    notes?: string
+    notes?: string,
+    markFalseAlert?: boolean
   ) => {
     try {
       const res = await fetch(`/api/transport-manager/incidents/${incidentId}`, {
@@ -131,6 +131,7 @@ export function SecurityIncidentsCenterView({
         body: JSON.stringify({
           status: targetStatus,
           resolutionNotes: notes,
+          ...(markFalseAlert !== undefined ? { falseAlert: markFalseAlert } : {}),
         }),
       });
 
@@ -152,6 +153,7 @@ export function SecurityIncidentsCenterView({
       );
       setSelectedIncidentForResolution(null);
       setResolutionNotes("");
+      setFalseAlert(false);
     } catch (err: any) {
       setToastMessage({ type: "error", text: err.message || "Operation failed" });
       setTimeout(() => setToastMessage(null), 4000);
@@ -473,6 +475,21 @@ export function SecurityIncidentsCenterView({
                         </span>
                       </div>
 
+                      {incident.hasEvidence && (
+                        <details className="pt-1">
+                          <summary className="text-xs font-bold text-blue-600 dark:text-blue-400 cursor-pointer select-none">
+                            View door-camera photo (access is logged)
+                          </summary>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`/api/biometrics/evidence/${incident.id}`}
+                            alt="Door camera evidence"
+                            loading="lazy"
+                            className="mt-2 w-40 h-40 object-cover rounded-2xl border border-slate-200 dark:border-slate-800"
+                          />
+                        </details>
+                      )}
+
                       <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-0.5 flex-wrap">
                         <span className="font-mono">
                           GPS: {incident.latitude.toFixed(4)}, {incident.longitude.toFixed(4)}
@@ -586,6 +603,10 @@ export function SecurityIncidentsCenterView({
                 onChange={(e) => setResolutionNotes(e.target.value)}
                 className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mt-3 cursor-pointer">
+                <input type="checkbox" checked={falseAlert} onChange={(e) => setFalseAlert(e.target.checked)} />
+                False alert — this was an enrolled rider the camera did not recognise (used for accuracy metrics)
+              </label>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -605,7 +626,8 @@ export function SecurityIncidentsCenterView({
                   await handleUpdateStatus(
                     selectedIncidentForResolution.id,
                     "RESOLVED",
-                    resolutionNotes || "Resolved by Transport Manager"
+                    resolutionNotes || "Resolved by Transport Manager",
+                    falseAlert
                   );
                   setIsSubmittingResolution(false);
                 }}

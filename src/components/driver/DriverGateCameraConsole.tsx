@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import type { BusGateType, BusGateEvent } from "@/lib/types";
 import { useAttendancePolicy } from "@/lib/attendance";
+import { getFaceLandmarker } from "@/lib/face-landmarker-loader";
+import { boxFromLandmarks, cropFaceJpeg, SteadyFaceTrigger, type FaceBox } from "@/lib/gate/phone-capture";
 
 interface DriverGateCameraConsoleProps {
   busId: number;
@@ -30,7 +32,6 @@ interface DriverGateCameraConsoleProps {
   currentStopName?: string;
   latitude: number;
   longitude: number;
-  filterRouteId?: string;
 }
 
 interface GateStreamEvent {
@@ -46,13 +47,12 @@ interface GateStreamEvent {
 
 export function DriverGateCameraConsole({
   busId,
-  busNumber = "40",
+  busNumber = "",
   tripId,
   capacity = 50,
   currentStopName = "Current Stop",
   latitude,
   longitude,
-  filterRouteId,
 }: DriverGateCameraConsoleProps) {
   const [activeGate, setActiveGate] = useState<BusGateType>("GATE_IN");
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
@@ -72,7 +72,6 @@ export function DriverGateCameraConsole({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const scanIntervalRef = useRef<NodeJS.Timeout>();
 
   // Audio Alerts
   const playSound = useCallback((type: "BOARDED" | "ALIGHTED" | "INTRUDER") => {
@@ -206,157 +205,153 @@ export function DriverGateCameraConsole({
     }
   };
 
-  // Generate 512-d feature vector from current frame
-  const captureVectorFromVideo = (): number[] => {
-    if (!videoRef.current || !canvasRef.current) {
-      // Deterministic fallback vector
-      return Array.from({ length: 512 }, () => 0.05);
+  // ── Hybrid capture: the phone only finds + crops the face; the server templates, matches and decides ──
+  const landmarkerRef = useRef<any>(null);
+  const triggerRef = useRef(new SteadyFaceTrigger());
+  const inFlightRef = useRef(false);
+  const [autoScan, setAutoScan] = useState(true);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const pollDecision = async (captureId: string) => {
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => setTimeout(r, i === 0 ? 600 : 1000));
+      const res = await fetch(`/api/gate/captures/${captureId}`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const d = await res.json();
+      if (d.status === "DECIDED" || d.status === "REJECTED") return d;
     }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = 320;
-    canvas.height = 240;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return Array.from({ length: 512 }, () => 0.05);
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-
-    const embedding = new Float32Array(512);
-    const stepX = Math.floor(canvas.width / 32);
-    const stepY = Math.floor(canvas.height / 16);
-
-    let idx = 0;
-    for (let y = 0; y < 16 && idx < 512; y++) {
-      for (let x = 0; x < 32 && idx < 512; x++) {
-        const p = (y * stepY * canvas.width + x * stepX) * 4;
-        const lum = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000 / 255;
-        embedding[idx] = (lum - 0.5) * 2.0;
-        idx++;
-      }
-    }
-
-    let sumSq = 0;
-    for (let i = 0; i < 512; i++) sumSq += embedding[i] * embedding[i];
-    const norm = Math.sqrt(sumSq) || 1.0;
-    return Array.from(embedding).map((v) => Number((v / norm).toFixed(6)));
+    return null;
   };
 
-  // Trigger Gate Verification Inference
-  const handleTriggerGateScan = async () => {
-    setIsScanning(true);
-    setActiveAlert(null);
+  const showDecision = (gate: BusGateType, d: any) => {
+    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const known = Boolean(d?.student);
+    const outcome: string = d?.outcome || "PENDING";
+    if (outcome === "DUPLICATE" || outcome === "LOW_QUALITY") return; // silent: already counted / unusable frame
+    const ok = ["BOARDED", "ALIGHTED", "ROAMING"].includes(outcome);
+    playSound(ok ? (gate === "GATE_IN" ? "BOARDED" : "ALIGHTED") : "INTRUDER");
+    triggerHaptic(ok ? "success" : "alert");
+    if (outcome === "BOARDED") setOccupancyCount((p) => Math.min(capacity, p + 1));
+    if (outcome === "ALIGHTED") setOccupancyCount((p) => Math.max(0, p - 1));
+    const titles: Record<string, string> = {
+      BOARDED: `✓ ${d.student?.name} BOARDED`,
+      ALIGHTED: `✓ ${d.student?.name} ALIGHTED`,
+      ROAMING: `⚠ ${d.student?.name} stepped out before departure`,
+      WRONG_BUS: `⚠ ${d.student?.name} is booked on another bus`,
+      UNAUTHORIZED: "⚠ SECURITY ALERT: UNREGISTERED PERSON",
+      UNKNOWN_DEBOARDER: "⚠ Unregistered person left the bus",
+      INTRUDER_LEFT: "✓ Flagged person left the bus",
+      SPOOF_REJECTED: "⚠ Photo / screen spoof attempt",
+      UNKNOWN_LEFT_AT_START: "Unregistered person left at start stop",
+    };
+    setActiveAlert({
+      type: ok || outcome === "INTRUDER_LEFT" ? "SUCCESS" : "INTRUDER",
+      title: titles[outcome] || "Gate event recorded",
+      subtitle: known
+        ? `${d.student.studentIdCode || ""} • ${d.confidence ?? "–"}% match • ${currentStopName}`
+        : `${currentStopName} • reported to Transport Manager`,
+    });
+    setRecentEvents((prev) => [
+      {
+        id: d?.id || String(Date.now()),
+        gateType: gate,
+        studentName: d?.student?.name || "Unregistered person",
+        studentIdCode: d?.student?.studentIdCode || "UNKNOWN",
+        isAuthorized: ok,
+        confidence: d?.confidence ?? 0,
+        stopName: currentStopName,
+        timestamp: now,
+      },
+      ...prev.slice(0, 14),
+    ]);
+  };
 
-    try {
-      const embedding = captureVectorFromVideo();
-
-      const res = await fetch("/api/biometrics/verify-gate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          busId,
-          tripId,
-          gateType: activeGate,
-          embedding,
-          latitude,
-          longitude,
-          stopName: currentStopName,
-          filterRouteId,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || "Gate verification request failed");
-      }
-
-      if (data.matched && data.isAuthorized) {
-        // Authorized Commuter
-        const student = data.student;
-        playSound(activeGate === "GATE_IN" ? "BOARDED" : "ALIGHTED");
-        triggerHaptic("success");
-
-        if (activeGate === "GATE_IN") {
-          setOccupancyCount((prev) => Math.min(capacity, prev + 1));
-          setActiveAlert({
-            type: "SUCCESS",
-            title: `✓ ${student.name} BOARDED`,
-            subtitle: `${student.studentIdCode} • ${student.confidence}% Confidence • ${currentStopName}`,
-          });
-        } else {
-          setOccupancyCount((prev) => Math.max(0, prev - 1));
-          setActiveAlert({
-            type: "SUCCESS",
-            title: `✓ ${student.name} ALIGHTED`,
-            subtitle: `${student.studentIdCode} • Alighted at ${currentStopName}`,
-          });
-        }
-
-        const newEvent: GateStreamEvent = {
-          id: String(Date.now()),
-          gateType: activeGate,
-          studentName: student.name,
-          studentIdCode: student.studentIdCode,
-          isAuthorized: true,
-          confidence: student.confidence,
-          stopName: currentStopName,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-        };
-
-        setRecentEvents((prev) => [newEvent, ...prev.slice(0, 14)]);
-      } else {
-        // Intruder / Unauthorized Person
-        playSound("INTRUDER");
-        triggerHaptic("alert");
-
-        // Broadcast to Transport Manager dashboard instantly
-        if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-          try {
-            const secChannel = new BroadcastChannel("campusfleet_security_incidents");
-            secChannel.postMessage({
-              type: "NEW_INCIDENT",
-              busId,
-              busNumber,
-              incidentId: data.incidentId,
-              stopName: currentStopName,
-              latitude,
-              longitude,
-              timestamp: new Date().toISOString(),
-            });
-            secChannel.close();
-          } catch (e) {
-            // non-fatal
-          }
-        }
-
-        setActiveAlert({
-          type: "INTRUDER",
-          title: "⚠ SECURITY ALERT: UNAUTHORIZED COMMUTER",
-          subtitle: `Unregistered face detected at ${currentStopName}. Incident auto-dispatched to Transport Manager.`,
+  const submitCapture = useCallback(
+    async (box: FaceBox | null) => {
+      const video = videoRef.current;
+      if (!video || inFlightRef.current) return;
+      const image = cropFaceJpeg(video, box);
+      if (!image) return;
+      inFlightRef.current = true;
+      setIsScanning(true);
+      setLastError(null);
+      const gate = activeGate;
+      try {
+        const res = await fetch("/api/gate/captures", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            captures: [
+              {
+                idempotencyKey: `ph-${crypto.randomUUID()}`,
+                door: gate === "GATE_IN" ? "IN" : "OUT",
+                capturedAt: new Date().toISOString(),
+                latitude: Number.isFinite(latitude) ? latitude : null,
+                longitude: Number.isFinite(longitude) ? longitude : null,
+                image,
+              },
+            ],
+          }),
         });
-
-        const intruderEvent: GateStreamEvent = {
-          id: String(Date.now()),
-          gateType: activeGate,
-          studentName: "Unauthorized Person",
-          studentIdCode: "UNKNOWN",
-          isAuthorized: false,
-          confidence: 0,
-          stopName: currentStopName,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-        };
-
-        setRecentEvents((prev) => [intruderEvent, ...prev.slice(0, 14)]);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Capture upload failed");
+        const accepted = data.accepted?.[0];
+        if (!accepted) throw new Error(data.rejected?.[0]?.error || "Capture rejected");
+        const decision = await pollDecision(accepted.captureId);
+        if (decision) showDecision(gate, decision);
+        else setLastError("Decision pending — it will appear in the manifest when the server finishes.");
+      } catch (err: any) {
+        setLastError(err?.message || "Scan failed");
+      } finally {
+        inFlightRef.current = false;
+        setIsScanning(false);
       }
-    } catch (err: any) {
-      console.warn("Scan inference error:", err);
-    } finally {
-      setIsScanning(false);
-    }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeGate, latitude, longitude, currentStopName, capacity]
+  );
+
+  // Automatic scanning: detect a steady, large-enough face, then capture once per person (cooldown).
+  useEffect(() => {
+    if (!isCameraActive || !autoScan) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    (async () => {
+      landmarkerRef.current = landmarkerRef.current || (await getFaceLandmarker());
+    })();
+    const tick = () => {
+      if (stopped) return;
+      const video = videoRef.current;
+      const lm = landmarkerRef.current;
+      if (video && lm && video.readyState >= 2 && !inFlightRef.current) {
+        try {
+          const res = lm.detectForVideo(video, performance.now());
+          const box = boxFromLandmarks(res?.faceLandmarks?.[0] || [], video.videoWidth, video.videoHeight);
+          if (triggerRef.current.update(box, video.videoWidth)) void submitCapture(box);
+        } catch {
+          // transient detector error — try next tick
+        }
+      }
+      timer = setTimeout(tick, 250);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [isCameraActive, autoScan, submitCapture]);
+
+  // Crew-confirmed manual scan (e.g. passenger cannot face the camera steadily)
+  const handleTriggerGateScan = async () => {
+    setActiveAlert(null);
+    const video = videoRef.current;
+    let box: FaceBox | null = null;
+    try {
+      const lm = landmarkerRef.current || (await getFaceLandmarker());
+      landmarkerRef.current = lm;
+      if (video && lm) box = boxFromLandmarks(lm.detectForVideo(video, performance.now())?.faceLandmarks?.[0] || [], video.videoWidth, video.videoHeight);
+    } catch {}
+    await submitCapture(box);
   };
 
   const occupancyPercent = Math.min(100, Math.round((occupancyCount / capacity) * 100));
@@ -506,6 +501,19 @@ export function DriverGateCameraConsole({
 
           <button
             type="button"
+            onClick={() => setAutoScan((v) => !v)}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold transition-colors ${
+              autoScan
+                ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
+                : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+            }`}
+            title="Scan automatically when a face is steady in front of the camera"
+          >
+            {autoScan ? "Auto: ON" : "Auto: OFF"}
+          </button>
+
+          <button
+            type="button"
             onClick={handleTriggerGateScan}
             disabled={isScanning}
             className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-1.5 transition-transform active:scale-95 ${
@@ -519,10 +527,16 @@ export function DriverGateCameraConsole({
             ) : (
               <ScanFace className="w-3.5 h-3.5" />
             )}
-            <span>{activeGate === "GATE_IN" ? "Test Boarding In" : "Test Alighting Out"}</span>
+            <span>Scan now</span>
           </button>
         </div>
       </div>
+
+      {lastError && (
+        <div className="px-4 py-2.5 rounded-2xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200">
+          {lastError}
+        </div>
+      )}
 
       {/* ── LIVE HUD CAMERA VIEWPORT & STATUS OVERLAY ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -547,7 +561,7 @@ export function DriverGateCameraConsole({
               <div>
                 <p className="text-white font-bold text-sm">Gate Camera In Standby</p>
                 <p className="text-xs text-slate-500 max-w-xs mt-0.5">
-                  Tap &quot;Start Cam&quot; or use &quot;Test Boarding In&quot; to simulate gate telematics.
+                  Tap &quot;Start Cam&quot;. Faces are scanned automatically when someone stands in front of the camera.
                 </p>
               </div>
               <button

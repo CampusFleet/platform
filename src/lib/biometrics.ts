@@ -265,7 +265,7 @@ export async function getSecurityIncidents(options?: {
 }): Promise<BusSecurityIncident[]> {
   let query = (supabaseAdmin as any)
     .from("bus_security_incidents")
-    .select("*, buses(bus_number, registration_no)")
+    .select("id, bus_id, trip_id, incident_type, severity, stop_name, latitude, longitude, matched_student_id, evidence_url, evidence_blob_key, status, created_at, resolved_at, resolved_by, resolution_notes, metadata, buses(bus_number, registration_no)")
     .order("created_at", { ascending: false });
 
   if (options?.status) {
@@ -301,6 +301,7 @@ export async function getSecurityIncidents(options?: {
     longitude: row.longitude,
     matchedStudentId: row.matched_student_id,
     evidenceUrl: row.evidence_url,
+    hasEvidence: Boolean(row.evidence_blob_key),
     status: row.status,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
@@ -319,11 +320,16 @@ export async function updateSecurityIncidentStatus(
     status: IncidentStatus;
     resolvedBy?: string;
     resolutionNotes?: string;
+    falseAlert?: boolean;
   }
 ): Promise<BusSecurityIncident> {
   const updatePayload: Record<string, any> = {
     status: update.status,
   };
+  if (update.falseAlert !== undefined) {
+    const { data: cur } = await (supabaseAdmin as any).from("bus_security_incidents").select("metadata").eq("id", incidentId).maybeSingle();
+    updatePayload.metadata = { ...(cur?.metadata || {}), false_alert: update.falseAlert, false_alert_marked_at: new Date().toISOString() };
+  }
 
   let validatedResolverId: string | null = null;
   if (update.resolvedBy) {

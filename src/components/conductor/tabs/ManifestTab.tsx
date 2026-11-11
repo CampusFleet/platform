@@ -28,6 +28,7 @@ import {
 import { Booking, Student, Stop, Bus, Route, Shift } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";
 import type { EnrichedPassenger, BusDepartureAlert } from "../ConductorContext";
+import { GateOccupancyCard } from "../GateOccupancyCard";
 
 interface ManifestTabProps {
   tripBookings: (EnrichedPassenger | Booking)[];
@@ -189,6 +190,7 @@ export function ManifestTab({
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {bus?.id ? <GateOccupancyCard busId={Number(bus.id)} capacity={capacity} /> : null}
       {/* ── TOP OPERATIONAL HERO: Bus & APC Boarding Meter ── */}
       <div className="bg-zinc-950 dark:bg-black border border-zinc-800/90 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden text-white">
         <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />

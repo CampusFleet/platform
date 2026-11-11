@@ -25,6 +25,8 @@ const PUBLIC_PREFIXES = [
   "/api/webhooks/", // shared secret verified in handler
   "/api/cron/", // CRON_SECRET verified in handler
   "/api/photo-proxy", // allow-listed public image hosts only
+  "/api/gate/captures", // per-device HMAC signature OR crew session, verified in handler
+  "/api/gate/heartbeat", // per-device HMAC signature, verified in handler
 ];
 
 /** Public only for the given methods. */
@@ -45,6 +47,12 @@ interface RoleRule {
 
 const ROLE_RULES: RoleRule[] = [
   { prefix: "/api/admin", roles: ADMIN },
+  { prefix: "/api/gate/devices", roles: MANAGE },
+  { prefix: "/api/gate/process", roles: MANAGE },
+  { prefix: "/api/ops/stream", roles: [...STAFF] },
+  { prefix: "/api/biometrics/evidence", roles: MANAGE },
+  { prefix: "/api/biometrics/metrics", roles: MANAGE },
+  { prefix: "/api/biometrics/calibration", roles: ["admin", "transport_admin"] },
   { prefix: "/api/staff/salary/admin", roles: ["admin", "transport_admin"] },
   { prefix: "/api/staff/salary/profile", roles: STAFF },
   { prefix: "/api/staff", roles: MANAGE },

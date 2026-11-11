@@ -931,16 +931,18 @@ export default function DriverConsoleView({
         )}
 
         {/* ── AUTONOMOUS BIOMETRIC DUAL-GATE CAMERA TELEMATICS ── */}
-        <DriverGateCameraConsole
-          busId={bus?.id || 40}
-          busNumber={String(bus?.busNumber || "40")}
-          tripId={activeTrip?.id}
-          capacity={bus?.capacity || 50}
-          currentStopName={currentStopObj?.name || "Campus Terminal"}
-          latitude={realDeviceGpsRef.current?.latitude ?? currentCoords.latitude}
-          longitude={realDeviceGpsRef.current?.longitude ?? currentCoords.longitude}
-          filterRouteId={route?.id ? String(route.id) : undefined}
-        />
+        {bus?.id ? (
+          // Bus and trip for gate captures are resolved server-side from the crew member's assignment.
+          <DriverGateCameraConsole
+            busId={bus.id}
+            busNumber={String(bus.busNumber || "")}
+            tripId={activeTrip?.id}
+            capacity={bus.capacity || 50}
+            currentStopName={currentStopObj?.name || "Current stop"}
+            latitude={realDeviceGpsRef.current?.latitude ?? currentCoords.latitude}
+            longitude={realDeviceGpsRef.current?.longitude ?? currentCoords.longitude}
+          />
+        ) : null}
 
         {/* 2. SPEEDOMETER & MOTION SENSORS COCKPIT */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">

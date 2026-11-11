@@ -900,7 +900,9 @@ export type SecurityIncidentType =
   | "WRONG_BUS_BOARDING"
   | "UNREGISTERED_COMMUTER"
   | "LIVENESS_SPOOF_ATTEMPT"
-  | "TAILGATING_DETECTED";
+  | "TAILGATING_DETECTED"
+  | "UNEXPECTED_EXIT"
+  | "UNKNOWN_DEBOARDER";
 
 export type SecuritySeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type IncidentStatus = "ACTIVE" | "ACKNOWLEDGED" | "RESOLVED";
@@ -918,6 +920,8 @@ export interface BusSecurityIncident {
   longitude: number;
   matchedStudentId?: string | null;
   evidenceUrl?: string | null;
+  /** True when a private evidence crop exists (served by /api/biometrics/evidence/:id, audited). */
+  hasEvidence?: boolean;
   status: IncidentStatus;
   createdAt: string;
   resolvedAt?: string | null;

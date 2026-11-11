@@ -148,7 +148,10 @@ export async function middleware(req: NextRequest) {
       // Bus hardware (ESP32 / GPS) authenticates with x-device-key; people with a session.
       const deviceKey = process.env.TELEMATICS_DEVICE_KEY || "";
       const presented = req.headers.get("x-device-key") || "";
-      const isDevice = deviceKey.length >= 32 && safeEqual(presented, deviceKey);
+      // Per-device signed requests (x-cf-device + x-cf-signature) are verified in the handler
+      // against the MAC-derived key; the shared key remains for not-yet-migrated firmware.
+      const isSignedDevice = Boolean(req.headers.get("x-cf-device") && req.headers.get("x-cf-signature"));
+      const isDevice = isSignedDevice || (deviceKey.length >= 32 && safeEqual(presented, deviceKey));
       const isRead = req.method === "GET" || req.method === "HEAD";
       const sessionAllowed = session && (isRead || (STAFF as readonly string[]).includes(session.role));
       if (!isDevice && !sessionAllowed) {

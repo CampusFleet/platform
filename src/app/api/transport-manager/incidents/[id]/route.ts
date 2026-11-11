@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 const UpdateIncidentSchema = z.object({
   status: z.enum(["ACKNOWLEDGED", "RESOLVED"]),
   resolutionNotes: z.string().max(500).optional(),
+  /** Staff confirm the person was actually an enrolled rider (camera false reject) — pilot metric. */
+  falseAlert: z.boolean().optional(),
 });
 
 export async function PATCH(
@@ -46,6 +48,7 @@ export async function PATCH(
       status: parsed.data.status,
       resolvedBy: session.userId,
       resolutionNotes: parsed.data.resolutionNotes,
+      falseAlert: parsed.data.falseAlert,
     });
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
+import { authenticateDevice, hasDeviceSignature, touchDevice } from "@/lib/gate/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,28 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { busId, deviceId, deviceMac, mac, rfidCardId, rfidUid, studentIdCode, rollNo } = body;
+    const rawBody = Buffer.from(await req.arrayBuffer());
+    const body = JSON.parse(rawBody.toString("utf8") || "{}");
+
+    // Per-device signed request (MAC-derived key): identity and bus come from the verified device,
+    // never from the body. Unsigned requests are only accepted with the legacy shared key (middleware).
+    let signedBusId: string | null = null;
+    let signedMac: string | null = null;
+    if (hasDeviceSignature(req.headers)) {
+      const auth = await authenticateDevice(req.headers, "POST", new URL(req.url).pathname, rawBody);
+      if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+      signedMac = auth.device.device_mac;
+      signedBusId = auth.device.bus_id ? String(auth.device.bus_id) : null;
+      void touchDevice(auth.device.id);
+    }
+
+    const { deviceId, deviceMac, mac, rfidCardId, rfidUid, studentIdCode, rollNo } = body;
+    const busId = signedMac ? signedBusId : body.busId;
+    if (signedMac) {
+      body.bus_id = undefined;
+      body.busNumber = undefined;
+      body.vehicle_no = undefined;
+    }
     const effectiveStudentIdCode = (studentIdCode || rollNo || body.studentId || body.student_id || "").trim().toUpperCase();
     const effectiveRfid = (
       rfidCardId ||
@@ -33,6 +54,7 @@ export async function POST(req: NextRequest) {
     ).trim();
 
     const rawDeviceId = (
+      signedMac ||
       deviceId ||
       deviceMac ||
       mac ||

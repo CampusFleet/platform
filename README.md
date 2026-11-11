@@ -13,6 +13,7 @@
 * 🚀 **Main Live Web App**: [https://campusfleet.vercel.app](https://campusfleet.vercel.app)  
 * ⚡ **High-Availability Mirrors**: [https://ridx.vercel.app](https://ridx.vercel.app) • [https://campusfleet-live.vercel.app](https://campusfleet-live.vercel.app)  
 * 🔌 **Dedicated IoT Firmware Repo**: [https://github.com/CampusFleet/esp32-rfid-terminal](https://github.com/CampusFleet/esp32-rfid-terminal)
+* 🙂 **Face ID boarding** (private repos): [CampusFleet/face-service](https://github.com/CampusFleet/face-service) (templates and anti-spoofing) • [CampusFleet/face-gate-agent](https://github.com/CampusFleet/face-gate-agent) (bus door camera agent). Overview: [`docs/biometrics/README.md`](docs/biometrics/README.md)
 
 ---
 
@@ -184,6 +185,9 @@ CampusFleet/
     ├── src/main.cpp                           # C++ firmware with auto-MAC & 20s Redis heartbeat
     ├── platformio.ini                         # PlatformIO configuration
     └── README.md                              # Hardware wiring diagram (ESP32 ↔ RC522)
+
+face-service/                                  # Python face templates + anti-spoofing (separate repo)
+face-gate-agent/                               # Raspberry Pi bus door camera agent (separate repo)
 ```
 
 ---

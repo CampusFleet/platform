@@ -77,6 +77,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
       items: [
         { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
         { href: "/transport-manager/security", label: "Security Center", shortLabel: "Security", icon: ShieldAlert },
+        { href: "/transport-manager/face-metrics", label: "Face ID Metrics", shortLabel: "Metrics", icon: BarChart3 },
         { href: "/transport-manager/live", label: "Live Fleet Radar", shortLabel: "Live", icon: Radio },
       ],
     },
@@ -91,7 +92,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
     currentNavLinks = subPortals.live.items;
     currentTitle = subPortals.live.title;
     currentSubtitle = subPortals.live.subtitle;
-  } else if (pathname.startsWith("/transport-manager/security")) {
+  } else if (pathname.startsWith("/transport-manager/security") || pathname.startsWith("/transport-manager/face-metrics")) {
     currentNavLinks = subPortals.security.items;
     currentTitle = subPortals.security.title;
     currentSubtitle = subPortals.security.subtitle;

@@ -23,6 +23,7 @@ import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
 import { CommuterHomeLocationCard } from "@/components/common/CommuterHomeLocationCard";
 import { CommuterSeatPreferencesCard } from "@/components/common/CommuterSeatPreferencesCard";
+import { BiometricPrivacyCard } from "@/components/common/BiometricPrivacyCard";
 
 export function SettingsView() {
   const pathname = usePathname();
@@ -1252,6 +1253,7 @@ export function SettingsView() {
               showToast={showToast}
             />
 
+            {isStudent && <BiometricPrivacyCard />}
             <CommuterSeatPreferencesCard
               studentId={
                 store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||

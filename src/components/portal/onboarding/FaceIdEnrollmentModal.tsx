@@ -14,7 +14,7 @@ import {
   Check,
 } from "lucide-react";
 import { getFaceLandmarker } from "@/lib/face-landmarker-loader";
-import { generateProductionFaceEmbedding } from "@/lib/face-embedding";
+import { CONSENT_SUMMARY, CONSENT_VERSION } from "@/lib/biometrics-consent";
 
 interface FaceIdEnrollmentModalProps {
   isOpen: boolean;
@@ -73,7 +73,8 @@ export function FaceIdEnrollmentModal({
   const [completedTicks, setCompletedTicks] = useState<Set<number>>(new Set());
   const [currentPointerAngle, setCurrentPointerAngle] = useState<number | null>(null);
   const [capturedThumbnail, setCapturedThumbnail] = useState<string | null>(null);
-  const [consentChecked, setConsentChecked] = useState<boolean>(true);
+  // Explicit opt-in (DPDP Act 2023): never pre-ticked
+  const [consentChecked, setConsentChecked] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
@@ -92,6 +93,9 @@ export function FaceIdEnrollmentModal({
   const landmarkerRef = useRef<any>(null);
   const lastLandmarksRef = useRef<any>(null);
   const frontalLandmarksRef = useRef<any>(null);
+  // Full frames sent to the server for templating (3–5, near-frontal, spaced in time)
+  const enrollFramesRef = useRef<string[]>([]);
+  const lastEnrollFrameAtRef = useRef<number>(0);
 
   // EMA (Exponential Moving Average) smoothing refs to reduce jitter
   const smoothedYawRef = useRef<number>(0);
@@ -176,6 +180,20 @@ export function FaceIdEnrollmentModal({
   }, []);
 
   // Capture High-Res Frontal Keyframe for Pass Photo
+  const captureEnrollFrame = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || enrollFramesRef.current.length >= 5) return;
+    const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(video.videoWidth * scale);
+    c.height = Math.round(video.videoHeight * scale);
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    enrollFramesRef.current.push(c.toDataURL("image/jpeg", 0.9));
+    lastEnrollFrameAtRef.current = performance.now();
+  }, []);
+
   const captureFrontalPassPhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
@@ -205,7 +223,8 @@ export function FaceIdEnrollmentModal({
     const dataUrl = thumbCanvas.toDataURL("image/jpeg", 0.92);
     setCapturedThumbnail(dataUrl);
     frontalLandmarksRef.current = lastLandmarksRef.current;
-  }, []);
+    captureEnrollFrame();
+  }, [captureEnrollFrame]);
 
   // Start Camera Stream and Initialize Face Landmarker
   const startCamera = useCallback(async () => {
@@ -221,6 +240,7 @@ export function FaceIdEnrollmentModal({
     restingPitchRef.current = null;
     frameCountRef.current = 0;
     faceDetectedFramesRef.current = 0;
+    enrollFramesRef.current = [];
     setIsCameraReady(false);
     setFaceInFrame(false);
 
@@ -497,6 +517,7 @@ export function FaceIdEnrollmentModal({
           // Frontal baseline (close to center) — fills top ticks
           if (magnitude < 4) {
             setCurrentPointerAngle(null);
+            if (performance.now() - lastEnrollFrameAtRef.current > 700) captureEnrollFrame();
             // Center sector satisfies top ticks 34, 35, 0, 1, 2
             const updated = new Set(completedTicksRef.current);
             let added = false;
@@ -605,6 +626,7 @@ export function FaceIdEnrollmentModal({
     isCameraReady,
     isFaceCentered,
     captureFrontalPassPhoto,
+    captureEnrollFrame,
     playAudioTone,
     triggerHaptic,
   ]);
@@ -636,23 +658,26 @@ export function FaceIdEnrollmentModal({
 
   // Confirm and persist to database via /api/biometrics/enroll
   const handleConfirmAndActivate = async () => {
-    if (!canvasRef.current || !capturedThumbnail) return;
+    if (!capturedThumbnail || !consentChecked) return;
 
     setIsSubmitting(true);
     try {
-      // Production Deep Metric Feature Extraction: InsightFace MobileFaceNet with ArcFace Loss
-      const { embedding } = await generateProductionFaceEmbedding(canvasRef.current);
+      // Top up to 3 frames if the guided sweep captured fewer (e.g. accessibility path)
+      for (let i = 0; enrollFramesRef.current.length < 3 && i < 6; i++) {
+        captureEnrollFrame();
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      if (enrollFramesRef.current.length < 3) throw new Error("Camera frames unavailable. Please retry.");
 
-      const res = await fetch("/api/biometrics/enroll", {
+      // Templates, quality and anti-spoofing are computed on the server — never in the browser.
+      const res = await fetch("/api/biometrics/enroll-v2", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          embedding,
-          qualityScore: 0.99,
-          livenessScore: 0.999,
-          consentGiven: consentChecked,
-          avatarDataUrl: capturedThumbnail,
-          studentId,
+          consentGiven: true,
+          consentVersion: CONSENT_VERSION,
+          frames: enrollFramesRef.current.slice(0, 5),
+          portrait: capturedThumbnail,
         }),
       });
 
@@ -667,13 +692,14 @@ export function FaceIdEnrollmentModal({
 
       onSuccess({
         avatarUrl: capturedThumbnail,
-        qualityScore: 0.99,
-        profileId: data.profile?.id,
+        qualityScore: 1,
+        profileId: undefined,
       });
 
       onClose();
     } catch (err: any) {
       console.error("Enrollment error:", err);
+      enrollFramesRef.current = [];
       setErrorMessage(err.message || "Failed to save biometric profile.");
       setState("ERROR");
       triggerHaptic([100, 50, 100]);
@@ -877,12 +903,15 @@ export function FaceIdEnrollmentModal({
                     className="mt-0.5 rounded border-zinc-700 text-emerald-500 focus:ring-0 cursor-pointer"
                   />
                   <span className="text-[11px] text-zinc-300 leading-relaxed">
-                    Use this live portrait as my official digital commuter pass ID and consent to one-way 512-d mathematical vectorization for bus door access.
+                    {CONSENT_SUMMARY}{" "}
+                    <a href="/privacy/biometrics" target="_blank" rel="noreferrer" className="underline text-emerald-400">
+                      Read the full notice
+                    </a>
                   </span>
                 </label>
                 <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono">
                   <Lock className="w-3 h-3 text-emerald-400" />
-                  <span>ArcFace 512-d • DPDP Act 2023 Compliant</span>
+                  <span>Consent {CONSENT_VERSION} • DPDP Act 2023</span>
                 </div>
               </div>
 

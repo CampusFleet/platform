@@ -7,22 +7,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url);
-    const isCron = url.searchParams.get("cron") === "true" || request.headers.get("user-agent")?.toLowerCase().includes("cron");
-
-    if (!isCron) {
-      const session = await getSessionFromRequest(request);
-      if (!session) {
-        return NextResponse.json({ success: false, error: "Unauthorized access to master data." }, { status: 401 });
-      }
+    // Session required (a "cron" user-agent or query flag used to bypass this).
+    const session = await getSessionFromRequest(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Unauthorized access to master data." }, { status: 401 });
     }
+    const isStaff = ["admin", "transport_admin", "transport_manager", "driver", "conductor"].includes(session.role);
 
     // Production-Grade Cache-Aside:
     // - Sub-2ms cache hit
     // - Anti-Stampede TTL Jitter
     // - Negative Cache Guard (avoids DB hammering)
     // - Stale-If-Error (prevents outage if Supabase has a network glitch)
-    const [routes, stops, shifts, trips, stopRoutes, buses] = await Promise.all([
+    const [routes, stops, shifts, trips, stopRoutes, buses, transitZones, campuses, plans] = await Promise.all([
       getOrFetchWithCache({
         key: "campusfleet:state:routes",
         ttl: CACHE_TTL.MASTER_DATA_PERMANENT,
@@ -53,12 +50,27 @@ export async function GET(request: NextRequest) {
         ttl: CACHE_TTL.MASTER_DATA_PERMANENT,
         fetchFn: async () => (await supabaseAdmin.from("buses").select("*")).data || [],
       }),
+      // Short TTL: these are edited in admin screens and must show up quickly.
+      getOrFetchWithCache({
+        key: "campusfleet:state:transit_zones",
+        ttl: 60,
+        fetchFn: async () => (await supabaseAdmin.from("transit_zones").select("*").order("created_at", { ascending: true })).data || [],
+      }),
+      getOrFetchWithCache({
+        key: "campusfleet:state:campuses",
+        ttl: 60,
+        fetchFn: async () =>
+          (await supabaseAdmin.from("campuses").select("*").order("is_primary", { ascending: false }).order("name", { ascending: true })).data || [],
+      }),
+      getOrFetchWithCache({
+        key: "campusfleet:state:subscription_plans",
+        ttl: 300,
+        fetchFn: async () => (await supabaseAdmin.from("subscription_plans").select("*")).data || [],
+      }),
     ]);
 
-    // If it's a cron job, just return a small payload to avoid response size limits
-    if (isCron) {
-      return NextResponse.json({ success: true, message: "Cache warmed successfully by cron" });
-    }
+    // AGENTS.md: trip_code is internal-only; never send it to students/teachers.
+    const safeTrips = isStaff ? trips : (trips as any[]).map(({ trip_code, ...t }) => t);
 
     // Aggregate everything into a single payload
     return NextResponse.json({
@@ -67,9 +79,12 @@ export async function GET(request: NextRequest) {
         routes,
         stops,
         shifts,
-        trips,
+        trips: safeTrips,
         stopRoutes,
         buses,
+        transitZones,
+        campuses,
+        plans,
       },
     });
   } catch (error: any) {

@@ -9,6 +9,7 @@ import {
   FORBIDDEN_WRITE_COLUMNS,
   OTHER_RIDER_STRIPPED,
   READABLE_TABLES,
+  STAFF_READABLE_TABLES,
   SELF_PATCH_COLUMNS,
   STAFF_WRITE_RULES,
   isStaff,
@@ -75,7 +76,8 @@ async function authorize(
   const role = session.role;
 
   if (method === "GET" || method === "HEAD") {
-    if (!READABLE_TABLES.has(table)) return `Reading ${table} is not permitted.`;
+    const staffOnly = STAFF_READABLE_TABLES.has(table);
+    if (!READABLE_TABLES.has(table) && !(staffOnly && isStaff(role))) return `Reading ${table} is not permitted.`;
     if (!isStaff(role)) {
       // End users only see their own identity rows.
       if (table === "users") url.searchParams.append("id", `eq.${session.userId}`);

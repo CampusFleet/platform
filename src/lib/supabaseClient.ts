@@ -19,6 +19,62 @@ const timeoutFetch: typeof fetch = (url, options) => {
 const browserProxyUrl =
   typeof window !== "undefined" ? `${window.location.origin}/api/db` : null;
 
+/**
+ * Browser read batching: GET requests to /api/db/rest/v1/* issued within the same
+ * ~15 ms window are sent as ONE POST /api/db/batch. The store fires ~15 parallel
+ * reads on page load; this turns them into a single function invocation.
+ */
+type PendingRead = { path: string; headers: Record<string, string>; resolve: (r: Response) => void; reject: (e: any) => void };
+let pendingReads: PendingRead[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const BATCH_WINDOW_MS = 15;
+const BATCH_MAX = 25;
+
+async function flushReads() {
+  flushTimer = null;
+  const batch = pendingReads.splice(0, BATCH_MAX);
+  if (pendingReads.length > 0) flushTimer = setTimeout(flushReads, 0);
+  if (batch.length === 0) return;
+  try {
+    const res = await timeoutFetch(`${browserProxyUrl}/batch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ requests: batch.map((b) => ({ path: b.path, headers: b.headers })) }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      batch.forEach((b) => b.resolve(new Response(text, { status: res.status, headers: { "content-type": "application/json" } })));
+      return;
+    }
+    const { responses } = await res.json();
+    batch.forEach((b, i) => {
+      const r = responses?.[i] || { status: 500, headers: {}, body: "{}" };
+      const status = r.status === 204 ? 204 : r.status;
+      b.resolve(new Response(status === 204 ? null : r.body, { status, headers: r.headers }));
+    });
+  } catch (err) {
+    batch.forEach((b) => b.reject(err));
+  }
+}
+
+const proxyFetch: typeof fetch = (input, options) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const method = (options?.method || "GET").toUpperCase();
+  const restPrefix = `${browserProxyUrl}/rest/v1/`;
+  if (method === "GET" && url.startsWith(restPrefix)) {
+    const headers: Record<string, string> = {};
+    new Headers(options?.headers || {}).forEach((v, k) => (headers[k] = v));
+    const u = new URL(url);
+    return new Promise<Response>((resolve, reject) => {
+      pendingReads.push({ path: u.pathname + u.search, headers, resolve, reject });
+      if (!flushTimer) flushTimer = setTimeout(flushReads, BATCH_WINDOW_MS);
+    });
+  }
+  return timeoutFetch(input, { ...options, credentials: "same-origin" });
+};
+
 export const supabase = createClient(
   browserProxyUrl || supabaseUrl || "https://placeholder.supabase.co",
   browserProxyUrl ? "session-cookie-proxy" : supabaseAnonKey || "placeholder-key",
@@ -28,9 +84,7 @@ export const supabase = createClient(
       autoRefreshToken: false,
     },
     global: {
-      fetch: browserProxyUrl
-        ? (url, options) => timeoutFetch(url, { ...options, credentials: "same-origin" })
-        : timeoutFetch,
+      fetch: browserProxyUrl ? proxyFetch : timeoutFetch,
     },
   }
 );

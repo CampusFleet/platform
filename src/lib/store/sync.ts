@@ -181,6 +181,9 @@ let lastCacheTime = 0;
 let ongoingFetchPromise: Promise<any> | null = null;
 const CACHE_TTL_MS = 60000; // 60 seconds
 
+// True when /api/sync/state said there is no session: skip all other DB reads.
+let isSignedOut = false;
+
 async function getCachedState() {
   if (typeof window === "undefined") return null;
   
@@ -200,6 +203,7 @@ async function getCachedState() {
       const res = await fetch("/api/sync/state", { signal: controller.signal });
       clearTimeout(timeoutId);
       
+      isSignedOut = res.status === 401;
       if (res.ok) {
         const json = await res.json();
         if (json.success) {
@@ -226,7 +230,7 @@ CampusFleetStore.prototype.syncMasterData = async function(this: CampusFleetStor
     const cachedState = await getCachedState();
 
     // 0. Fetch Transit Zones
-    const { data: dbZones } = await supabase.from("transit_zones").select("*").order("created_at", { ascending: true });
+    const dbZones: any[] = cachedState?.transitZones || (await supabase.from("transit_zones").select("*").order("created_at", { ascending: true })).data || [];
     if (dbZones && dbZones.length > 0) {
       this.transitZones = dbZones.map(z => ({
         id: z.id || `zone-${z.code}`,
@@ -243,11 +247,11 @@ CampusFleetStore.prototype.syncMasterData = async function(this: CampusFleetStor
     }
 
     // 0.1 Fetch Campus Locations
-    const { data: dbCampuses } = await supabase
+    const dbCampuses: any[] = cachedState?.campuses || (await supabase
       .from("campuses")
       .select("*")
       .order("is_primary", { ascending: false })
-      .order("name", { ascending: true });
+      .order("name", { ascending: true })).data || [];
     if (dbCampuses && dbCampuses.length > 0) {
       this.campuses = dbCampuses.map(c => ({
         id: c.id,
@@ -288,7 +292,7 @@ CampusFleetStore.prototype.syncMasterData = async function(this: CampusFleetStor
     }
 
     // 10. Fetch Subscription Plans
-    const { data: dbPlans } = await supabase.from("subscription_plans").select("*");
+    const dbPlans: any[] = cachedState?.plans || (await supabase.from("subscription_plans").select("*")).data || [];
     if (dbPlans && dbPlans.length > 0) {
       this.plans = dbPlans.map(p => ({
         id: p.id,
@@ -715,6 +719,10 @@ CampusFleetStore.prototype.syncUserData = async function(this: CampusFleetStore)
 
 CampusFleetStore.prototype.syncFromSupabase = async function (this: CampusFleetStore) {
   try {
+    // One cached master-data call first; if signed out, don't fire the other reads at all.
+    await getCachedState();
+    if (isSignedOut) return;
+
     // Run all sync routines in parallel to minimize load time
     // Wrap in Promise.race with an 8-second timeout to prevent the app from hanging forever
     const syncPromises = Promise.all([

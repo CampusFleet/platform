@@ -41,6 +41,9 @@ export const READABLE_TABLES = new Set([
   "campuses",
 ]);
 
+/** Extra tables only staff may read (operational data). */
+export const STAFF_READABLE_TABLES = new Set(["vehicle_issues_full", "attendance_records"]);
+
 type WriteRule = { methods: ProxyMethod[]; roles: readonly string[] };
 
 /** Staff write permissions by table. */

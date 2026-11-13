@@ -190,7 +190,7 @@ export default async function ConductorLayout({
     email: s.email || "",
     phone: s.phone || null,
     department: s.department || "Engineering",
-    semester: s.semester ? String(s.semester) : "5th",
+    semester: s.semester ? String(s.semester) : "",
     primaryStopId: s.primary_stop_id || "",
     primaryRouteId: s.primary_route_id || "",
     campusId: s.campus_id || s.campus || "",

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useTheme } from "@/components/common/ThemeProvider";
 import { store } from "@/lib/store";
+import { clearClientUserData } from "@/lib/clear-user-data";
 import { 
   Sun, Moon, Bell, Shield, Database, Download, RefreshCw, MessageSquare, Trash, 
   ChevronDown, Check, Globe, Loader2, Type, MapPin, ArrowLeftRight, Navigation, CheckCircle2, AlertCircle, Clock, Bus,
@@ -236,12 +237,7 @@ export function SettingsView() {
       if (!res.ok) throw new Error(data.error || "Failed to delete account");
       
       store.wipeAllData();
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch (storageErr) {
-        console.warn("Storage cleanup error:", storageErr);
-      }
+      await clearClientUserData();
 
       showToast("success", "Your account and all transit data have been permanently deleted.", "Account Deleted");
       

@@ -256,7 +256,7 @@ export function UnifiedAppHeader({
     (currentUser as any)?.student_id_code ||
     (currentUser?.studentId && !currentUser.studentId.startsWith("stud-") && !currentUser.studentId.startsWith("std_") ? currentUser.studentId : null) ||
     (activeStudent?.id && !activeStudent.id.startsWith("stud-") && !activeStudent.id.startsWith("std_") ? activeStudent.id : null) ||
-    "2361030";
+    "Not set";
 
   const displayStaffId = currentUser?.id
     ? currentUser.id.startsWith("usr_")
@@ -728,7 +728,7 @@ export function UnifiedAppHeader({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate leading-tight">
-                        {currentUser?.fullName || "Aditya Pandey"}
+                        {currentUser?.fullName || currentUser?.email || ""}
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60">

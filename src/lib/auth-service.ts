@@ -1,4 +1,5 @@
 import { UserRole } from "./types";
+import { clearClientUserData } from "./clear-user-data";
 
 export interface AuthUser {
   id: string;
@@ -83,10 +84,10 @@ class AuthService {
     }
   }
 
-  private clearLocalSession() {
+  private async clearLocalSession() {
     if (typeof window === "undefined") return;
     try {
-      localStorage.clear();
+      await clearClientUserData();
     } catch (e) {
       console.warn("Failed to clear session", e);
     }
@@ -251,7 +252,7 @@ class AuthService {
       console.warn("Logout API call failed:", e);
     }
     this.currentUser = null;
-    this.clearLocalSession();
+    await this.clearLocalSession();
     this.notify();
   }
 

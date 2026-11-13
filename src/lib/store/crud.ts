@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 import { telematicsService } from "../telematicsService";
 import { lockFinalManifest } from "../reservation-engine";
 import { createTripId, createStudentId } from "../id";
+import { clearClientUserData } from "../clear-user-data";
 import type {
   Bus, Route, Stop, Campus, Shift, Trip, Student, Staff,
   LiveBusLocation, VehicleIssue, NotificationItem, UserRole,
@@ -1154,8 +1155,6 @@ CampusFleetStore.prototype.wipeAllData = function (this: CampusFleetStore) {
   this.bookings = [];
   this.currentUser = null;
   this.activeChildId = "";
-  if (typeof window !== "undefined") {
-    localStorage.clear();
-  }
+  void clearClientUserData();
   this.notify();
 };

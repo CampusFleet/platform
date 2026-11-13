@@ -51,9 +51,8 @@ CampusFleetStore.prototype.initAuthSync = function (this: CampusFleetStore) {
 
 CampusFleetStore.prototype.logout = async function (this: CampusFleetStore) {
   await authService.logout();
-  this.currentUser = null;
-  this.saveToLocalStorage();
-  this.notify();
+  // Drop the previous user's in-memory data (students, bookings, ...) as well as browser storage.
+  this.wipeAllData();
 };
 
 CampusFleetStore.prototype.setCurrentUser = function (

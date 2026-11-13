@@ -82,6 +82,7 @@ export async function DELETE(req: NextRequest) {
       message: "Your account and all associated transit data have been permanently deleted.",
     });
 
+    response.headers.set("Clear-Site-Data", '"cache"');
     response.cookies.set(COOKIE_NAME, "", {
       path: "/",
       maxAge: 0,

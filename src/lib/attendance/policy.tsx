@@ -162,6 +162,25 @@ export function getModalityPageRules(
   };
 }
 
+/**
+ * What a student can do at the bus to be marked on board, one phrase per method that is switched on.
+ * Use this for every student-facing instruction so text never mentions a method that is off.
+ */
+export function boardingWays(locks: ValidationLocksConfig): string[] {
+  const ways: string[] = [];
+  if (locks.faceId) ways.push("look at the door camera");
+  if (locks.staticQr) ways.push("scan the bus QR");
+  if (locks.dynamicQr) ways.push("show your QR pass to the conductor");
+  if (locks.rfid) ways.push("tap your RFID card");
+  return ways;
+}
+
+/** "a", "a or b", "a, b or c". */
+export function joinWays(ways: string[]): string {
+  if (ways.length <= 1) return ways[0] || "";
+  return `${ways.slice(0, -1).join(", ")} or ${ways[ways.length - 1]}`;
+}
+
 const CHANNEL_NAME = "campusfleet_attendance_policy";
 
 type PolicyValue = { mode: TransitAttendanceMode; locks: ValidationLocksConfig };
@@ -250,36 +269,36 @@ interface PolicyStandbyScreenProps {
   pageTitle: string;
   pageFeature: string;
   requiredModeDescription: string;
-  activeMode: TransitAttendanceMode;
+  /** Legacy single mode; ignored. The screen reads the live locks itself. */
+  activeMode?: TransitAttendanceMode;
   returnHref?: string;
   returnLabel?: string;
 }
 
 /**
- * Enterprise Page Gating Screen:
- * Displayed when an operator or commuter navigates to a route that is inactive
- * under the active institutional attendance policy.
+ * Shown when a page's boarding method is switched off. Lists only the methods that are on, so a
+ * student is never told to use a method that is also off. The settings link is shown to staff pages only.
  */
 export function PolicyStandbyScreen({
   pageTitle,
   pageFeature,
   requiredModeDescription,
-  activeMode,
   returnHref = "/conductor",
   returnLabel = "Return to Dashboard",
 }: PolicyStandbyScreenProps) {
-  const rules = getModalityPageRules(activeMode);
+  const { locks, rules } = useAttendancePolicy();
+  const ways = boardingWays(locks);
+  const isStudentPage = returnHref.startsWith("/portal");
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="min-h-[60dvh] w-full flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="max-w-md w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-5">
-        {/* Policy Icon */}
-        <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400 shadow-sm">
-          {activeMode === "FACE_ID" ? (
-            <ScanFace className="w-8 h-8 text-emerald-500 animate-pulse" />
-          ) : activeMode === "DYNAMIC_QR" ? (
+        <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center mx-auto">
+          {locks.faceId ? (
+            <ScanFace className="w-8 h-8 text-emerald-500" />
+          ) : locks.dynamicQr || locks.staticQr ? (
             <QrCode className="w-8 h-8 text-blue-500" />
-          ) : activeMode === "RFID" ? (
+          ) : locks.rfid ? (
             <Radio className="w-8 h-8 text-indigo-500" />
           ) : (
             <Layers className="w-8 h-8 text-amber-500" />
@@ -287,26 +306,23 @@ export function PolicyStandbyScreen({
         </div>
 
         <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-black uppercase bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Active Policy: {rules.modeLabel}</span>
-          </div>
-          <h2 className="text-xl font-black text-zinc-900 dark:text-white pt-1">
-            {pageTitle} Inactive
-          </h2>
+          <h2 className="text-xl font-black text-zinc-900 dark:text-white">{pageTitle} is off</h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-sm mx-auto">
-            {pageFeature} is currently in standby because the campus transport policy is set to{" "}
-            <strong className="text-zinc-800 dark:text-zinc-200">{rules.modeLabel}</strong>. {requiredModeDescription}
+            {pageFeature} is switched off by the transport office. {requiredModeDescription}
           </p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-left text-xs space-y-1 font-sans">
+        <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-left text-xs space-y-1">
           <div className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Active Workflow Available</span>
+            <span>{isStudentPage ? "How to board now" : `Active: ${rules.modeLabel}`}</span>
           </div>
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            {rules.modeDescription}
+            {isStudentPage
+              ? ways.length
+                ? `At the bus, ${joinWays(ways)}. The conductor can also check you in.`
+                : "The conductor checks you in at the bus."
+              : rules.modeDescription}
           </p>
         </div>
 
@@ -318,14 +334,16 @@ export function PolicyStandbyScreen({
             <ArrowLeft className="w-4 h-4" />
             <span>{returnLabel}</span>
           </Link>
-          <Link
-            href="/transport-admin/transit"
-            className="py-3 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs border border-zinc-200 dark:border-zinc-800 transition-all flex items-center justify-center gap-1"
-            title="Transport Admin Settings"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Settings</span>
-          </Link>
+          {!isStudentPage && (
+            <Link
+              href="/transport-admin/transit"
+              className="py-3 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs border border-zinc-200 dark:border-zinc-800 transition-all flex items-center justify-center gap-1"
+              title="Transport settings"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Settings</span>
+            </Link>
+          )}
         </div>
       </div>
     </div>

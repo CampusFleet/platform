@@ -218,7 +218,7 @@ export default function ClientPortalLayout({
   const navLinks = isSubscriptionActive
     ? [
         { href: "/portal", label: "My Commute", icon: BusFront, requiresPayment: false },
-        { href: "/portal/qr", label: "QR Connect", icon: QrCode, requiresPayment: false },
+        { href: "/portal/qr", label: "Boarding", icon: QrCode, requiresPayment: false },
         { href: "/portal/radar", label: "Radar", icon: Radio, requiresPayment: false },
         { href: "/chat", label: "Chat", icon: MessageSquare, requiresPayment: false },
         { href: "/portal/payments", label: "Pass & Fees", icon: CreditCard, requiresPayment: false },

@@ -16,6 +16,7 @@ import {
   Moon,
 } from "lucide-react";
 import type { Shift, Stop } from "@/lib/types";
+import { useAttendancePolicy } from "@/lib/attendance";
 
 interface CommuteScheduleOffStageProps {
   isTodayOff: boolean;
@@ -43,6 +44,7 @@ export function CommuteScheduleOffStage({
   formatShiftTime,
 }: CommuteScheduleOffStageProps) {
   const router = useRouter();
+  const { locks } = useAttendancePolicy();
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6 animate-in fade-in duration-300">
@@ -145,6 +147,7 @@ export function CommuteScheduleOffStage({
 
       {/* Action Buttons */}
       <div className="pt-2 flex flex-wrap items-center gap-3">
+        {locks.dynamicQr && (
         <button
           type="button"
           onClick={() => router.push("/portal/qr/show")}
@@ -153,6 +156,7 @@ export function CommuteScheduleOffStage({
           <QrCode className="w-3.5 h-3.5" />
           <span>Show My QR Pass</span>
         </button>
+        )}
 
         <button
           type="button"

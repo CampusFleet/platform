@@ -33,3 +33,36 @@ export async function getAttendancePolicy(): Promise<AttendancePolicy | null> {
 export async function invalidateAttendancePolicy(): Promise<void> {
   await cacheDel(KEY);
 }
+
+export type BoardingMethod = keyof ValidationLocksConfig;
+
+export const BOARDING_METHOD_LABEL: Record<BoardingMethod, string> = {
+  faceId: "Face ID",
+  dynamicQr: "Phone pass QR",
+  rfid: "RFID card",
+  staticQr: "Bus / seat QR",
+};
+
+/**
+ * Is this boarding method switched on by the transport office? Every boarding API calls this.
+ * When the setting cannot be read (no row, database down) the method is treated as on, so an
+ * outage of the settings table never stops buses from boarding. The conductor's manual check is not
+ * a method here and is always available.
+ */
+export async function isBoardingMethodOn(method: BoardingMethod): Promise<boolean> {
+  const policy = await getAttendancePolicy();
+  if (!policy) return true;
+  return Boolean(policy.locks[method]);
+}
+
+/** Standard refusal body for a switched-off method (HTTP 403, code METHOD_DISABLED). */
+export function methodDisabledBody(method: BoardingMethod) {
+  return {
+    success: false,
+    status: "METHOD_DISABLED",
+    code: "METHOD_DISABLED",
+    method,
+    message: `${BOARDING_METHOD_LABEL[method]} boarding is switched off by the transport office.`,
+    error: `${BOARDING_METHOD_LABEL[method]} boarding is switched off by the transport office.`,
+  };
+}

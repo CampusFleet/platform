@@ -7,6 +7,11 @@ import { supabaseAdmin } from "@/lib/supabaseClient";
 vi.mock("@/lib/jwt", () => ({
   getSessionFromRequest: vi.fn(async () => ({ userId: "user-conductor", role: "conductor", fullName: "Test Conductor" })),
 }));
+// This suite tests pass verification, so the QR pass method is on regardless of the live setting.
+vi.mock("@/lib/attendance/server-policy", async () => ({
+  ...(await vi.importActual<any>("@/lib/attendance/server-policy")),
+  isBoardingMethodOn: vi.fn(async () => true),
+}));
 
 // Helper to construct NextRequest with json body
 function mockPostRequest(body: any): NextRequest {

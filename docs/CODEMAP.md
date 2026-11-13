@@ -28,7 +28,6 @@ which tables / Redis keys / services each feature touches, and the known traps.
 - Code style: plain typed functions and React components, not classes. Route handlers stay thin: session → zod validate → service function → response.
 
 ## Known open issues found during the survey (fix when touching the area)
-- `src/lib/attendance/policy.tsx` `useAttendancePolicy`: reads a stale value from localStorage first and defaults to "all methods on" when the server call fails.
 - `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Replaced in Phases 1–5.
 
 ## Boarding chart (incoming / outgoing shifts)
@@ -439,9 +438,11 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/attendance/policy.tsx`:
   - `resolveValidationLocks`: compute active locks;
   - `getModalityPageRules`: page rules per attendance mode;
-  - `useAttendancePolicy`: React hook;
+  - `useAttendancePolicy`: React hook (server-rendered start value from `AttendancePolicyProvider`);
+  - `boardingWays`, `joinWays`: student-facing phrases for the methods that are on;
   - `broadcastAttendanceModeChange`: broadcast a mode change;
-  - `PolicyStandbyScreen`: placeholder screen while policy loads.
+  - `PolicyStandbyScreen`: shown when a page's method is off; lists the methods that are on.
+- `src/lib/attendance/server-policy.ts`: `getAttendancePolicy` (Redis `policy:attendance`), `invalidateAttendancePolicy`, `isBoardingMethodOn` (on when unreadable), `methodDisabledBody` (403 `METHOD_DISABLED`). Called by pass-token, boarding/scan (signed pass), rolling-token, board-self-service, telematics/rfid, gate/captures and the gate processor.
 - `src/lib/attendance/persist.ts`: `persistGateAttendance`.
 - `src/lib/security/student-pass.ts`: `PASS_WINDOW_SECONDS`, `currentPassWindow`, `signStudentPass`, `issueStudentPass`, `verifyStudentPass` (STUDENT_PASS_SECRET or JWT_SECRET).
 - `src/lib/rolling-bus-crypto.ts`:

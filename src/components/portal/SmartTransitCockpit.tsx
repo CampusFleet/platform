@@ -461,7 +461,7 @@ export default function SmartTransitCockpit({
   const handleConfirmSeat = async (seatNumber: string) => {
     if (!seatNumber) return;
     if (!isLockCleared) {
-      showToast("Attendance is locked for anti-proxy fraud prevention. Verify proximity or tap RFID before confirming.", "warning");
+      showToast("Check in at the bus first, then choose your seat.", "warning");
       return;
     }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { generateRollingBusPayload, DEFAULT_TIME_STEP_SECONDS } from "@/lib/rolling-bus-crypto";
 import { supabaseAdmin } from "@/lib/supabaseClient";
@@ -27,6 +28,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
   }
 
+  if (!(await isBoardingMethodOn("staticQr"))) {
+    return NextResponse.json(methodDisabledBody("staticQr"), { status: 403 });
+  }
   const { searchParams } = new URL(request.url);
   const busId = searchParams.get("busId");
 

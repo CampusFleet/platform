@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm, isStartingSeat, getTeacherStartingSeats, generateSeatLayout } from "@/lib/utils";
@@ -18,6 +19,10 @@ export async function POST(req: NextRequest) {
     const session = await getSession();
     if (!session || (session.role !== "STUDENT" && session.role !== "student")) {
       return NextResponse.json({ success: false, message: "Unauthorized: Student session required." }, { status: 401 });
+    }
+
+    if (!(await isBoardingMethodOn("staticQr"))) {
+      return NextResponse.json(methodDisabledBody("staticQr"), { status: 403 });
     }
 
     const body = await req.json();

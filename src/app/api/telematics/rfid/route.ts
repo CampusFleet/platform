@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
 import { authenticateDevice, hasDeviceSignature, touchDevice } from "@/lib/gate/device-auth";
@@ -332,6 +333,10 @@ export async function POST(req: NextRequest) {
       })();
     }
 
+    // RFID switched off: card registration above still works (for issuing cards), but no attendance.
+    if (!(await isBoardingMethodOn("rfid"))) {
+      return NextResponse.json(methodDisabledBody("rfid"), { status: 403 });
+    }
     // 2. Resolve Today's Date in IST (UTC+5:30)
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;

@@ -2,112 +2,92 @@
 
 import React from "react";
 import Link from "next/link";
-import { ScanLine, QrCode, ScanFace, Radio, CheckCircle2, ArrowRight } from "lucide-react";
+import { ArrowRight, CreditCard, QrCode, ScanFace, ScanLine, UserCheck } from "lucide-react";
 import { useAttendancePolicy } from "@/lib/attendance";
+import { Card } from "@/components/ui";
 
+/**
+ * Boarding hub. One card per boarding method the transport office has switched on
+ * (transport_settings.validation_locks); nothing is shown for a method that is off.
+ */
 export default function QRConnectPage() {
-  const { mode, rules } = useAttendancePolicy();
+  const { locks } = useAttendancePolicy();
+
+  const items: { key: string; icon: React.ReactNode; title: string; text: string; href?: string; action?: string }[] = [];
+  if (locks.faceId) {
+    items.push({
+      key: "face",
+      icon: <ScanFace className="w-6 h-6 text-emerald-600" />,
+      title: "Face ID at the door",
+      text: "Look at the camera above the door as you get on. Nothing to show or scan.",
+    });
+  }
+  if (locks.staticQr) {
+    items.push({
+      key: "scan",
+      icon: <ScanLine className="w-6 h-6 text-green-600" />,
+      title: "Scan the bus QR",
+      text: "Scan the QR on the bus door or your seat with your phone.",
+      href: "/portal/qr/scan",
+      action: "Open scanner",
+    });
+  }
+  if (locks.dynamicQr) {
+    items.push({
+      key: "pass",
+      icon: <QrCode className="w-6 h-6 text-blue-600" />,
+      title: "Show your QR pass",
+      text: "Open your pass and let the conductor scan your screen.",
+      href: "/portal/qr/show",
+      action: "Show pass",
+    });
+  }
+  if (locks.rfid) {
+    items.push({
+      key: "rfid",
+      icon: <CreditCard className="w-6 h-6 text-indigo-600" />,
+      title: "Tap your RFID card",
+      text: "Tap your campus card on the reader at the bus door.",
+    });
+  }
 
   return (
-    <div className="min-h-[calc(100vh-140px)] w-full p-6 animate-in fade-in zoom-in-95 flex flex-col items-center justify-center pb-24">
-      <div className="w-full max-w-sm space-y-4">
-        <div className="text-center space-y-2 mb-6">
-          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-3xl flex items-center justify-center mx-auto mb-3">
-            {mode === "FACE_ID" ? (
-              <ScanFace className="w-8 h-8 text-emerald-500 animate-pulse" />
-            ) : mode === "RFID" ? (
-              <Radio className="w-8 h-8 text-indigo-500" />
-            ) : (
-              <QrCode className="w-8 h-8" />
-            )}
-          </div>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
-            {rules.modeLabel}
-          </h1>
-          <p className="text-xs font-bold text-gray-500">
-            {rules.modeDescription}
+    <div className="w-full min-h-[calc(100dvh-140px)] px-4 py-6 pb-24 flex flex-col items-center">
+      <div className="w-full max-w-sm space-y-3">
+        <div className="text-center mb-4">
+          <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">How to board</h1>
+          <p className="text-xs text-gray-500 mt-1">
+            {items.length > 1 ? "Any of these works. Use the one that is easiest at your bus." : "This is how your bus checks you in."}
           </p>
         </div>
 
-        {/* Mode: Face ID Active Hero Notification */}
-        {mode === "FACE_ID" && (
-          <div className="p-5 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-3 text-left">
-            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold text-xs uppercase tracking-wide">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <span>Zero-Touch Gate Entry</span>
+        {items.map((it) => (
+          <Card key={it.key} className="flex items-start gap-3">
+            <div className="w-11 h-11 shrink-0 rounded-xl bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">{it.icon}</div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-black text-gray-900 dark:text-white">{it.title}</h2>
+              <p className="text-xs text-gray-500 mt-0.5">{it.text}</p>
+              {it.href && (
+                <Link
+                  href={it.href}
+                  className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold"
+                >
+                  {it.action} <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-              Your attendance is logged automatically by the vehicle&apos;s entrance camera. You do not need to present or scan a QR code.
-            </p>
-            <Link
-              href="/portal"
-              className="inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md transition-all active:scale-95"
-            >
-              <span>View Verified Commuter Pass</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+          </Card>
+        ))}
+
+        <Card className="flex items-start gap-3">
+          <div className="w-11 h-11 shrink-0 rounded-xl bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
+            <UserCheck className="w-6 h-6 text-gray-600" />
           </div>
-        )}
-
-        {/* Mode: RFID Smart Card Active Hero Notification */}
-        {mode === "RFID" && (
-          <div className="p-5 rounded-3xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 space-y-3 text-left">
-            <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-bold text-xs uppercase tracking-wide">
-              <Radio className="w-4 h-4 text-indigo-500" />
-              <span>Physical Smart Card Required</span>
-            </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-              Tap your registered RFID campus card on the door reader upon entering the bus.
-            </p>
-            <Link
-              href="/portal"
-              className="inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md transition-all active:scale-95"
-            >
-              <span>View Linked Card UID</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-black text-gray-900 dark:text-white">{items.length ? "If that does not work" : "Conductor check-in"}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">The conductor can check you in from the passenger list using your pass photo.</p>
           </div>
-        )}
-
-        {/* Dynamic QR: Show My QR Card */}
-        {(rules.isStudentShowQrActive || mode === "FACE_ID") && (
-          <Link 
-            href="/portal/qr/show"
-            className="w-full flex items-center gap-4 p-5 bg-white dark:bg-gray-800/60 backdrop-blur-xl border border-gray-200 dark:border-gray-800/60 rounded-3xl shadow-xl hover:border-blue-500 dark:hover:border-blue-500 transition-all hover:scale-[1.02] active:scale-95 group cursor-pointer"
-          >
-            <div className="w-14 h-14 shrink-0 rounded-2xl bg-blue-50 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <QrCode className="w-7 h-7" />
-            </div>
-            <div className="text-left">
-              <div className="text-lg font-black text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                {mode === "FACE_ID" ? "Backup QR Token" : "Show My QR Pass"}
-              </div>
-              <div className="text-xs text-gray-500 font-semibold mt-0.5">
-                {mode === "FACE_ID" ? "For exception scans by conductor" : "Let the conductor scan your screen"}
-              </div>
-            </div>
-          </Link>
-        )}
-
-        {/* Static QR: Scan Bus QR Card */}
-        {rules.isStudentDoorScannerActive && (
-          <Link 
-            href="/portal/qr/scan"
-            className="w-full flex items-center gap-4 p-5 bg-white dark:bg-gray-800/60 backdrop-blur-xl border border-gray-200 dark:border-gray-800/60 rounded-3xl shadow-xl hover:border-green-500 dark:hover:border-green-500 transition-all hover:scale-[1.02] active:scale-95 group cursor-pointer"
-          >
-            <div className="w-14 h-14 shrink-0 rounded-2xl bg-green-50 dark:bg-green-900/40 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:bg-green-600 group-hover:text-white transition-colors">
-              <ScanLine className="w-7 h-7" />
-            </div>
-            <div className="text-left">
-              <div className="text-lg font-black text-gray-900 dark:text-white group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors">
-                Scan Bus QR
-              </div>
-              <div className="text-xs text-gray-500 font-semibold mt-0.5">
-                Self-check into your seat via phone
-              </div>
-            </div>
-          </Link>
-        )}
+        </Card>
       </div>
     </div>
   );

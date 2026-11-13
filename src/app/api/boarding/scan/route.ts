@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getDayOfWeekIST, getCurrentTimeIST } from "@/lib/time-manager";
 import { createAttendanceId } from "@/lib/id";
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
     const isDynamicPass =
       parsedPayload &&
       (parsedPayload.type === "DYNAMIC_PASS" || parsedPayload.window !== undefined || parsedPayload.sig !== undefined || parsedPayload.bookingId !== undefined);
+    if (isDynamicPass && !(await isBoardingMethodOn("dynamicQr"))) {
+      return NextResponse.json(methodDisabledBody("dynamicQr"), { status: 403 });
+    }
     if (isDynamicPass) {
       const pass = verifyStudentPass(parsedPayload);
       if (!pass.valid) {

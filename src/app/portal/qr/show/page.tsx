@@ -91,8 +91,7 @@ export default function ShowQRPage() {
         <PolicyStandbyScreen
           pageTitle="QR Pass"
           pageFeature="Showing a QR pass to the conductor"
-          requiredModeDescription="The QR pass is switched off by your transport office. Board using the method shown on your commute screen."
-          activeMode={locks.faceId ? "FACE_ID" : locks.rfid ? "RFID" : "STATIC_QR"}
+          requiredModeDescription="Use one of the boarding methods below."
           returnHref="/portal"
           returnLabel="Go to My Commute"
         />

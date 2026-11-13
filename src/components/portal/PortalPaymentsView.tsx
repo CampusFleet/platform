@@ -361,7 +361,7 @@ export default function PortalPaymentsView({
               <Link href="/portal/qr" className="p-4 border border-gray-200 dark:border-gray-800 hover:border-blue-500 bg-white dark:bg-gray-900 flex items-center justify-between group transition-all">
                 <div className="flex items-center gap-3">
                   <QrCode className="w-5 h-5 text-gray-400 group-hover:text-blue-600" />
-                  <span className="text-sm font-bold text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">QR Connect</span>
+                  <span className="text-sm font-bold text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">How to board</span>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-600" />
               </Link>

@@ -72,7 +72,7 @@ export function MobileBottomNav({
   const pathname = usePathname();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
-  const { mode: policyMode, rules: policyRules } = useAttendancePolicy();
+  const { rules: policyRules, locks: policyLocks } = useAttendancePolicy();
 
   useEffect(() => {
     const unsub = store.subscribe(() => {
@@ -451,15 +451,8 @@ export function MobileBottomNav({
           {
             id: "qr",
             href: "/portal/qr",
-            label: policyRules.studentQrConnectLabel || "QR Connect",
-            icon:
-              policyMode === "FACE_ID"
-                ? ScanFace
-                : policyMode === "RFID"
-                ? Radio
-                : policyMode === "STATIC_QR"
-                ? ScanLine
-                : QrCode,
+            label: "Boarding",
+            icon: policyLocks.dynamicQr ? QrCode : policyLocks.staticQr ? ScanLine : policyLocks.faceId ? ScanFace : policyLocks.rfid ? Radio : QrCode,
           },
           {
             id: "radar",

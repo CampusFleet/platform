@@ -7,17 +7,16 @@ import { StudentSelfScanner } from "@/components/scanner/StudentSelfScanner";
 import { useAttendancePolicy, PolicyStandbyScreen } from "@/lib/attendance";
 
 export default function ScanPage() {
-  const { mode, rules } = useAttendancePolicy();
+  const { rules } = useAttendancePolicy();
 
   // Policy Guardrail: If door QR self-scanning is inactive under current policy, show standby screen
   if (!rules.isStudentDoorScannerActive) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black p-4 flex flex-col justify-center items-center">
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-black p-4 flex flex-col justify-center items-center">
         <PolicyStandbyScreen
           pageTitle="Bus Door QR Scanner"
           pageFeature="Scanning physical bus door QR codes with your phone camera"
-          requiredModeDescription="Scanning bus door QR posters is only enabled when attendance policy is set to Physical Bus QR or Multi-Modal."
-          activeMode={mode}
+          requiredModeDescription="Use one of the boarding methods below."
           returnHref="/portal"
           returnLabel="Go to My Commute"
         />

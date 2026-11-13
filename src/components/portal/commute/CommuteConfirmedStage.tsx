@@ -23,18 +23,14 @@ import {
   Compass,
   Hand,
 } from "lucide-react";
-import { useAttendancePolicy } from "@/lib/attendance";
+import { useAttendancePolicy, boardingWays, joinWays } from "@/lib/attendance";
 import type { Bus, Stop, Route, Student, Staff, ValidationLocksConfig } from "@/lib/types";
 
 /** How to board, built from the transport office's active methods (transport_settings.validation_locks). */
 function boardingHint(locks: ValidationLocksConfig): { text: string; action: { href: string; label: string } | null } {
-  const ways: string[] = [];
-  if (locks.faceId) ways.push("look at the door camera");
-  if (locks.staticQr) ways.push("scan the bus QR");
-  if (locks.dynamicQr) ways.push("show your QR pass to the conductor");
-  if (locks.rfid) ways.push("tap your RFID card");
+  const ways = boardingWays(locks);
   const text = ways.length
-    ? `When you board, ${ways.join(" or ")} to confirm your seat.`
+    ? `When you board, ${joinWays(ways)} to confirm your seat.`
     : "The conductor will confirm your seat when you board.";
   const action = locks.staticQr
     ? { href: "/portal/qr/scan", label: "Scan Bus QR" }
@@ -298,7 +294,7 @@ export function CommuteConfirmedStage({
               ) : (
                 <span className="text-[9px] bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
                   <Lock className="w-2.5 h-2.5" />
-                  <span>Pending Scan</span>
+                  <span>Not checked in</span>
                 </span>
               )}
             </div>
@@ -312,7 +308,7 @@ export function CommuteConfirmedStage({
               <div className="flex items-center gap-2 py-0.5">
                 <span className="text-sm sm:text-base font-black text-amber-950 dark:text-amber-200 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span>Locked • Scan to Reveal</span>
+                  <span>Shown after check-in</span>
                 </span>
               </div>
             )}
@@ -459,10 +455,10 @@ export function CommuteConfirmedStage({
         <button
           type="button"
           onClick={() => {
-            if (onOpenDigitalPass) {
+            if (locks.dynamicQr && onOpenDigitalPass) {
               onOpenDigitalPass();
             } else {
-              router.push("/portal/qr/show");
+              router.push(locks.dynamicQr ? "/portal/qr/show" : "/portal/qr");
             }
           }}
           className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/50 dark:hover:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700/80 transition-all text-left group active:scale-[0.99] shadow-2xs cursor-pointer"
@@ -473,10 +469,10 @@ export function CommuteConfirmedStage({
             </div>
             <div>
               <div className="text-xs font-bold text-zinc-900 dark:text-white">
-                Show My QR Pass
+                {locks.dynamicQr ? "Show My QR Pass" : "How to board"}
               </div>
               <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                Dynamic digital boarding pass
+                {locks.dynamicQr ? "Let the conductor scan it" : "Boarding methods for your bus"}
               </div>
             </div>
           </div>

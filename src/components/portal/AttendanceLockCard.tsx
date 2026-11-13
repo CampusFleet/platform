@@ -15,6 +15,7 @@ import {
   Zap,
   Eye,
 } from "lucide-react";
+import { useAttendancePolicy, boardingWays, joinWays } from "@/lib/attendance";
 
 interface AttendanceLockCardProps {
   busId?: number | string;
@@ -51,6 +52,9 @@ export function AttendanceLockCard({
   const [isBusGpsLive, setIsBusGpsLive] = useState<boolean | null>(null);
   const [driverActive, setDriverActive] = useState<boolean | null>(null);
   const [isDeviceGpsOff, setIsDeviceGpsOff] = useState<boolean>(false);
+  // Only mention boarding methods the transport office has switched on.
+  const { locks } = useAttendancePolicy();
+  const otherWays = joinWays(boardingWays(locks));
 
   // Fetch current lock status without blocking on device GPS satellite lock
   const fetchLockStatus = useCallback(async () => {
@@ -294,7 +298,7 @@ export function AttendanceLockCard({
         ) : (
           <div className="space-y-3 pt-1">
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              To prevent attendance fraud, seat selection remains locked until you are verified physically near the bus or tap your RFID card.
+              Seat selection opens once you are verified at the bus: stand next to it and use Distance unlock{otherWays ? `, or ${otherWays}` : ""}.
             </p>
 
             {/* Bus GPS Telematics Status Indicator */}
@@ -304,7 +308,8 @@ export function AttendanceLockCard({
                 <div className="space-y-0.5">
                   <div className="font-bold">Bus GPS Offline (Driver Inactive)</div>
                   <div className="text-[11px] text-amber-700 dark:text-amber-400 leading-normal">
-                    The driver has not started the trip or vehicle telematics are offline. Distance unlock requires the bus GPS to be live. You can tap your physical RFID card on the bus reader once boarding starts.
+                    The driver has not started the trip or the bus GPS is offline. Distance unlock needs the bus GPS.{" "}
+                    {otherWays ? `Once boarding starts you can ${otherWays}.` : "Ask the conductor to check you in."}
                   </div>
                 </div>
               </div>
@@ -336,7 +341,7 @@ export function AttendanceLockCard({
             )}
 
             {/* Unlock Action Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+            <div className={`grid grid-cols-1 ${locks.rfid ? "sm:grid-cols-2" : ""} gap-2.5 pt-1`}>
               {/* Option 1: Location Distance Unlock */}
               <button
                 type="button"
@@ -366,7 +371,8 @@ export function AttendanceLockCard({
                 )}
               </button>
 
-              {/* Option 2: RFID Unlock Info */}
+              {/* Option 2: RFID Unlock Info (only when RFID boarding is on) */}
+              {locks.rfid && (
               <div
                 className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs text-center select-none"
                 title="Tap your registered physical RFID smart card on the bus entrance reader"
@@ -374,11 +380,12 @@ export function AttendanceLockCard({
                 <CreditCard className="w-4 h-4 text-slate-500 shrink-0" />
                 <span>Tap RFID Card on Bus</span>
               </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-slate-400">
-                Hardware RFID reader at bus door instantly unlocks.
+                {locks.rfid ? "The RFID reader at the bus door unlocks instantly." : ""}
               </span>
 
               {onPeekSeats && (

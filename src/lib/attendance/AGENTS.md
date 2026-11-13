@@ -7,8 +7,10 @@ The transport office chooses which boarding methods are on. The setting is store
 - `policy.tsx`
   - `resolveValidationLocks(mode, locks)`: normalises old single-mode values into the four flags.
   - `getModalityPageRules(mode, locks)`: what each screen should show (labels, which scanners are active).
-  - `useAttendancePolicy()`: React hook. Known issue: reads localStorage first and defaults to all-on if the fetch fails.
-  - `PolicyStandbyScreen`: shown when a page's method is switched off.
+  - `useAttendancePolicy()`: React hook; starts from the server-rendered value (`AttendancePolicyProvider`).
+  - `boardingWays(locks)` / `joinWays`: the student-facing phrases for the methods that are on. Use these for all instructions.
+  - `PolicyStandbyScreen`: shown when a page's method is switched off; lists only the methods that are on (no settings link on /portal pages).
+- `server-policy.ts`: `getAttendancePolicy` (Redis `policy:attendance`, 30 s), `isBoardingMethodOn(method)` (treated as on if the setting can't be read), `methodDisabledBody(method)` (403 `METHOD_DISABLED`).
 - `strategies/*`: server-side validation per method (`DynamicQrStrategy` checks the HMAC pass from
   `src/lib/security/student-pass.ts`; `StaticQrStrategy` checks bus + geofence; `RfidStrategy`; `FaceIdStrategy` is legacy v1).
 - `AttendanceEngine.ts`: runs a strategy and writes the attendance record; `persist.ts`: `persistGateAttendance`.
@@ -22,6 +24,9 @@ The transport office chooses which boarding methods are on. The setting is store
 | RFID | — | ESP32 reader | `/api/telematics/rfid` |
 
 ## Rules
-- Every boarding API must refuse a method whose lock is off (verify when touching a route).
+- Every boarding API refuses a method whose lock is off with 403 `METHOD_DISABLED` via `isBoardingMethodOn`:
+  `pass-token` + `boarding/scan` (signed pass) → dynamicQr; `rolling-token` + `board-self-service` → staticQr;
+  `telematics/rfid` → rfid (card registration for issuance still works); `gate/captures` → faceId, and the gate processor skips attendance for captures queued before Face ID was switched off.
+  Plain student IDs in `boarding/scan` are the conductor's manual path and are always allowed.
 - UI text and buttons must be built from the locks; never hard-code one method's instructions.
 - The conductor's manual scan stays available as the fallback.

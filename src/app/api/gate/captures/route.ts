@@ -4,6 +4,7 @@ import { authenticateDevice, hasDeviceSignature, touchDevice } from "@/lib/gate/
 import { ingestCaptures, resolvePhoneDevice, MAX_BATCH } from "@/lib/gate/ingest";
 import { processPending } from "@/lib/gate/processor";
 import { getSessionFromRequest } from "@/lib/jwt";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -16,9 +17,13 @@ const CREW_ROLES = ["driver", "conductor"];
  *   Bus devices: signed with the per-device key (see src/lib/gate/device-auth.ts).
  *   Crew phones (pilot fallback): session cookie; the bus is taken from the crew member's trip today.
  * Body: { captures: [{ idempotencyKey, door, capturedAt, latitude?, longitude?, gpsAccuracyM?, trackId?, image }] }
+ * Refused with 403 METHOD_DISABLED while Face ID boarding is switched off.
  * Response 200: { accepted: [...], rejected: [...] } — devices delete accepted items from their queue.
  */
 export async function POST(req: NextRequest) {
+  if (!(await isBoardingMethodOn("faceId"))) {
+    return NextResponse.json(methodDisabledBody("faceId"), { status: 403 });
+  }
   const raw = Buffer.from(await req.arrayBuffer());
   if (raw.length > MAX_BODY_BYTES) return NextResponse.json({ error: "Batch too large." }, { status: 413 });
 

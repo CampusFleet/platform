@@ -48,6 +48,7 @@ Steps:
 - ✅ Face ID fixes: skin-colour fallback and accessibility bypass removed; head turn measured with the face-service yaw ratio from MediaPipe landmarks (same measure client and server, instead of the transformation matrix); one-time challenge token (`/api/biometrics/challenge`); enroll-v2 rejects frames with no straight or no turned pose.
 - ✅ Students who decline Face ID take a live photo only (`/api/students/portrait`, no template).
 - ✅ `/api/students/profile` ignores `photoUrl` from students (no more base64 overwrite) and no longer clears zone/stop/emergency contact when they are omitted.
+- ✅ Boarding methods follow `validation_locks` everywhere: every boarding API refuses a switched-off method (403 `METHOD_DISABLED`); student text comes from `boardingWays()`; `/portal/qr` lists only active methods; seat card says "Not checked in" instead of "Locked • Scan to Reveal"; QR pass buttons only when the QR pass is on; nav tab renamed "Boarding".
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isBoardingMethodOn, methodDisabledBody } from "@/lib/attendance/server-policy";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { issueStudentPass } from "@/lib/security/student-pass";
@@ -16,6 +17,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
   }
 
+  if (!(await isBoardingMethodOn("dynamicQr"))) {
+    return NextResponse.json(methodDisabledBody("dynamicQr"), { status: 403 });
+  }
   const { data: student } = await supabaseAdmin
     .from("students")
     .select("id")

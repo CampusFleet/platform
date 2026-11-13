@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { isBoardingMethodOn } from "@/lib/attendance/server-policy";
 import { createFaceTemplate, FaceServiceError, toVectorLiteral, cosineDistance } from "@/lib/face/client";
 import { readEvidence } from "@/lib/gate/evidence";
 import { decide, stopAtPosition, type Decision, type StopGeo } from "@/lib/gate/decision";
@@ -316,6 +317,8 @@ async function applyDecision(args: {
 }) {
   const { c, decision, matched, reservation, trip, stopId, busLabel } = args;
   if (decision.outcome === "DUPLICATE") return;
+  // Face ID switched off after this capture was queued: keep the security log, skip attendance.
+  const faceIdOn = await isBoardingMethodOn("faceId");
 
   const at = c.captured_at;
   const studentId = matched?.student_id || null;
@@ -337,7 +340,7 @@ async function applyDecision(args: {
     metadata: { capture_id: c.id, outcome: decision.outcome, gps_missing: c.latitude === null, pipeline: "v2" },
   });
 
-  if (decision.attendance && studentId) {
+  if (faceIdOn && decision.attendance && studentId) {
     const { data: existing } = await supabaseAdmin
       .from("attendance_records")
       .select("id")
@@ -367,7 +370,7 @@ async function applyDecision(args: {
     }
   }
 
-  if (reservation) {
+  if (reservation && faceIdOn) {
     if (decision.reservationStatus === "BOARDED") {
       await supabaseAdmin
         .from("bus_reservations")

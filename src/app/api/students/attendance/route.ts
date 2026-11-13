@@ -281,7 +281,7 @@ export async function GET(req: NextRequest) {
 
         const { data: createdRes, error: createErr } = await supabaseAdmin
           .from("bus_reservations")
-          .insert({
+          .upsert({
             student_id: resolvedStudentId,
             trip_id: trip.id,
             bus_id: trip.bus_id,
@@ -291,9 +291,9 @@ export async function GET(req: NextRequest) {
             assigned_by: "AI_AUTO",
             assignment_score: 0.985,
             status: "ASSIGNED",
-          })
+          }, { onConflict: "student_id,shift_id,reservation_date", ignoreDuplicates: true })
           .select()
-          .single();
+          .maybeSingle();
 
         if (createErr) {
           console.error("[api/students/reservations] auto-assign insert error:", createErr);

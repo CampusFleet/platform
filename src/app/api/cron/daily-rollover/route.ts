@@ -7,8 +7,13 @@ import { isAuthorizedCron } from "@/lib/security/cron-auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const getSession = isAuthorizedCron(req) ? null : await getSessionFromRequest(req);
-  if (!isAuthorizedCron(req) && (!getSession || !["admin", "transport_admin", "transport_manager"].includes(getSession.role))) {
+  // Vercel Cron calls GET with the CRON_SECRET bearer (vercel.json, 00:05 IST): create today's trips.
+  if (isAuthorizedCron(req)) {
+    const result = await executeDailyRollover(undefined, { triggeredBy: "CRON" });
+    return NextResponse.json(result, { status: result.success ? 200 : 500 });
+  }
+  const getSession = await getSessionFromRequest(req);
+  if ((!getSession || !["admin", "transport_admin", "transport_manager"].includes(getSession.role))) {
     return NextResponse.json({ success: false, message: "Unauthorized." }, { status: 401 });
   }
   try {

@@ -33,8 +33,26 @@ which tables / Redis keys / services each feature touches, and the known traps.
 - `src/lib/attendance/policy.tsx` `useAttendancePolicy`: reads a stale value from localStorage first and defaults to "all methods on" when the server call fails.
 - `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Replaced in Phases 1–5.
 - `src/app/portal/ClientPortalLayout.tsx`: five sources of truth for subscription status and two racing redirects (onboarding flicker).
-- Clients trigger `/api/cron/daily-rollover` from `sync.ts`; should be a Vercel cron.
 - Tailwind: `animate-in`/`fade-in` (plugin missing), `h-13`, `w-4.5`, `shadow-xs` are no-ops.
+
+## Boarding chart (incoming / outgoing shifts)
+Owner rules: cutoff = `shifts.booking_cutoff_minutes` (Transport Admin → Shifts, "Final Boarding Chart");
+absent on the morning bus → evening seat kept only if the student confirms it before the cutoff.
+
+| When (IST) | What | Where |
+|---|---|---|
+| 00:05 daily | Create today's trips | Vercel cron → `GET /api/cron/daily-rollover` → `executeDailyRollover` (`src/lib/daily-rollover.ts`) |
+| every 5 min | Provisional chart: reservation for every paid student whose class has the shift today (until cutoff) | pg_cron `boarding-chart-tick` → `boarding_chart_tick()` |
+| after shift end | Unboarded → `ABSENT` | same |
+| morning absent | Evening reservation `needs_confirmation = true` → popup on My Commute | same; `OutgoingSeatPrompt.tsx`, `/api/students/outgoing-seat` |
+| student answers | Keep (`rider_confirmed_at`) or release (`CANCELLED`, `RIDER_DECLINED`) | `respond_outgoing_seat()` RPC |
+| departure − cutoff | Unconfirmed seats released (`NOT_CONFIRMED_AFTER_ABSENCE`); `trips.manifest_locked = true` | `boarding_chart_tick()` |
+
+- Migration: `supabase/migrations/20261113d_boarding_chart.sql` (columns `bus_reservations.needs_confirmation`, `rider_confirmed_at`, `cancel_reason`).
+- Re-running the tick is safe (unique `(student_id, shift_id, reservation_date)` + `ON CONFLICT DO NOTHING`).
+- Pause the job: `select cron.alter_job((select jobid from cron.job where jobname='boarding-chart-tick'), active := false);`
+- Known gap: rollover gives each bus one outgoing shift (rotation); students whose class uses the other outgoing shift on that route get no seat (docs/PLAN.md Phase 0.5).
+- `GET /api/students/attendance` still creates a reservation for walk-ons; it now upserts with `ignoreDuplicates` (no duplicate-key errors).
 
 ---
 

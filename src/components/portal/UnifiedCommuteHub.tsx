@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { store } from "@/lib/store";
 import SmartTransitCockpit from "./SmartTransitCockpit";
+import OutgoingSeatPrompt from "./OutgoingSeatPrompt";
 import type { Student, Bus, Trip, Shift, Stop, Booking, Staff, Route } from "@/lib/types";
 
 interface UnifiedCommuteHubProps {
@@ -72,6 +73,7 @@ export default function UnifiedCommuteHub({
 
   return (
     <div className="space-y-6">
+      <OutgoingSeatPrompt />
       <SmartTransitCockpit
         student={activeStudent}
         user={currentUser}

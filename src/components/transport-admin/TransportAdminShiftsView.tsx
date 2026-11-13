@@ -655,10 +655,10 @@ export default function TransportAdminShiftsView({
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                    Booking Cutoff Window
+                    Final Boarding Chart
                   </div>
                   <div className="text-[10px] text-gray-400">
-                    Lock commuter bookings N minutes before shift start time.
+                    Minutes before departure when the chart is locked. Unconfirmed seats (students absent on the morning bus) are released then.
                   </div>
                 </div>
 

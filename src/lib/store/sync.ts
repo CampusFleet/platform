@@ -737,29 +737,7 @@ CampusFleetStore.prototype.syncFromSupabase = async function (this: CampusFleetS
     
     await Promise.race([syncPromises, timeoutPromise]);
 
-    // Self-Healing Daily Rollover check decoupled from core sync latency
-    setTimeout(() => {
-      const now = new Date();
-      const istOffset = 5.5 * 60 * 60 * 1000;
-      const istDate = new Date(now.getTime() + istOffset);
-      const todayStr = istDate.toISOString().split("T")[0];
-
-      const hasTodayTrips = this.trips.some(t => t.tripDate === todayStr);
-      if (!hasTodayTrips && typeof window !== "undefined") {
-        fetch("/api/cron/daily-rollover", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targetDate: todayStr, triggeredBy: "LAZY_STORE_INIT" }),
-        })
-          .then(res => res.json())
-          .then(async data => {
-            if (data.success && data.newTripsCount > 0) {
-              await this.syncLiveTransit();
-            }
-          })
-          .catch(e => console.warn("Lazy daily rollover notice:", e));
-      }
-    }, 2000);
+    // Today's trips are created by the Vercel cron (/api/cron/daily-rollover, 00:05 IST), not by browsers.
 
     this.isInitialized = true;
     this.notify();

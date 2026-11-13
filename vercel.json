@@ -1,6 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/biometric-retention", "schedule": "30 20 * * *" }
+    {
+      "path": "/api/cron/biometric-retention",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/daily-rollover",
+      "schedule": "35 18 * * *"
+    }
   ]
 }

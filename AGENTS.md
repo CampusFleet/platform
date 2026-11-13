@@ -63,6 +63,7 @@ known issues) and records decisions already made. `docs/ROUTES.md` is the genera
 - Writes that must succeed together go in one Postgres function called with `.rpc()` (see `delete_user_account`).
 - Never show placeholder data as real (no default fee, zone, department, student ID or name). Show "Not set" or an empty state.
 - Boarding instructions must come from `transport_settings.validation_locks`, never hard-coded.
+- Data access in new code: `db` from `@/lib/supabaseClient` (typed from `src/lib/database.types.ts`; regenerate with `tools/gen-db-types.sh` after a migration).
 - Style: typed functions + React components, no new classes. Keep route handlers thin (session → zod → service → response).
 - Mobile first: test at 360 px; no fixed pixel widths without `max-w`; use `dvh`, not `vh`.
 - When you change a route, page, lib export, table, Redis key or env var, update `docs/CODEMAP.md` in the same commit.

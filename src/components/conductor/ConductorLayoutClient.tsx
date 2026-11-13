@@ -10,6 +10,7 @@ import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import ConductorLiveRadarView from "./ConductorLiveRadarView";
 import { useConductorContext } from "./ConductorContext";
 import { useAttendancePolicy } from "@/lib/attendance";
+import { EmptyState } from "@/components/ui";
 
 /**
  * Conductor shell. The bus/trip comes from the transport manager's assignment; the conductor can
@@ -104,15 +105,11 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-24 min-w-0">
         {!activeTrip ? (
-          <div className="max-w-md mx-auto mt-10 p-6 rounded-3xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-center space-y-2">
-            <BusFront className="w-10 h-10 mx-auto text-gray-400" />
-            <h2 className="text-lg font-black">No trip assigned today</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {duty?.me.staffId || isManager
-                ? "The transport manager has not assigned you to a bus for today."
-                : "Your login is not linked to a conductor profile yet. Ask the transport office to link it."}
-            </p>
-          </div>
+          <EmptyState className="mt-10" icon={<BusFront className="w-6 h-6" />} title="No trip assigned today">
+            {duty?.me.staffId || isManager
+              ? "The transport manager has not assigned you to a bus for today."
+              : "Your login is not linked to a conductor profile yet. Ask the transport office to link it."}
+          </EmptyState>
         ) : (
           children
         )}

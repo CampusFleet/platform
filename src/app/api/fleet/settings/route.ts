@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
+import { invalidateAttendancePolicy } from "@/lib/attendance/server-policy";
 
 /**
  * GET /api/fleet/settings — Fetch transport settings
@@ -85,15 +86,13 @@ export async function POST(req: NextRequest) {
       maxRideTimeMins,
       capacityBufferPercent,
       switchAutoApproveBelowPct,
-      updatedBy,
     } = body;
 
     // 1. Resolve and validate updater user ID against public.users
     let validUserId: string | null = null;
     const session = await getSessionFromRequest(req);
-    const candidateUserId = (typeof updatedBy === "string" && updatedBy !== "transport_admin") 
-      ? updatedBy 
-      : (session?.userId || session?.id || null);
+    // Actor comes from the session only (never from the request body).
+    const candidateUserId = session?.userId || null;
 
     if (candidateUserId) {
       const { data: userExists } = await supabaseAdmin
@@ -213,6 +212,8 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
       result = data;
     }
+
+    await invalidateAttendancePolicy();
 
     // Audit log
     await supabaseAdmin.from("audit_logs").insert({

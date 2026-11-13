@@ -279,3 +279,9 @@ body { top: 0px !important; }
   clip-path: polygon(0% 40%, 100% 0%, 100% 100%, 0% 60%);
 }
 
+
+/* Horizontal scrollers (chips, tabs) without a visible scrollbar. */
+@layer utilities {
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}

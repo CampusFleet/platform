@@ -29,15 +29,19 @@ Steps:
 - ⬜ Rollover gives each bus only one outgoing shift (rotation); students whose class uses the other outgoing shift on that route get no seat. Decide: one trip per route per active outgoing shift.
 - ⬜ Notifications when the chart is ready / seat released.
 
-## Phase 1 — Foundation 🔄
+## Phase 1 — Foundation ✅ (remaining items move with Phase 2)
 - ✅ Tailwind: `tailwindcss-animate`; `4.5`, `13`, `shadow-xs/2xs`, `backdrop-blur-xs` defined; colour tokens wrapped in `hsl()`.
 - ✅ Viewport: zoom allowed, `viewport-fit=cover`; safe-area padding on header, bottom nav, sheets, floating buttons (now above the nav); shells use `dvh` and `overflow-x-clip`; header brand can shrink.
 - ✅ Seat card boarding text built from `validation_locks` (no more "scan QR" when only Face ID is on).
 - ⬜ Remaining per-screen overflow fixes (fixed `min-w-[…]` tiles, unprefixed 3-col grids) — done screen by screen in Phases 2–4.
-- ⬜ Shared components in `src/components/ui`: AppShell, Header, BottomNav, Sheet, Modal, Button, Card, Stat, Badge, Field/Input/Select, Tabs, List/Table, MapLayout, EmptyState, Toast.
-- ⬜ Data layer: TanStack Query + one typed route per screen; generated Supabase types (`supabase gen types`); zod at route boundaries.
+- ✅ Shared components in `src/components/ui` (`cn`, Button, Card/CardHeader, Badge, Stat, Field/Input/Select/Textarea, Sheet, EmptyState, Segmented); used by the rebuilt crew screens and the seat-confirmation popup. `no-scrollbar` utility added (was used but undefined).
+- ⬜ AppShell / MapLayout / List / Toast primitives — added as Phase 2 screens need them.
+- ✅ Generated DB types `src/lib/database.types.ts` (`tools/gen-db-types.sh`) and typed client `db` (new modules use it; it already caught 3 null bugs).
+- ✅ New routes validate input with zod.
+- ⬜ TanStack Query: introduced with the first Phase 2 screen that needs client caching (not added unused).
 - ✅ One rule for subscription access: `getStudentAccess()` (`src/lib/student-access.ts`) used by the portal layout and a new server-side onboarding layout; client no longer second-guesses it (fixes onboarding ↔ portal flicker).
-- ⬜ Attendance policy served with `/api/me` (no localStorage-first, no "all on" fallback).
+- ✅ Attendance policy rendered by the server into `AttendancePolicyProvider` (root layout, Redis 30 s, invalidated on save); no localStorage, a failed refresh keeps the last value. Settings API takes the actor from the session, not the body.
+- ✅ New driver/conductor accounts get a linked staff row automatically (trigger `trg_ensure_crew_staff`, migration `20261113f`; 9 unlinked crew backfilled).
 
 ## Phase 2 — Student portal ⬜
 - Single-page onboarding: details → home & pickup → live photo + Face ID (Google-style 3 prompts, random side, server-side pose check, no upload) → summary & pay.
@@ -56,7 +60,6 @@ Steps:
 - ✅ Drivers can no longer open `/conductor`; conductor's radar is read-only for trip state.
 - ✅ Pass scanner no longer verifies locally when the server is unreachable.
 - ⬜ Rewrite ManifestTab / HaltRequestsTab / AuditTab / ConductorLiveRadarView UI on shared components (they now run on the new data).
-- ⬜ New crew accounts created in admin must get a linked staff row automatically.
 - ⬜ Every boarding API refuses methods whose lock is off.
 
 ## Phase 4 — Admin portals ⬜

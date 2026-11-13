@@ -4,6 +4,7 @@ import React from "react";
 import { HubDashboardView, HubModule } from "@/components/common/HubDashboardView";
 import { QrCode, FileText, LayoutGrid, ShieldCheck, AlertTriangle, Bus, Lock } from "lucide-react";
 import { useConductorContext } from "@/components/conductor/ConductorContext";
+import { Stat } from "@/components/ui";
 
 export default function ConductorHubPage() {
   const { duty, bus, route, shift, activeTrip, tripBookings, boardedCount, outsideCount, unseatedCount, absentCount, pendingHaltRequests, activeDepartureAlert } =
@@ -66,10 +67,7 @@ export default function ConductorHubPage() {
             { label: "Not boarded", value: outsideCount },
             { label: "No seat yet", value: unseatedCount },
           ].map((s) => (
-            <div key={s.label} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 min-w-0">
-              <div className="text-[10px] font-bold uppercase text-slate-500 truncate">{s.label}</div>
-              <div className="text-lg font-black">{s.value}</div>
-            </div>
+            <Stat key={s.label} label={s.label} value={s.value} />
           ))}
         </div>
       </section>

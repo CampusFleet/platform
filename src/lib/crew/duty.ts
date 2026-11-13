@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseClient";
+import { db as supabaseAdmin } from "@/lib/supabaseClient";
 import type { SessionPayload } from "@/lib/jwt";
 import { isManageRole } from "@/lib/security/actor";
 import { getTodayIST, getCurrentMinutesIST, timeStringToMinutes } from "@/lib/time-manager";
@@ -104,7 +104,7 @@ async function loadRoutes(routeIds: string[]) {
         longitude: Number(x.stop.longitude),
         arrivalOffsetMinutes: Number(x.arrival_offset_minutes || 0),
       }));
-    map.set(r.id, { id: r.id, name: r.name, direction: r.direction, stops });
+    map.set(r.id, { id: r.id, name: r.name || "Route", direction: r.direction || "HOME_TO_CAMPUS", stops });
   }
   return map;
 }
@@ -263,7 +263,7 @@ export async function getCrewDuty(session: SessionPayload, requestedTripId?: str
     trip,
     manifest,
     attendance,
-    departureAlert: alert.data ? { id: alert.data.id, message: alert.data.message, triggeredAt: alert.data.triggered_at } : null,
+    departureAlert: alert.data ? { id: alert.data.id, message: alert.data.message || "Bus is about to leave. Please board now.", triggeredAt: alert.data.triggered_at || new Date().toISOString() } : null,
     pendingHaltRequests: halts,
   };
 }

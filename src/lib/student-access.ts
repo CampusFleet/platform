@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseClient";
+import { db as supabaseAdmin } from "@/lib/supabaseClient";
 
 /**
  * The single rule for "may this student use the transport pass right now?".

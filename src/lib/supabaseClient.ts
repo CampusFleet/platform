@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -125,3 +126,10 @@ export const supabaseAdmin: SupabaseClient =
         auth: { persistSession: false, autoRefreshToken: false },
       })
     : misconfigured();
+
+/**
+ * Same service-role client, typed from the live schema (src/lib/database.types.ts,
+ * regenerate with tools/gen-db-types.sh). Use `db` in new code so column names and nullability
+ * are checked at compile time; existing code still uses the untyped `supabaseAdmin`.
+ */
+export const db = supabaseAdmin as unknown as SupabaseClient<Database>;

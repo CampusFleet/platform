@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ScanFace,
@@ -162,101 +162,64 @@ export function getModalityPageRules(
   };
 }
 
-const STORAGE_KEY = "campusfleet_attendance_mode";
-const STORAGE_LOCKS_KEY = "campusfleet_validation_locks";
 const CHANNEL_NAME = "campusfleet_attendance_policy";
 
+type PolicyValue = { mode: TransitAttendanceMode; locks: ValidationLocksConfig };
+const PolicyContext = createContext<PolicyValue | null>(null);
+
 /**
- * React hook to reactively subscribe to the active institutional attendance policy and validation locks.
+ * Root-layout provider: the policy is read on the server (src/lib/attendance/server-policy.ts),
+ * so every screen starts with the real methods instead of a stale browser copy or an "all on" guess.
+ */
+export function AttendancePolicyProvider({ initial, children }: { initial: PolicyValue | null; children: React.ReactNode }) {
+  return <PolicyContext.Provider value={initial}>{children}</PolicyContext.Provider>;
+}
+
+/**
+ * Active boarding methods. Starts from the server-rendered value, refreshes on mount / focus and
+ * on admin changes in another tab. A failed refresh keeps the last known value.
  */
 export function useAttendancePolicy() {
-  const [mode, setMode] = useState<TransitAttendanceMode>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY) as TransitAttendanceMode | null;
-        if (saved && ["FACE_ID", "DYNAMIC_QR", "RFID", "STATIC_QR", "ALL"].includes(saved)) {
-          return saved;
-        }
-      } catch {}
-    }
-    return "ALL";
-  });
-
-  const [locks, setLocks] = useState<ValidationLocksConfig>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const savedLocks = localStorage.getItem(STORAGE_LOCKS_KEY);
-        if (savedLocks) {
-          const parsed = JSON.parse(savedLocks);
-          if (parsed && typeof parsed === "object") {
-            return resolveValidationLocks(undefined, parsed);
-          }
-        }
-      } catch {}
-    }
-    return DEFAULT_VALIDATION_LOCKS;
-  });
-
-  const [loading, setLoading] = useState(true);
+  const initial = useContext(PolicyContext);
+  const [mode, setMode] = useState<TransitAttendanceMode>(initial?.mode || "ALL");
+  const [locks, setLocks] = useState<ValidationLocksConfig>(initial?.locks || DEFAULT_VALIDATION_LOCKS);
+  const [loading, setLoading] = useState(!initial);
 
   useEffect(() => {
-    let isMounted = true;
-
-    // 1. Fetch current settings from backend
-    async function syncPolicy() {
+    let alive = true;
+    const sync = async () => {
       try {
-        const res = await fetch("/api/fleet/settings");
+        const res = await fetch("/api/fleet/settings", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.success && data.settings) {
-          const remoteMode = (data.settings.attendanceMode || "ALL") as TransitAttendanceMode;
-          const remoteLocks = resolveValidationLocks(remoteMode, data.settings.validationLocks);
-
-          if (isMounted) {
-            setMode(remoteMode);
-            setLocks(remoteLocks);
-            try {
-              localStorage.setItem(STORAGE_KEY, remoteMode);
-              localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(remoteLocks));
-            } catch {}
-          }
+        if (alive && data.success && data.settings) {
+          const m = (data.settings.attendanceMode || "ALL") as TransitAttendanceMode;
+          setMode(m);
+          setLocks(resolveValidationLocks(m, data.settings.validationLocks));
         }
-      } catch {} finally {
-        if (isMounted) setLoading(false);
+      } catch {
+      } finally {
+        if (alive) setLoading(false);
       }
-    }
+    };
+    sync();
+    const onFocus = () => document.visibilityState === "visible" && sync();
+    document.addEventListener("visibilitychange", onFocus);
 
-    syncPolicy();
-
-    // 2. Cross-tab real-time BroadcastChannel sync
     let channel: BroadcastChannel | null = null;
     try {
-      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-        channel = new BroadcastChannel(CHANNEL_NAME);
-        channel.onmessage = (event) => {
-          if (!isMounted || !event?.data) return;
-
-          if (event.data.mode) {
-            setMode(event.data.mode);
-            try {
-              localStorage.setItem(STORAGE_KEY, event.data.mode);
-            } catch {}
-          }
-
-          if (event.data.locks) {
-            const resolved = resolveValidationLocks(event.data.mode, event.data.locks);
-            setLocks(resolved);
-            try {
-              localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(resolved));
-            } catch {}
-          }
-        };
-      }
+      channel = new BroadcastChannel(CHANNEL_NAME);
+      channel.onmessage = (e) => {
+        if (!alive || !e?.data) return;
+        if (e.data.mode) setMode(e.data.mode);
+        if (e.data.locks) setLocks(resolveValidationLocks(e.data.mode, e.data.locks));
+      };
     } catch {}
 
     return () => {
-      isMounted = false;
-      if (channel) channel.close();
+      alive = false;
+      document.removeEventListener("visibilitychange", onFocus);
+      channel?.close();
     };
   }, []);
 
@@ -273,10 +236,7 @@ export function broadcastAttendanceModeChange(
 ) {
   try {
     if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, mode);
       const cleanLocks = resolveValidationLocks(mode, locks);
-      localStorage.setItem(STORAGE_LOCKS_KEY, JSON.stringify(cleanLocks));
-
       if ("BroadcastChannel" in window) {
         const channel = new BroadcastChannel(CHANNEL_NAME);
         channel.postMessage({ mode, locks: cleanLocks });

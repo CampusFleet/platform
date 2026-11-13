@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BusFront, CheckCircle2, Clock, MapPin, Navigation, Play, Radio, ShieldAlert, Square, Wrench, X } from "lucide-react";
+import { AlertTriangle, BusFront, CheckCircle2, Clock, MapPin, Navigation, Play, Radio, ShieldAlert, Square, Wrench } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { DriverGateCameraConsole } from "@/components/driver/DriverGateCameraConsole";
 import { telematicsService } from "@/lib/telematicsService";
 import { useAttendancePolicy } from "@/lib/attendance";
 import type { CrewDuty, DutyTrip } from "@/lib/crew/duty";
+import { EmptyState, Sheet } from "@/components/ui";
 
 /**
  * Driver console. The trip (and so the bus) is whatever the transport manager assigned today;
@@ -196,15 +197,11 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
 
       <main className="max-w-3xl mx-auto p-4 space-y-4 min-w-0">
         {!trip ? (
-          <section className="mt-6 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
-            <BusFront className="w-10 h-10 mx-auto text-slate-400" />
-            <h2 className="text-lg font-black">No trip assigned today</h2>
-            <p className="text-sm text-slate-500">
-              {duty?.me.staffId
-                ? "The transport manager has not assigned you to a bus for today."
-                : "Your login is not linked to a driver profile yet. Ask the transport office to link it."}
-            </p>
-          </section>
+          <EmptyState className="mt-6" icon={<BusFront className="w-6 h-6" />} title="No trip assigned today">
+            {duty?.me.staffId
+              ? "The transport manager has not assigned you to a bus for today."
+              : "Your login is not linked to a driver profile yet. Ask the transport office to link it."}
+          </EmptyState>
         ) : (
           <>
             {(duty?.trips.length || 0) > 1 && (
@@ -356,15 +353,8 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
         )}
       </main>
 
-      {sosOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] bg-black/60">
-          <div className="w-full max-w-md p-5 rounded-3xl bg-white dark:bg-slate-900 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-black text-lg">Report to the transport office</h3>
-              <button type="button" onClick={() => setSosOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Sheet open={sosOpen} onClose={() => setSosOpen(false)} title="Report to the transport office">
+          <div className="space-y-3 pb-[env(safe-area-inset-bottom)]">
             <p className="text-xs text-slate-500">Your bus and current location are sent with the report.</p>
             {[
               { type: "BREAKDOWN" as const, label: "Bus breakdown", icon: Wrench },
@@ -376,8 +366,7 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
               </button>
             ))}
           </div>
-        </div>
-      )}
+      </Sheet>
 
       <MobileBottomNav navItems={navItems as any} />
       {running && (

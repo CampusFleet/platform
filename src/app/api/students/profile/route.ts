@@ -66,20 +66,6 @@ export async function POST(req: NextRequest) {
     // Subscription is considered active if payment has been approved
     const hasActiveSubscription = existingPaymentStatus === "APPROVED";
 
-    // Anti-fraud guardrail: Students cannot modify photo AFTER payment is approved
-    // Before payment: students can freely update their photo
-    // After payment: only staff/admin can change it
-    if (body.photoUrl && existingPhotoUrl && existingPhotoUrl !== body.photoUrl) {
-      if (!isStaffOrAdmin && hasActiveSubscription) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Official identity photo is locked after payment approval. Only campus transport staff can update your verification photo.",
-          },
-          { status: 403 }
-        );
-      }
-    }
 
     // Campus Lock Guardrail: Only lock campus AFTER payment is approved
     const effectiveCampusId = (!isStaffOrAdmin && hasActiveSubscription && existingCampusId) ? existingCampusId : (campusId || existingCampusId || null);
@@ -132,10 +118,11 @@ export async function POST(req: NextRequest) {
       campus_id: effectiveCampusId,
       campus: effectiveCampus,
       semester: (semester || "").trim() || null,
-      zone_id: resolvedZoneId,
-      primary_stop_id: primaryStopId || null,
-      emergency_contact: emergencyContact || null,
     };
+    // Never clear zone, stop or emergency contact just because a caller left them out.
+    if (resolvedZoneId) studentData.zone_id = resolvedZoneId;
+    if (primaryStopId) studentData.primary_stop_id = primaryStopId;
+    if (emergencyContact) studentData.emergency_contact = emergencyContact;
 
     if (effectiveStudentIdCode) {
       studentData.student_id_code = effectiveStudentIdCode;
@@ -156,7 +143,10 @@ export async function POST(req: NextRequest) {
 
     let finalPhotoUrl = null;
     let finalPhotoLocked = false;
-    if (body.photoUrl) {
+    // Students set their pass photo only through the live camera (/api/students/portrait or
+    // /api/biometrics/enroll-v2). A photoUrl sent here by a student is ignored, so a stale client copy
+    // or a base64 data URL can never overwrite the stored portrait.
+    if (body.photoUrl && isStaffOrAdmin) {
       finalPhotoUrl = body.photoUrl;
       // Only lock photo if student already has an approved subscription
       finalPhotoLocked = hasActiveSubscription;

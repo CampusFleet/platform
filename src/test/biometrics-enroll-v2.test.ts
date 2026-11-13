@@ -31,24 +31,45 @@ vi.mock("@/lib/supabaseClient", () => ({
   },
 }));
 
+process.env.JWT_SECRET ||= "test-secret-test-secret-test-secret-123";
+vi.mock("@/lib/redis", () => ({ redis: null, cacheDel: vi.fn(), invalidateCachedStudentProfile: vi.fn() }));
+
 import { POST } from "@/app/api/biometrics/enroll-v2/route";
 import { CONSENT_VERSION } from "@/lib/biometrics-consent";
+import { issueFaceChallenge } from "@/lib/face/challenge";
 
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100, 2)]).toString("base64");
 const unit = (i: number) => Array.from({ length: 128 }, (_, k) => (k === i ? 1 : 0));
 const near = (i: number, j: number) => Array.from({ length: 128 }, (_, k) => (k === i ? 0.95 : k === j ? 0.31 : 0));
-const ok = (template: number[]) => ({
+const ok = (template: number[], yaw = 0.02) => ({
   model_version: "m1", faces_detected: 1, accepted: true, rejection_reasons: [], template,
-  quality: { score: 0.9, passed: true }, pad: { real_score: 0.99, passed: true },
+  quality: { score: 0.9, passed: true, yaw_ratio: yaw }, pad: { real_score: 0.99, passed: true },
 });
 const req = (body: any) => new NextRequest("http://localhost/api/biometrics/enroll-v2", { method: "POST", body: JSON.stringify(body) });
-const valid = { consentGiven: true, consentVersion: CONSENT_VERSION, frames: [JPEG, JPEG, JPEG] };
+const base = { consentGiven: true, consentVersion: CONSENT_VERSION, frames: [JPEG, JPEG, JPEG] };
+let valid: typeof base & { challenge: string };
 
 describe("POST /api/biometrics/enroll-v2", () => {
   beforeEach(() => {
     faceResults.length = 0;
     for (const k of Object.keys(inserted)) delete inserted[k];
     session.role = "student";
+    valid = { ...base, challenge: issueFaceChallenge("user-1").token };
+  });
+
+  it("requires a valid challenge for the signed-in user", async () => {
+    expect((await POST(req({ ...base }))).status).toBe(400);
+    const other = issueFaceChallenge("user-2").token;
+    const r = await POST(req({ ...base, challenge: other }));
+    expect((await r.json()).code).toBe("CHALLENGE_INVALID");
+  });
+
+  it("rejects frames without a head turn", async () => {
+    faceResults.push(ok(unit(0)), ok(near(0, 1)), ok(unit(0)));
+    const r = await POST(req(valid));
+    expect(r.status).toBe(422);
+    expect((await r.json()).code).toBe("NO_TURNED_FRAME");
+    expect(inserted.face_templates).toBeUndefined();
   });
 
   it("requires the current consent version", async () => {
@@ -80,13 +101,13 @@ describe("POST /api/biometrics/enroll-v2", () => {
   });
 
   it("rejects frames of different people", async () => {
-    faceResults.push(ok(unit(0)), ok(unit(1)), ok(unit(0)));
+    faceResults.push(ok(unit(0)), ok(unit(1), 0.22), ok(unit(0)));
     const r = await POST(req(valid));
     expect((await r.json()).code).toBe("INCONSISTENT_FACES");
   });
 
   it("enrolls: records consent then stores server-generated templates", async () => {
-    faceResults.push(ok(unit(0)), ok(near(0, 1)), ok(unit(0)));
+    faceResults.push(ok(unit(0)), ok(near(0, 1), 0.22), ok(unit(0)));
     const r = await POST(req({ ...valid, qualityScore: 1, livenessScore: 1 }));
     const j = await r.json();
     expect(r.status).toBe(200);

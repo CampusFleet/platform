@@ -1,7 +1,5 @@
-export * from "./types";
+export * from "./form";
 export * from "./OnboardingHeader";
-export * from "./OnboardingStepNav";
-export * from "./StepHomeAndRoute";
-export * from "./StepProfileAndId";
-export * from "./StepActivatePass";
-
+export * from "./DetailsSection";
+export * from "./HomePickupSection";
+export * from "./LiveFaceCapture";

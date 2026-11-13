@@ -18,7 +18,7 @@ The transport office chooses which boarding methods are on. The setting is store
 |---|---|---|---|
 | Dynamic QR pass | `/portal/qr/show` (fetches signed pass) | `QRPassScanner` | `/api/students/pass-token`, `/api/boarding/scan` |
 | Bus / seat QR | `/portal/qr/scan` (`StudentSelfScanner`) | `/conductor/bus-qr` (rolling QR) | `/api/boarding/rolling-token`, `/api/students/board-self-service` |
-| Face ID | onboarding `FaceIdEnrollmentModal` | `DriverGateCameraConsole` | `/api/biometrics/enroll-v2`, `/api/gate/captures` |
+| Face ID | onboarding `LiveFaceCapture` | `DriverGateCameraConsole` | `/api/biometrics/enroll-v2`, `/api/gate/captures` |
 | RFID | — | ESP32 reader | `/api/telematics/rfid` |
 
 ## Rules

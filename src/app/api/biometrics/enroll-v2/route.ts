@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { createFaceTemplate, cosineDistance, toVectorLiteral, FaceServiceError } from "@/lib/face/client";
-import { decodeImagePayload, storeEvidence } from "@/lib/gate/evidence";
+import { decodeImagePayload } from "@/lib/gate/evidence";
 import { getMatchThreshold } from "@/lib/gate/processor";
 import { CONSENT_PURPOSE, CONSENT_VERSION } from "@/lib/biometrics-consent";
+import { verifyFaceChallenge, consumeFaceChallenge } from "@/lib/face/challenge";
+import { checkEnrollmentPoses, SERVER_POSE } from "@/lib/face/pose";
+import { savePortrait } from "@/lib/students/portrait";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,8 +18,11 @@ const MIN_ACCEPTED = 2;
 
 /**
  * POST /api/biometrics/enroll-v2
- * Body: { consentVersion, consentGiven: true, frames: [base64 JPEG ×3–5], portrait?: base64 JPEG }
+ * Body: { consentVersion, consentGiven: true, challenge, frames: [base64 JPEG ×3–5], portrait?: base64 JPEG }
  *
+ * - `challenge` is the one-time token from GET /api/biometrics/challenge (5 min, single use).
+ * - Frames must include one looking straight and one with the head turned (face-service yaw ratio).
+ *   Set FACE_ENROLL_POSE_CHECK=off to disable; FACE_ENROLL_TURN_MIN / FACE_ENROLL_FRONTAL_MAX tune it.
  * - Student identity comes from the session only (no studentId in the body).
  * - Every frame is templated by the face service; frames failing quality or anti-spoofing are rejected
  *   with a reason. No client-supplied quality/liveness scores are accepted.
@@ -40,12 +46,19 @@ export async function POST(req: NextRequest) {
   if (frames.length < MIN_FRAMES || frames.length > MAX_FRAMES) {
     return NextResponse.json({ success: false, message: `Send ${MIN_FRAMES}–${MAX_FRAMES} frames.` }, { status: 400 });
   }
+  const challenge = verifyFaceChallenge(body.challenge, session.userId);
+  if (!challenge.valid) {
+    return NextResponse.json({ success: false, code: "CHALLENGE_INVALID", message: "This scan expired. Please start again." }, { status: 400 });
+  }
 
   const { data: student } = await supabaseAdmin.from("students").select("id, user_id").eq("user_id", session.userId).maybeSingle();
   if (!student) return NextResponse.json({ success: false, message: "Complete your student profile first." }, { status: 404 });
+  if (!(await consumeFaceChallenge(challenge.nonce))) {
+    return NextResponse.json({ success: false, code: "CHALLENGE_USED", message: "This scan was already submitted. Please start again." }, { status: 409 });
+  }
 
   // 1. Template every frame server-side
-  const results: { index: number; accepted: boolean; reasons: string[]; template?: number[]; quality?: number; pad?: number; model?: string }[] = [];
+  const results: { index: number; accepted: boolean; reasons: string[]; template?: number[]; quality?: number; pad?: number; model?: string; yaw?: number | null }[] = [];
   try {
     for (let i = 0; i < frames.length; i++) {
       let buf: Buffer;
@@ -68,6 +81,7 @@ export async function POST(req: NextRequest) {
         quality: r.quality?.score,
         pad: r.pad?.real_score,
         model: r.model_version,
+        yaw: r.faces_detected === 1 ? r.quality?.yaw_ratio ?? null : null,
       });
     }
   } catch (err: any) {
@@ -85,6 +99,23 @@ export async function POST(req: NextRequest) {
   }
   if (accepted.length < MIN_ACCEPTED) {
     return NextResponse.json({ success: false, code: "LOW_QUALITY", message: "The photos were not clear enough. Face the camera in good light and try again.", frames: report }, { status: 422 });
+  }
+  // Head movement: one frame looking straight and one turned. A still photo held to the camera has neither.
+  if (process.env.FACE_ENROLL_POSE_CHECK !== "off") {
+    const pose = checkEnrollmentPoses(results.map((r) => r.yaw), {
+      frontalMax: Number(process.env.FACE_ENROLL_FRONTAL_MAX) || SERVER_POSE.FRONTAL_MAX,
+      turnMin: Number(process.env.FACE_ENROLL_TURN_MIN) || SERVER_POSE.TURN_MIN,
+    });
+    if (!pose.ok) {
+      await supabaseAdmin.from("biometric_access_log").insert({
+        actor_user_id: session.userId, actor_role: session.role, action: "ENROLL_POSE_REJECTED", subject_student_id: student.id,
+        details: { code: pose.code, yaw: results.map((r) => r.yaw ?? null) },
+      });
+      const message = pose.code === "NO_TURNED_FRAME"
+        ? "We did not see your head turn. Follow the prompt and turn your head slowly."
+        : "We did not get a clear straight-on photo. Look directly at the camera and try again.";
+      return NextResponse.json({ success: false, code: pose.code, message, frames: report }, { status: 422 });
+    }
   }
 
   // 2. Consistency: all accepted frames must be the same person
@@ -133,12 +164,10 @@ export async function POST(req: NextRequest) {
   if (tErr) return NextResponse.json({ success: false, message: "Could not save face templates." }, { status: 500 });
 
   // 4. Portrait → private storage; users.photo_url points at the access-controlled route
+  let photoUrl: string | null = null;
   if (typeof body.portrait === "string") {
     try {
-      const portrait = decodeImagePayload(body.portrait);
-      const key = await storeEvidence(`portraits/${student.id}.jpg`, portrait);
-      await supabaseAdmin.from("users").update({ photo_url: `/api/biometrics/portrait/${student.id}?k=${encodeURIComponent(key)}`, photo_locked: true }).eq("id", session.userId);
-      await supabaseAdmin.from("students").update({ photo_locked: true }).eq("id", student.id);
+      photoUrl = await savePortrait({ studentId: student.id, userId: session.userId, image: body.portrait });
     } catch (e) {
       console.warn("[enroll-v2] portrait not stored:", (e as Error).message);
     }
@@ -149,5 +178,5 @@ export async function POST(req: NextRequest) {
     details: { templates: accepted.length, model, consent_version: CONSENT_VERSION },
   });
 
-  return NextResponse.json({ success: true, templates: accepted.length, modelVersion: model, consentVersion: CONSENT_VERSION, frames: report });
+  return NextResponse.json({ success: true, templates: accepted.length, modelVersion: model, consentVersion: CONSENT_VERSION, photoUrl, frames: report });
 }

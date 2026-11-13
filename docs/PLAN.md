@@ -43,9 +43,12 @@ Steps:
 - ✅ Attendance policy rendered by the server into `AttendancePolicyProvider` (portal, conductor and driver layouts; Redis 30 s, invalidated on save); no localStorage, a failed refresh keeps the last value. Settings API takes the actor from the session, not the body.
 - ✅ New driver/conductor accounts get a linked staff row automatically (trigger `trg_ensure_crew_staff`, migration `20261113f`; 9 unlinked crew backfilled).
 
-## Phase 2 — Student portal ⬜
-- Single-page onboarding: details → home & pickup → live photo + Face ID (Google-style 3 prompts, random side, server-side pose check, no upload) → summary & pay.
-- Face ID fixes: remove skin-colour fallback and accessibility bypass; 3-D head pose from MediaPipe matrices; challenge nonce.
+## Phase 2 — Student portal 🔄
+- ✅ Single-page onboarding: details → home & pickup → live photo (+ optional Face ID: look straight, turn to a random side, look straight) → summary & pay. No file upload. Data from the server only (`/api/students/onboarding`, `/api/students/pickup-options`, `/api/academic/cascade`); no placeholder address, zone, fee or route. Old 3-step wizard and `FaceIdEnrollmentModal` deleted.
+- ✅ Face ID fixes: skin-colour fallback and accessibility bypass removed; head turn measured with the face-service yaw ratio from MediaPipe landmarks (same measure client and server, instead of the transformation matrix); one-time challenge token (`/api/biometrics/challenge`); enroll-v2 rejects frames with no straight or no turned pose.
+- ✅ Students who decline Face ID take a live photo only (`/api/students/portrait`, no template).
+- ✅ `/api/students/profile` ignores `photoUrl` from students (no more base64 overwrite) and no longer clears zone/stop/emergency contact when they are omitted.
+- ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).
 - Remove `store` usage from portal; fix onboarding flicker (single redirect rule).

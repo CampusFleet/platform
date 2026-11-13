@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/fleet/settings/route";
+import { getSessionFromRequest } from "@/lib/jwt";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 
@@ -147,12 +148,11 @@ describe("Transport Settings Foreign Key & Audit Integrity", () => {
       return {};
     });
 
+    // The actor comes from the session, not from a body field.
+    (getSessionFromRequest as any).mockResolvedValue({ userId: validUserId, role: "transport_admin" });
     const req = new NextRequest("http://localhost:3000/api/fleet/settings", {
       method: "POST",
-      body: JSON.stringify({
-        attendanceMode: "DYNAMIC_QR",
-        updatedBy: validUserId,
-      }),
+      body: JSON.stringify({ attendanceMode: "DYNAMIC_QR" }),
     });
 
     const res = await POST(req);

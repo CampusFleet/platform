@@ -4,6 +4,8 @@ import { getSession } from "@/lib/jwt";
 import { getCrewDuty } from "@/lib/crew/duty";
 import { ConductorProvider } from "@/components/conductor/ConductorContext";
 import ConductorLayoutClient from "@/components/conductor/ConductorLayoutClient";
+import { getAttendancePolicy } from "@/lib/attendance/server-policy";
+import { AttendancePolicyProvider } from "@/lib/attendance/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +20,13 @@ export default async function ConductorLayout({ children }: { children: React.Re
   if (!session) redirect("/login?redirect=/conductor");
   if (!ALLOWED.includes(session.role)) redirect(session.role === "driver" ? "/driver" : "/portal");
 
-  const duty = await getCrewDuty(session).catch(() => null);
+  const [duty, policy] = await Promise.all([getCrewDuty(session).catch(() => null), getAttendancePolicy()]);
 
   return (
-    <ConductorProvider initialUser={session} initialDuty={duty}>
-      <ConductorLayoutClient>{children}</ConductorLayoutClient>
-    </ConductorProvider>
+    <AttendancePolicyProvider initial={policy}>
+      <ConductorProvider initialUser={session} initialDuty={duty}>
+        <ConductorLayoutClient>{children}</ConductorLayoutClient>
+      </ConductorProvider>
+    </AttendancePolicyProvider>
   );
 }

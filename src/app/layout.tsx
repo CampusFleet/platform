@@ -1,5 +1,3 @@
-import { getAttendancePolicy } from "@/lib/attendance/server-policy";
-import { AttendancePolicyProvider } from "@/lib/attendance/policy";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -41,12 +39,11 @@ export const metadata: Metadata = {
 };
 
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const policy = await getAttendancePolicy();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -63,7 +60,7 @@ export default async function RootLayout({
               <Suspense fallback={null}>
                 <NavigationProgressBar />
               </Suspense>
-              <AttendancePolicyProvider initial={policy}>{children}</AttendancePolicyProvider>
+              {children}
             </CampusTimeProvider>
           </LanguageProvider>
         </ThemeProvider>

@@ -40,7 +40,7 @@ Steps:
 - ✅ New routes validate input with zod.
 - ⬜ TanStack Query: introduced with the first Phase 2 screen that needs client caching (not added unused).
 - ✅ One rule for subscription access: `getStudentAccess()` (`src/lib/student-access.ts`) used by the portal layout and a new server-side onboarding layout; client no longer second-guesses it (fixes onboarding ↔ portal flicker).
-- ✅ Attendance policy rendered by the server into `AttendancePolicyProvider` (root layout, Redis 30 s, invalidated on save); no localStorage, a failed refresh keeps the last value. Settings API takes the actor from the session, not the body.
+- ✅ Attendance policy rendered by the server into `AttendancePolicyProvider` (portal, conductor and driver layouts; Redis 30 s, invalidated on save); no localStorage, a failed refresh keeps the last value. Settings API takes the actor from the session, not the body.
 - ✅ New driver/conductor accounts get a linked staff row automatically (trigger `trg_ensure_crew_staff`, migration `20261113f`; 9 unlinked crew backfilled).
 
 ## Phase 2 — Student portal ⬜

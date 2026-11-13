@@ -2,6 +2,8 @@ import React from "react";
 import { getSession } from "@/lib/jwt";
 import ClientPortalLayout from "./ClientPortalLayout";
 import { getStudentAccess } from "@/lib/student-access";
+import { getAttendancePolicy } from "@/lib/attendance/server-policy";
+import { AttendancePolicyProvider } from "@/lib/attendance/policy";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -14,9 +16,12 @@ export default async function PortalLayout({ children }: { children: React.React
     photoUrl = access.photoUrl;
   }
 
+  const policy = await getAttendancePolicy();
   return (
-    <ClientPortalLayout initialIsSubscribed={isSubscribed} initialPhotoUrl={photoUrl}>
-      {children}
-    </ClientPortalLayout>
+    <AttendancePolicyProvider initial={policy}>
+      <ClientPortalLayout initialIsSubscribed={isSubscribed} initialPhotoUrl={photoUrl}>
+        {children}
+      </ClientPortalLayout>
+    </AttendancePolicyProvider>
   );
 }

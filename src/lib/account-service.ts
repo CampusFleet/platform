@@ -46,11 +46,18 @@ export async function findOrCreateUser({
   const validPhoto = (!isGoogleAvatar && avatarUrl) ? avatarUrl : null;
 
   // 1. Check if user already exists
-  const { data: existingUser } = await supabaseAdmin
+  const { data: existingUser, error: lookupErr } = await supabaseAdmin
     .from("users")
     .select("*")
     .eq("email", cleanEmail)
     .maybeSingle();
+
+  // A failed lookup (timeout, network) must not be mistaken for "user does not exist",
+  // otherwise an existing account would be re-created as a new student.
+  if (lookupErr) {
+    console.error("User lookup failed in findOrCreateUser:", lookupErr);
+    throw new Error(`Failed to look up user account: ${lookupErr.message}`);
+  }
 
   if (existingUser) {
     // Already present account: sign in as normal

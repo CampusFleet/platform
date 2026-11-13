@@ -7,6 +7,16 @@ import { put, get, del } from "@vercel/blob";
  */
 const MAX_CROP_BYTES = 600 * 1024;
 
+/**
+ * Token for the dedicated *private* Blob store (campusfleet-evidence).
+ * BLOB_READ_WRITE_TOKEN belongs to the public receipts store and must not be used here.
+ */
+function evidenceToken(): string {
+  const token = process.env.EVIDENCE_READ_WRITE_TOKEN;
+  if (!token) throw new Error("EVIDENCE_READ_WRITE_TOKEN is not configured (private Blob store)");
+  return token;
+}
+
 export function isJpeg(buf: Buffer): boolean {
   return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
 }
@@ -25,13 +35,13 @@ export async function storeEvidence(pathname: string, image: Buffer): Promise<st
     access: "private",
     contentType: "image/jpeg",
     addRandomSuffix: true,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
+    token: evidenceToken(),
   });
   return res.pathname;
 }
 
 export async function readEvidence(pathname: string): Promise<Buffer | null> {
-  const res = await get(pathname, { access: "private", useCache: false, token: process.env.BLOB_READ_WRITE_TOKEN });
+  const res = await get(pathname, { access: "private", useCache: false, token: evidenceToken() });
   if (!res || res.statusCode !== 200 || !res.stream) return null;
   return Buffer.from(await new Response(res.stream).arrayBuffer());
 }
@@ -39,5 +49,5 @@ export async function readEvidence(pathname: string): Promise<Buffer | null> {
 export async function deleteEvidence(pathnames: string[]): Promise<void> {
   const list = pathnames.filter(Boolean);
   if (list.length === 0) return;
-  await del(list, { token: process.env.BLOB_READ_WRITE_TOKEN });
+  await del(list, { token: evidenceToken() });
 }

@@ -20,97 +20,39 @@ export async function DELETE(req: NextRequest) {
 
     const userId = session.userId;
 
-    // 2. Identify linked student profile (check by user_id or id)
-    const { data: studentData } = await supabaseAdmin
-      .from("students")
-      .select("id")
-      .or(`user_id.eq.${userId},id.eq.${userId},id.eq.stud-${userId}`)
-      .limit(1)
-      .maybeSingle();
+    // 2. Delete the user and all linked rows in ONE transaction (supabase/migrations/20261113_delete_user_account_fn.sql).
+    //    Previously ~20 parallel requests each hit the 6s client timeout while Postgres kept running them,
+    //    holding locks on `users` and blocking new sign-ins.
+    const { data: result, error: deleteError } = await supabaseAdmin
+      .rpc("delete_user_account", { p_user_id: userId })
+      .abortSignal(AbortSignal.timeout(25000));
 
-    if (studentData?.id) {
-      const studentId = studentData.id;
+    if (deleteError) {
+      console.error("[Delete Account] delete_user_account failed:", deleteError);
+      return NextResponse.json(
+        { success: false, error: "Account deletion failed. Please try again shortly." },
+        { status: 503 }
+      );
+    }
 
-      // Clean up receipt images from Vercel Blob if configured
-      if (process.env.BLOB_READ_WRITE_TOKEN) {
-        try {
-          const { data: submissions } = await supabaseAdmin
-            .from("payment_submissions")
-            .select("receipt_url")
-            .eq("student_id", studentId);
-
-          if (submissions && submissions.length > 0) {
-            const urlsToDelete = submissions
-              .map((sub: any) => sub.receipt_url)
-              .filter(Boolean);
-
-            if (urlsToDelete.length > 0) {
-              await del(urlsToDelete, { token: process.env.BLOB_READ_WRITE_TOKEN });
-            }
-          }
-        } catch (blobErr) {
-          console.warn("[Delete Account] Blob receipt cleanup skipped:", blobErr);
-        }
+    // 3. Remove receipt images from Vercel Blob (rows are already gone, so this is best-effort)
+    const receiptUrls: string[] = (result?.receipt_urls || []).filter(Boolean);
+    if (receiptUrls.length > 0 && process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        await del(receiptUrls, { token: process.env.BLOB_READ_WRITE_TOKEN });
+      } catch (blobErr) {
+        console.warn("[Delete Account] Blob receipt cleanup skipped:", blobErr);
       }
-
-      const studentCleanup = [
-        supabaseAdmin.from("attendance_records").delete().eq("student_id", studentId),
-        supabaseAdmin.from("halt_requests").delete().eq("student_id", studentId),
-        supabaseAdmin.from("payment_submissions").delete().eq("student_id", studentId),
-        supabaseAdmin.from("special_shift_allocations").delete().eq("student_id", studentId),
-        supabaseAdmin.from("early_departure_requests").delete().eq("student_id", studentId),
-        supabaseAdmin.from("student_face_profiles").delete().eq("student_id", studentId),
-        supabaseAdmin.from("bus_gate_events").delete().eq("student_id", studentId),
-        supabaseAdmin.from("bus_switch_requests").delete().eq("student_id", studentId),
-        supabaseAdmin.from("bus_reservations").delete().eq("student_id", studentId),
-        supabaseAdmin.from("subscriptions").delete().eq("student_id", studentId),
-      ];
-
-      await Promise.allSettled(studentCleanup);
-
-      // Delete student record
-      await supabaseAdmin.from("students").delete().eq("id", studentId);
     }
 
-    // 3. Clean up user-level tables
-    const userCleanup = [
-      supabaseAdmin.from("students").delete().eq("user_id", userId),
-      supabaseAdmin.from("audit_logs").delete().eq("user_id", userId),
-      supabaseAdmin.from("notifications").delete().eq("user_id", userId),
-      supabaseAdmin.from("staff").delete().eq("user_id", userId),
-      supabaseAdmin.from("bus_switch_requests").delete().eq("manager_id", userId),
-      supabaseAdmin.from("vehicle_issues").delete().eq("reported_by", userId),
-      supabaseAdmin.from("maintenance_logs").delete().eq("created_by", userId),
-    ];
-
-    await Promise.allSettled(userCleanup);
-
-    // 4. Delete user from institutional `users` table
-    const { error: userDeleteError } = await supabaseAdmin.from("users").delete().eq("id", userId);
-    if (userDeleteError) {
-      console.warn("[Delete Account] Error deleting from users table:", userDeleteError.message);
-    }
-
-    // 5. Best-effort Supabase GoTrue Auth deletion (silent fallback if not using GoTrue)
-    try {
-      if (supabaseAdmin?.auth?.admin?.deleteUser) {
-        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-        if (deleteError) {
-          console.warn("[Delete Account] Supabase Auth delete skipped (institutional user):", deleteError.message);
-        }
-      }
-    } catch (authErr: any) {
-      console.warn("[Delete Account] Supabase Auth admin delete skipped:", authErr?.message || authErr);
-    }
-
-    // 6. Invalidate Redis cache
+    // 4. Invalidate Redis cache
     try {
       await invalidateCachedUserRole(userId);
     } catch (redisErr) {
       console.warn("[Delete Account] Redis cache invalidation skipped:", redisErr);
     }
 
-    // 7. Clear JWT session cookies
+    // 5. Clear JWT session cookies
     const cookieStore = cookies();
     cookieStore.delete(COOKIE_NAME);
 

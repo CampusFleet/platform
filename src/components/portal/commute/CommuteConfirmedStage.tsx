@@ -23,7 +23,26 @@ import {
   Compass,
   Hand,
 } from "lucide-react";
-import type { Bus, Stop, Route, Student, Staff } from "@/lib/types";
+import { useAttendancePolicy } from "@/lib/attendance";
+import type { Bus, Stop, Route, Student, Staff, ValidationLocksConfig } from "@/lib/types";
+
+/** How to board, built from the transport office's active methods (transport_settings.validation_locks). */
+function boardingHint(locks: ValidationLocksConfig): { text: string; action: { href: string; label: string } | null } {
+  const ways: string[] = [];
+  if (locks.faceId) ways.push("look at the door camera");
+  if (locks.staticQr) ways.push("scan the bus QR");
+  if (locks.dynamicQr) ways.push("show your QR pass to the conductor");
+  if (locks.rfid) ways.push("tap your RFID card");
+  const text = ways.length
+    ? `When you board, ${ways.join(" or ")} to confirm your seat.`
+    : "The conductor will confirm your seat when you board.";
+  const action = locks.staticQr
+    ? { href: "/portal/qr/scan", label: "Scan Bus QR" }
+    : locks.dynamicQr
+    ? { href: "/portal/qr/show", label: "Show QR Pass" }
+    : null;
+  return { text, action };
+}
 
 export interface CommuteConfirmedStageProps {
   assignedBus: Bus;
@@ -83,6 +102,8 @@ export function CommuteConfirmedStage({
   onOpenContactCrew,
   formatShiftTime,
 }: CommuteConfirmedStageProps) {
+  const { locks } = useAttendancePolicy();
+  const hint = boardingHint(locks);
   const router = useRouter();
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
 
@@ -305,17 +326,17 @@ export function CommuteConfirmedStage({
             >
               {isAttendanceVerified
                 ? "Verified onboard seat assignment • Peer cohesion allocated"
-                : "Scan bus dynamic QR or tap RFID card upon boarding to unlock."}
+                : hint.text}
             </div>
           </div>
 
-          {!isAttendanceVerified && (
+          {!isAttendanceVerified && hint.action && (
             <Link
-              href="/portal/qr/scan"
+              href={hint.action.href}
               className="inline-flex items-center justify-center gap-2 w-full px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-md transition-all shrink-0 cursor-pointer group"
             >
               <QrCode className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              <span>Scan Bus Dynamic QR</span>
+              <span>{hint.action.label}</span>
               <ArrowRight className="w-3.5 h-3.5 opacity-80 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           )}

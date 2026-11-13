@@ -270,7 +270,7 @@ export default function ClientPortalLayout({
   }));
 
   const layoutContent = (
-    <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col overflow-x-hidden ${
+    <div className={`min-h-[100dvh] bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col overflow-x-clip ${
       isRadarPage ? "h-[100dvh] pb-0 md:pb-0 overflow-hidden" : isOnboardingPage ? "pb-0 md:pb-6" : "pb-16 md:pb-6"
     }`}>
       {/* Zero-Overflow Unified Header with Vertical Slide-Down Command Panel */}
@@ -313,10 +313,10 @@ export default function ClientPortalLayout({
       {/* Main Content Container with Top-to-Down Progressive Flow */}
       <main className={`flex-1 w-full mx-auto ${
         isRadarPage 
-          ? "p-0 max-w-none h-[calc(100dvh-4rem)] relative overflow-hidden"
+          ? "p-0 max-w-none h-[calc(100dvh-3.25rem-env(safe-area-inset-top))] sm:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))] relative overflow-hidden"
           : isOnboardingPage
           ? "p-0 sm:p-6 lg:p-8 max-w-5xl"
-          : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6 pb-28 sm:pb-12"
+          : "max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6 pb-[calc(env(safe-area-inset-bottom)+6rem)] md:pb-12"
       }`}>
         {isAccessBlocked ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 animate-in fade-in">

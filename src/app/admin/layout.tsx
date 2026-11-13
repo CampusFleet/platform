@@ -152,7 +152,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-16 md:pb-6 overflow-x-hidden transition-colors">
+    <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col pb-16 md:pb-6 overflow-x-clip transition-colors">
       
       <UnifiedAppHeader
         role="admin"

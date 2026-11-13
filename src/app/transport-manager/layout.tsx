@@ -117,7 +117,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
   const isHubRoot = pathname === "/transport-manager";
 
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col ${isHubRoot ? "pb-6" : "pb-16 md:pb-6"} overflow-x-hidden transition-colors`}>
+    <div className={`min-h-[100dvh] bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 flex flex-col ${isHubRoot ? "pb-6" : "pb-16 md:pb-6"} overflow-x-clip transition-colors`}>
       <SecurityThreatAlertBanner />
       <UnifiedAppHeader
         role="transport_manager"

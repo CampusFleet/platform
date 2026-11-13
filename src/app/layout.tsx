@@ -13,7 +13,8 @@ export const viewport: Viewport = {
   themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // Pinch-zoom stays enabled (accessibility); content may draw under notches, padded with safe-area insets.
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {

@@ -152,7 +152,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
   }, [trips, bus?.id, todayStr, shifts]);
 
   return (
-    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
+    <div className="min-h-[100dvh] w-full overflow-x-clip bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
       <UnifiedAppHeader
         role="conductor"
         portalTitle={currentTitle}
@@ -308,7 +308,7 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
       />
 
       {/* ── FLOATING LIVE MAP RADAR TRIGGER BUTTON (CONDUCTOR CONSOLE) ──── */}
-      <div className="fixed bottom-6 right-4 sm:right-6 z-40">
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-6 right-4 sm:right-6 z-40">
         <button
           type="button"
           onClick={() => setIsRadarOpen(true)}

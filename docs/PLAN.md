@@ -15,7 +15,7 @@ Status: ✅ done · 🔄 in progress · ⬜ planned. Update this file as work la
 - ✅ No fake profile defaults (student ID 2361030, "B.Tech CSE", "5th").
 - ⬜ **Owner action:** rotate the Supabase DB password (committed in old scripts in git history; repo is public).
 
-## Phase 0.5 — Boarding chart 🔄
+## Phase 0.5 — Boarding chart ✅ (two follow-ups open)
 Rules agreed with the owner:
 - Cutoff = each shift's `booking_cutoff_minutes`, edited in Transport Admin → Shifts.
 - Absent on the incoming trip → the outgoing seat is **kept**, but the student must confirm it in a
@@ -23,15 +23,17 @@ Rules agreed with the owner:
 - Scheduling runs in Postgres (`pg_cron`, every 5 min) because Vercel Hobby crons run only daily.
 Steps:
 - ✅ `boarding_chart_tick()` + `respond_outgoing_seat()` + pg_cron job (migration `20261113d_boarding_chart.sql`, applied).
-- 🔄 API `/api/students/outgoing-seat` + popup in My Commute.
-- 🔄 Daily trip creation by Vercel cron instead of the first browser that opens the app.
-- 🔄 Stop creating reservations when a student opens a page (duplicate-key errors).
+- ✅ API `/api/students/outgoing-seat` + popup in My Commute.
+- ✅ Daily trip creation by Vercel cron (00:05 IST) instead of the first browser that opens the app.
+- ✅ Page-open auto-assign is race-safe (upsert ignoreDuplicates); the chart is the main source.
 - ⬜ Rollover gives each bus only one outgoing shift (rotation); students whose class uses the other outgoing shift on that route get no seat. Decide: one trip per route per active outgoing shift.
 - ⬜ Notifications when the chart is ready / seat released.
 
 ## Phase 1 — Foundation 🔄
-- 🔄 Tailwind: add `tailwindcss-animate`; define `4.5`, `13`, `shadow-xs`, `backdrop-blur-xs`; fix colour tokens.
-- 🔄 Viewport: allow zoom, `viewport-fit=cover`; safe-area padding for header, bottom nav and floating buttons; `dvh` everywhere.
+- ✅ Tailwind: `tailwindcss-animate`; `4.5`, `13`, `shadow-xs/2xs`, `backdrop-blur-xs` defined; colour tokens wrapped in `hsl()`.
+- ✅ Viewport: zoom allowed, `viewport-fit=cover`; safe-area padding on header, bottom nav, sheets, floating buttons (now above the nav); shells use `dvh` and `overflow-x-clip`; header brand can shrink.
+- ✅ Seat card boarding text built from `validation_locks` (no more "scan QR" when only Face ID is on).
+- ⬜ Remaining per-screen overflow fixes (fixed `min-w-[…]` tiles, unprefixed 3-col grids) — done screen by screen in Phases 2–4.
 - ⬜ Shared components in `src/components/ui`: AppShell, Header, BottomNav, Sheet, Modal, Button, Card, Stat, Badge, Field/Input/Select, Tabs, List/Table, MapLayout, EmptyState, Toast.
 - ⬜ Data layer: TanStack Query + one typed route per screen; generated Supabase types (`supabase gen types`); zod at route boundaries.
 - ⬜ One source of truth for "who am I / subscription": `/api/me`, read by the server layout and client.

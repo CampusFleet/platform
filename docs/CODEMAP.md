@@ -29,11 +29,9 @@ which tables / Redis keys / services each feature touches, and the known traps.
 
 ## Known open issues found during the survey (fix when touching the area)
 - `src/components/scanner/QRPassScanner.tsx` (~L220): if `/api/boarding/scan` fails it falls back to *local* verification, which accepts unsigned payloads. Remove in Phase 3.
-- `src/components/portal/commute/CommuteConfirmedStage.tsx` (~L290-310): seat card always says "Scan bus dynamic QR or tap RFID" and links to the QR scanner, regardless of `validation_locks`.
 - `src/lib/attendance/policy.tsx` `useAttendancePolicy`: reads a stale value from localStorage first and defaults to "all methods on" when the server call fails.
 - `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Replaced in Phases 1–5.
 - `src/app/portal/ClientPortalLayout.tsx`: five sources of truth for subscription status and two racing redirects (onboarding flicker).
-- Tailwind: `animate-in`/`fade-in` (plugin missing), `h-13`, `w-4.5`, `shadow-xs` are no-ops.
 
 ## Boarding chart (incoming / outgoing shifts)
 Owner rules: cutoff = `shifts.booking_cutoff_minutes` (Transport Admin → Shifts, "Final Boarding Chart");

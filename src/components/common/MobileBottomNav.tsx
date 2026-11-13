@@ -517,7 +517,7 @@ export function MobileBottomNav({
     <>
       <nav
         aria-label="CampusFleet Mobile Navigation"
-        className="md:hidden fixed bottom-2 sm:bottom-3 inset-x-2.5 sm:inset-x-3 z-30 pointer-events-none select-none"
+        className="md:hidden fixed bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] inset-x-2.5 sm:inset-x-3 z-30 pointer-events-none select-none"
       >
         <div className="max-w-md mx-auto pointer-events-auto">
           <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-2xl border border-white/60 dark:border-gray-800/80 rounded-2xl sm:rounded-3xl p-1 shadow-[0_10px_35px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_35px_rgba(0,0,0,0.6)]">
@@ -638,7 +638,7 @@ export function MobileBottomNav({
             onClick={() => setIsMoreOpen(false)}
           />
 
-          <div className="relative z-10 w-full max-w-md mx-auto bg-white dark:bg-gray-900 rounded-t-[28px] border-t border-gray-200/80 dark:border-gray-800 shadow-2xl pb-6 pt-3 px-4 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+          <div className="relative z-10 w-full max-w-md mx-auto bg-white dark:bg-gray-900 rounded-t-[28px] border-t border-gray-200/80 dark:border-gray-800 shadow-2xl pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-3 px-4 animate-in slide-in-from-bottom duration-200 max-h-[85dvh] overflow-y-auto">
             <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-700 mx-auto mb-3" />
 
             <div className="flex items-center justify-between px-2 pb-3 border-b border-gray-100 dark:border-gray-800">

@@ -3,6 +3,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safety net only: real overflow must be fixed in the component (see src/components/AGENTS.md).
+   `clip` (not `hidden`) keeps position: sticky working and does not create a scroll container. */
+html,
+body {
+  overflow-x: clip;
+}
+
 
 @layer base {
   :root {

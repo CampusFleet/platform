@@ -370,10 +370,10 @@ export function UnifiedAppHeader({
   return (
     <>
       {/* Sleek, Non-Bulky Unified Top Navbar */}
-      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800/80 shadow-xs transition-colors">
+      <header className="sticky top-0 z-40 w-full pt-[env(safe-area-inset-top)] bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800/80 shadow-xs transition-colors">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-14 lg:h-16 flex items-center justify-between gap-3">
           {/* Left: Brand Identity & Optional Minimal Drawer Toggle */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* Minimal Mobile Drawer Button (only when Side Nav mode is chosen in Appearance settings) */}
             {navStyle === "side" && (
               <button
@@ -389,14 +389,14 @@ export function UnifiedAppHeader({
 
             <Link
               href={currentPortalConfig.path}
-              className="flex items-center gap-2 group flex-shrink-0 cursor-pointer"
+              className="flex items-center gap-2 group min-w-0 cursor-pointer"
               title="CampusFleet Home"
             >
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex-shrink-0">
                 <BusFront className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-base sm:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-base sm:text-lg font-black tracking-tight text-gray-900 dark:text-white whitespace-nowrap truncate">
                   Campus<span className="text-blue-600 dark:text-blue-400">Fleet</span>
                 </span>
                 <span className="hidden sm:inline-block text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
@@ -455,7 +455,7 @@ export function UnifiedAppHeader({
 
               {/* Apps Dropdown Card */}
               {isAppsOpen && (
-                <div className="absolute right-0 top-12 z-50 w-72 sm:w-80 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-800 p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-12 z-50 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-800 p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-2 pt-1 pb-1 border-b border-gray-100 dark:border-gray-800">
                     <p className="text-xs font-bold text-gray-900 dark:text-white">
                       Transit Services & Hubs

@@ -1,5 +1,6 @@
 import type { Config } from "tailwindcss";
 import colors from "tailwindcss/colors";
+import animate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: ["class"],
@@ -38,8 +39,8 @@ const config: Config = {
           750: "#18181c",
           700: "#27272a",
         },
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
         navy: {
           50: "#f0f4f9",
           100: "#d9e2ec",
@@ -63,39 +64,53 @@ const config: Config = {
           purple: "#7c3aed",
         },
         card: {
-          DEFAULT: "var(--card)",
-          foreground: "var(--card-foreground)",
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
         },
         popover: {
-          DEFAULT: "var(--popover)",
-          foreground: "var(--popover-foreground)",
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
         },
         primary: {
-          DEFAULT: "var(--primary)",
-          foreground: "var(--primary-foreground)",
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
-          DEFAULT: "var(--secondary)",
-          foreground: "var(--secondary-foreground)",
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
         },
         muted: {
-          DEFAULT: "var(--muted)",
-          foreground: "var(--muted-foreground)",
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "var(--accent)",
-          foreground: "var(--accent-foreground)",
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
         },
         destructive: {
-          DEFAULT: "var(--destructive)",
-          foreground: "var(--destructive-foreground)",
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
         },
-        border: "var(--border)",
-        input: "var(--input)",
-        ring: "var(--ring)",
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+      },
+      // Sizes used across the app that Tailwind 3 does not ship by default.
+      spacing: {
+        "4.5": "1.125rem",
+        "13": "3.25rem",
+        "safe-top": "env(safe-area-inset-top)",
+        "safe-bottom": "env(safe-area-inset-bottom)",
+      },
+      boxShadow: {
+        "2xs": "0 1px 1px 0 rgb(0 0 0 / 0.04)",
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      },
+      backdropBlur: {
+        xs: "2px",
       },
       borderRadius: {
-        lg: "var(--radius)",
+        lg: "hsl(var(--radius))",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
@@ -116,7 +131,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [animate],
 };
 
 export default config;

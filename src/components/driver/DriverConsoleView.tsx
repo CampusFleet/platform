@@ -1423,7 +1423,7 @@ export default function DriverConsoleView({
       </main>
 
       {/* ── FLOATING LIVE MAP RADAR BUTTON (BOTTOM-RIGHT FAB) ─────────── */}
-      <div className="fixed bottom-6 right-4 sm:right-6 z-40">
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-6 right-4 sm:right-6 z-40">
         <button
           type="button"
           onClick={() => setIsRadarOpen(true)}

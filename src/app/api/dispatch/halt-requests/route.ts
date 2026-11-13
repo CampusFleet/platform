@@ -1,116 +1,111 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis, cacheSet, cacheGet } from "@/lib/redis";
-import type { HaltRequest } from "@/lib/types";
+import type { HaltRequest, HaltRequestStatus } from "@/lib/types";
 import { createHaltId } from "@/lib/id";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isStaffRole, resolveActingStudentId } from "@/lib/security/actor";
+import { supabaseAdmin } from "@/lib/supabaseClient";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/dispatch/halt-requests?tripId=123 (For conductor)
-// GET /api/dispatch/halt-requests?tripId=123&studentId=456 (For student)
+const STATUSES: HaltRequestStatus[] = ["PENDING", "APPROVED", "REJECTED", "COMPLETED"];
+const keyFor = (tripId: string, studentId: string) => `halt_request:${tripId}:${studentId}`;
+
+// GET ?tripId=…            → all requests for the trip (crew only)
+// GET ?tripId=…&studentId= → one request (riders: always their own)
 export async function GET(req: NextRequest) {
   try {
     if (!redis) return NextResponse.json({ success: false, error: "Redis not configured" }, { status: 503 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
     const tripId = searchParams.get("tripId");
-    const studentId = searchParams.get("studentId");
+    if (!tripId) return NextResponse.json({ success: false, error: "tripId is required" }, { status: 400 });
 
-    if (!tripId) {
-      return NextResponse.json({ success: false, error: "tripId is required" }, { status: 400 });
-    }
+    const { studentId, isStaff } = await resolveActingStudentId(session, searchParams.get("studentId"));
 
     if (studentId) {
-      // Single student request status
-      const key = `halt_request:${tripId}:${studentId}`;
-      const data = await cacheGet<HaltRequest>(key);
+      const data = await cacheGet<HaltRequest>(keyFor(tripId, studentId));
       return NextResponse.json({ success: true, request: data });
     }
+    if (!isStaff) return NextResponse.json({ success: true, request: null });
 
-    // All requests for a trip (conductor view)
-    const pattern = `halt_request:${tripId}:*`;
-    const keys = await redis.keys(pattern);
-    
-    if (keys.length === 0) {
-      return NextResponse.json({ success: true, requests: [] });
-    }
-
-    // Use mget if there are keys
-    const requestsData = await redis.mget(...keys);
-    const requests = requestsData.filter(Boolean) as HaltRequest[];
-
+    const keys = await redis.keys(`halt_request:${tripId}:*`);
+    if (keys.length === 0) return NextResponse.json({ success: true, requests: [] });
+    const requests = (await redis.mget(...keys)).filter(Boolean) as HaltRequest[];
     return NextResponse.json({ success: true, requests });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// POST /api/dispatch/halt-requests (Student makes a request)
+// POST: a rider asks the bus to wait for them.
 export async function POST(req: NextRequest) {
   try {
     if (!redis) return NextResponse.json({ success: false, error: "Redis not configured" }, { status: 503 });
-    
-    const body = await req.json();
-    const { tripId, studentId, studentName, studentPhoto, latitude, longitude } = body;
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
 
-    if (!tripId || !studentId || !latitude || !longitude) {
+    const body = await req.json();
+    const { tripId, latitude, longitude } = body;
+    const { studentId } = await resolveActingStudentId(session, body.studentId);
+
+    if (!tripId || !studentId || typeof latitude !== "number" || typeof longitude !== "number") {
       return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
     }
 
-    const key = `halt_request:${tripId}:${studentId}`;
-    
-    // Check if already exists to prevent spam
+    const key = keyFor(tripId, studentId);
     const existing = await cacheGet<HaltRequest>(key);
-    if (existing && existing.status !== "REJECTED") {
-       return NextResponse.json({ success: true, request: existing });
-    }
+    if (existing && existing.status !== "REJECTED") return NextResponse.json({ success: true, request: existing });
 
+    // Name and photo come from the database, not from the request.
+    const { data: student } = await supabaseAdmin
+      .from("students_full")
+      .select("full_name, photo_url")
+      .eq("id", studentId)
+      .maybeSingle();
+
+    const now = new Date().toISOString();
     const newReq: HaltRequest = {
       id: createHaltId(),
       tripId,
       studentId,
-      studentName,
-      studentPhoto,
+      studentName: student?.full_name || session.fullName || "Student",
+      studentPhoto: student?.photo_url || undefined,
       latitude,
       longitude,
       status: "PENDING",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
-
-    // TTL 15 minutes (900 seconds)
     await cacheSet(key, newReq, 900);
-
     return NextResponse.json({ success: true, request: newReq });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// PATCH /api/dispatch/halt-requests (Conductor approves/rejects)
+// PATCH: crew approves / rejects / completes.
 export async function PATCH(req: NextRequest) {
   try {
     if (!redis) return NextResponse.json({ success: false, error: "Redis not configured" }, { status: 503 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+    if (!isStaffRole(session.role)) return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
 
-    const body = await req.json();
-    const { tripId, studentId, status } = body;
-
-    if (!tripId || !studentId || !status) {
-      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
+    const { tripId, studentId, status } = await req.json();
+    if (!tripId || !studentId || !STATUSES.includes(status)) {
+      return NextResponse.json({ success: false, error: "Missing or invalid fields" }, { status: 400 });
     }
 
-    const key = `halt_request:${tripId}:${studentId}`;
+    const key = keyFor(tripId, studentId);
     const existing = await cacheGet<HaltRequest>(key);
-    
-    if (!existing) {
-      return NextResponse.json({ success: false, error: "Request not found or expired" }, { status: 404 });
-    }
+    if (!existing) return NextResponse.json({ success: false, error: "Request not found or expired" }, { status: 404 });
 
     existing.status = status;
     existing.updatedAt = new Date().toISOString();
-
-    // Extend TTL on update (another 15 mins)
     await cacheSet(key, existing, 900);
-
     return NextResponse.json({ success: true, request: existing });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

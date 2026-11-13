@@ -9,12 +9,35 @@ import { getSessionFromRequest } from "@/lib/jwt";
  * Pure Database Persistence — Zero Hardcoded State.
  */
 
+const CREW_ACTION_ROLES = ["conductor", "driver", "transport_admin", "transport_manager", "admin"];
+const RIDER_ACTIONS = ["CONFIRM_ONBOARD", "RUNNING_TO_BUS"];
+
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
+    }
+    const isCrew = CREW_ACTION_ROLES.includes(session.role);
+
     const { searchParams } = new URL(req.url);
-    const tripId = searchParams.get("tripId");
-    const studentId = searchParams.get("studentId");
+    let tripId = searchParams.get("tripId");
+    let studentId = searchParams.get("studentId");
     const busId = searchParams.get("busId");
+
+    // Riders only ever see their own booking; the trip is derived from it, never from the query.
+    if (!isCrew) {
+      const { data: ownStudent } = await supabaseAdmin
+        .from("students")
+        .select("id")
+        .eq("user_id", session.userId)
+        .maybeSingle();
+      if (!ownStudent?.id) {
+        return NextResponse.json({ success: true, activeAlert: null, studentBooking: null, fullness: null });
+      }
+      studentId = ownStudent.id;
+      tripId = null;
+    }
 
     if (!tripId && !studentId && !busId) {
       return NextResponse.json(
@@ -121,9 +144,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // AGENTS.md: trip_code is internal-only.
+    const { tripCode, ...publicTrip } = trip;
+
     return NextResponse.json({
       success: true,
-      trip,
+      trip: isCrew ? trip : publicTrip,
       fullness: {
         totalCapacity: trip.capacity,
         totalBooked,
@@ -152,8 +178,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-const CREW_ACTION_ROLES = ["conductor", "driver", "transport_admin", "transport_manager", "admin"];
-const RIDER_ACTIONS = ["CONFIRM_ONBOARD", "RUNNING_TO_BUS"];
 
 export async function POST(req: NextRequest) {
   try {

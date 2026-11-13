@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { getSessionFromRequest } from "@/lib/jwt";
+
+const MANAGE_ROLES = ["admin", "transport_admin", "transport_manager"];
 
 // GET /api/dispatch - Get progressive dispatch rules and evaluated bus queue
 export async function GET() {
@@ -75,8 +78,15 @@ export async function GET() {
 // POST /api/dispatch - Update thresholds OR Dispatch specific bus
 export async function POST(req: NextRequest) {
   try {
+    // Actor identity comes from the session, never from the body.
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
+    if (!MANAGE_ROLES.includes(session.role)) {
+      return NextResponse.json({ success: false, message: "Only transport managers can change dispatch." }, { status: 403 });
+    }
     const body = await req.json();
-    const { action, minOccupancyPercent, maxWaitMinutes, enabled, busId, dispatcherName } = body;
+    const { action, minOccupancyPercent, maxWaitMinutes, enabled, busId } = body;
+    const dispatcherName = session.fullName || session.email;
 
     // ACTION: UPDATE THRESHOLDS
     if (action === "UPDATE_CONFIG") {
@@ -114,7 +124,8 @@ export async function POST(req: NextRequest) {
       }
 
       await supabaseAdmin.from("audit_logs").insert({
-        user_role: "admin",
+        user_id: session.userId,
+        user_role: session.role,
         action: "UPDATE_DISPATCH_CONFIG",
         entity: "DispatchConfig",
         entity_id: updatedConfig.id,
@@ -153,7 +164,8 @@ export async function POST(req: NextRequest) {
 
       // Audit log
       await supabaseAdmin.from("audit_logs").insert({
-        user_role: "admin",
+        user_id: session.userId,
+        user_role: session.role,
         action: "PROGRESSIVE_BUS_DISPATCH",
         entity: "Bus",
         entity_id: busId,

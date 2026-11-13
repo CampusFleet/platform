@@ -3,6 +3,9 @@ import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateHaversineDistanceKm } from "@/lib/eta-calculator";
 import { cacheDel, invalidateCachedStudentProfile } from "@/lib/redis";
 import type { EnrichedPickupStop } from "@/lib/types";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isManageRole } from "@/lib/security/actor";
+import { isSafeId } from "@/lib/security/safe-id";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +15,20 @@ export const dynamic = "force-dynamic";
  * - Geospatial K-Nearest Stops calculation from student home coordinates
  * - Relational Zone, Route, and Subscription Fee binding
  */
+
+/**
+ * The student this request may read or change. Managers may pass any student id;
+ * everyone else always acts on themselves (the queries below match id OR user_id).
+ */
+async function actingStudentRef(req: NextRequest, requested: unknown): Promise<string | NextResponse> {
+  const session = await getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
+  if (isManageRole(session.role)) {
+    if (!isSafeId(requested)) return NextResponse.json({ success: false, message: "studentId required" }, { status: 400 });
+    return requested;
+  }
+  return session.userId;
+}
 
 // Helper to fetch and enrich nearest stops
 async function calculateAndEnrichNearestStops(
@@ -102,10 +119,9 @@ async function calculateAndEnrichNearestStops(
 // ─────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   try {
-    const studentId = req.nextUrl.searchParams.get("studentId");
-    if (!studentId) {
-      return NextResponse.json({ success: false, message: "studentId required" }, { status: 400 });
-    }
+    const ref = await actingStudentRef(req, req.nextUrl.searchParams.get("studentId"));
+    if (ref instanceof NextResponse) return ref;
+    const studentId = ref;
 
     // Query authoritative student record from students_full view (normalized 3NF)
     const { data: dbStudent } = await supabaseAdmin
@@ -184,11 +200,10 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { studentId, latitude, longitude, address, chosenStopId } = body;
-
-    if (!studentId) {
-      return NextResponse.json({ success: false, message: "studentId required" }, { status: 400 });
-    }
+    const { latitude, longitude, address, chosenStopId } = body;
+    const ref = await actingStudentRef(req, body.studentId);
+    if (ref instanceof NextResponse) return ref;
+    const studentId = ref;
     if (latitude === undefined || longitude === undefined) {
       return NextResponse.json({ success: false, message: "latitude and longitude required" }, { status: 400 });
     }
@@ -415,7 +430,10 @@ export async function PUT(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, studentId, stopId } = body;
+    const { action, stopId } = body;
+    const ref = await actingStudentRef(req, body.studentId);
+    if (ref instanceof NextResponse) return ref;
+    const studentId = ref;
 
     if (action === "SELECT_PICKUP_STOP") {
       if (!studentId || !stopId) {

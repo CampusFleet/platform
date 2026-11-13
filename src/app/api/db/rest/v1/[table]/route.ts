@@ -79,12 +79,21 @@ async function authorize(
     const staffOnly = STAFF_READABLE_TABLES.has(table);
     if (!READABLE_TABLES.has(table) && !(staffOnly && isStaff(role))) return `Reading ${table} is not permitted.`;
     if (!isStaff(role)) {
+      // Embedded resources (select=*,other_table(*)) would bypass the table allowlist and row scoping.
+      const select = url.searchParams.get("select") || "";
+      if (/[()!]/.test(select)) return "Embedded selects are not permitted.";
+
       // End users only see their own identity rows.
       if (table === "users") url.searchParams.append("id", `eq.${session.userId}`);
       if (table === "students_full") url.searchParams.append("user_id", `eq.${session.userId}`);
+      if (table === "staff_full") url.searchParams.append("user_id", `eq.${session.userId}`);
       if (table === "special_shift_allocations") {
         const sid = await ownStudentId();
         url.searchParams.append("student_id", `eq.${sid || "__none__"}`);
+      }
+      if (table === "bus_reservations_full") {
+        const sid = await ownStudentId();
+        url.searchParams.append("student_id", `in.(${[sid, session.userId].filter(Boolean).join(",")})`);
       }
     }
     return null;

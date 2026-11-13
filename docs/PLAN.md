@@ -53,6 +53,9 @@ Steps:
 - ✅ Settings home + stop rebuilt on the onboarding picker (`HomeStopSettings`, `/api/students/home-location` rewritten on `lib/students/home.ts`); it no longer books a seat on an arbitrary trip. `CommuterHomeLocationCard` and `zone-detector` deleted.
 - ✅ `store.updateStudentProfile` removed (it wrote defaults and wrote to the DB from the browser). Staff photo replacement goes through `/api/students/[id]/portrait` (private); public `upload-receipt` deleted.
 - ✅ Payment records no longer store "ZONE_B" / "Student Commuter" when the value is unknown (webhook, verify-link, reconcile cron).
+- ✅ Live radar rebuilt (`/portal/radar`, ~300 lines replacing 1,400): server sends only the student's own ride (`lib/students/ride.ts`; no trip ids, no all-buses/all-staff lists, no first-bus or fake-coordinate fallbacks); one `/api/students/ride/live` call every 5 s while visible replaces the GPS, trip and halt polls; "Ask bus to wait" goes through `/api/students/ride/halt` (trip chosen on the server). `/api/dispatch/halt-requests` POST now requires a reservation on the trip for non-staff. `/api/telematics/live` GET needs a session; riders no longer see trip/driver fields, the all-bus list, history or stats.
+- ⬜ Push instead of polling for the radar (Supabase Realtime needs Supabase-signed tokens; our auth is custom). Revisit if polling load matters.
+- ⬜ `/api/telematics/live` POST accepts unsigned location updates (open DEVICE_PATH). Require a crew session or a device signature once all GPS hardware signs requests.
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

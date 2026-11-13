@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cacheGet, cacheSet } from "@/lib/redis";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { isStaffRole } from "@/lib/security/actor";
 import {
   saveLiveLocationToMongo,
   getLiveLocationFromMongo,
@@ -18,6 +20,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest) {
   try {
+    // Reads need a signed-in user. Riders never get trip ids or driver identity (AGENTS.md transit rule).
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+    const isCrewOrStaff = isStaffRole(session.role);
     const { searchParams } = new URL(req.url);
     const busId = searchParams.get("busId");
     const history = searchParams.get("history") === "true";
@@ -25,12 +31,14 @@ export async function GET(req: NextRequest) {
     const stats = searchParams.get("stats") === "true";
 
     // 0. Fetch MongoDB cluster telemetry sync stats (for Driver & Fleet Ops Cockpit)
+    if (stats && !isCrewOrStaff) return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     if (stats) {
       const telemetryStats = await getMongoTelemetryStats(busId || undefined);
       return NextResponse.json({ success: true, stats: telemetryStats });
     }
 
     // 1. Fetch historical GPS breadcrumbs for polyline map rendering
+    if (history && busId && !isCrewOrStaff) return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     if (history && busId) {
       const breadcrumbs = await getBusBreadcrumbsFromMongo(busId, 50);
       return NextResponse.json({ success: true, breadcrumbs });
@@ -38,6 +46,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Fetch all active buses
     if (all || !busId) {
+      if (!isCrewOrStaff) return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
       const allLocations = await getAllLiveLocationsFromMongo();
       return NextResponse.json(
         { success: true, locations: allLocations },
@@ -107,7 +116,11 @@ export async function GET(req: NextRequest) {
       liveLocation.isStale = isStale;
     }
 
-    const latestRfid = await cacheGet(`telematics:rfid:latest:${strBusId}`).catch(() => null);
+    if (liveLocation && !isCrewOrStaff) {
+      const { tripId: _t, driverId: _d, driverName: _n, ...riderView } = liveLocation;
+      liveLocation = riderView;
+    }
+    const latestRfid = isCrewOrStaff ? await cacheGet(`telematics:rfid:latest:${strBusId}`).catch(() => null) : null;
 
     return NextResponse.json(
       {

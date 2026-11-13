@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis, cacheSet, cacheGet } from "@/lib/redis";
 import type { HaltRequest, HaltRequestStatus } from "@/lib/types";
-import { createHaltId } from "@/lib/id";
+import { createHaltRequest } from "@/lib/dispatch/halt";
+import { isSafeId } from "@/lib/security/safe-id";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { isStaffRole, resolveActingStudentId } from "@/lib/security/actor";
 import { supabaseAdmin } from "@/lib/supabaseClient";
@@ -40,7 +41,8 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: a rider asks the bus to wait for them.
+// POST: a rider asks the bus to wait for them. Students use /api/students/ride/halt, which picks
+// the trip for them; here a non-staff caller must hold a reservation on the named trip.
 export async function POST(req: NextRequest) {
   try {
     if (!redis) return NextResponse.json({ success: false, error: "Redis not configured" }, { status: 503 });
@@ -49,38 +51,24 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { tripId, latitude, longitude } = body;
-    const { studentId } = await resolveActingStudentId(session, body.studentId);
+    const { studentId, isStaff } = await resolveActingStudentId(session, body.studentId);
 
-    if (!tripId || !studentId || typeof latitude !== "number" || typeof longitude !== "number") {
+    if (!isSafeId(tripId) || !studentId || typeof latitude !== "number" || typeof longitude !== "number") {
       return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
     }
-
-    const key = keyFor(tripId, studentId);
-    const existing = await cacheGet<HaltRequest>(key);
-    if (existing && existing.status !== "REJECTED") return NextResponse.json({ success: true, request: existing });
-
-    // Name and photo come from the database, not from the request.
-    const { data: student } = await supabaseAdmin
-      .from("students_full")
-      .select("full_name, photo_url")
-      .eq("id", studentId)
-      .maybeSingle();
-
-    const now = new Date().toISOString();
-    const newReq: HaltRequest = {
-      id: createHaltId(),
-      tripId,
-      studentId,
-      studentName: student?.full_name || session.fullName || "Student",
-      studentPhoto: student?.photo_url || undefined,
-      latitude,
-      longitude,
-      status: "PENDING",
-      createdAt: now,
-      updatedAt: now,
-    };
-    await cacheSet(key, newReq, 900);
-    return NextResponse.json({ success: true, request: newReq });
+    if (!isStaff) {
+      const { data: resv } = await supabaseAdmin
+        .from("bus_reservations")
+        .select("id")
+        .eq("trip_id", tripId)
+        .eq("student_id", studentId)
+        .neq("status", "CANCELLED")
+        .limit(1)
+        .maybeSingle();
+      if (!resv) return NextResponse.json({ success: false, error: "You are not booked on this bus." }, { status: 403 });
+    }
+    const request = await createHaltRequest(tripId, studentId, { latitude, longitude });
+    return NextResponse.json({ success: true, request });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

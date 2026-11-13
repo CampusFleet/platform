@@ -28,10 +28,8 @@ which tables / Redis keys / services each feature touches, and the known traps.
 - Code style: plain typed functions and React components, not classes. Route handlers stay thin: session → zod validate → service function → response.
 
 ## Known open issues found during the survey (fix when touching the area)
-- `src/components/scanner/QRPassScanner.tsx` (~L220): if `/api/boarding/scan` fails it falls back to *local* verification, which accepts unsigned payloads. Remove in Phase 3.
 - `src/lib/attendance/policy.tsx` `useAttendancePolicy`: reads a stale value from localStorage first and defaults to "all methods on" when the server call fails.
 - `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Replaced in Phases 1–5.
-- `src/app/portal/ClientPortalLayout.tsx`: five sources of truth for subscription status and two racing redirects (onboarding flicker).
 
 ## Boarding chart (incoming / outgoing shifts)
 Owner rules: cutoff = `shifts.booking_cutoff_minutes` (Transport Admin → Shifts, "Final Boarding Chart");
@@ -51,6 +49,17 @@ absent on the morning bus → evening seat kept only if the student confirms it 
 - Pause the job: `select cron.alter_job((select jobid from cron.job where jobname='boarding-chart-tick'), active := false);`
 - Known gap: rollover gives each bus one outgoing shift (rotation); students whose class uses the other outgoing shift on that route get no seat (docs/PLAN.md Phase 0.5).
 - `GET /api/students/attendance` still creates a reservation for walk-ons; it now upserts with `ignoreDuplicates` (no duplicate-key errors).
+
+## Crew duty (driver + conductor)
+- Who works which trip: `trips.driver_id` / `trips.conductor_id` → `staff.id`; `staff.user_id` → `users.id`. Set by the transport manager (`/api/staff/assign-crew`, `TransportManagerCrewView`) or rollover. Crew cannot choose a bus.
+- `src/lib/crew/duty.ts`
+  - `getCrewDuty(session, tripId?)`: today's trips for the crew member (managers: all), current trip, manifest, attendance, active departure alert, pending halt count.
+  - `pickCurrentTrip(trips)`: running → next not ended → last.
+  - `loadManifest(trip)`: `bus_reservations` for the trip (not cancelled) + `students_full` names/photos; sorted by stop order.
+  - `canActOnTrip(session, tripId, role)`: own assignment or manager.
+- Routes: `GET /api/crew/duty`, `POST /api/crew/trip` (START / SET_STOP / END, driver), `POST /api/crew/attendance` (BOARDED / ABSENT + optional seat, conductor → `crew_mark_attendance` RPC), `POST /api/crew/sos` (→ `vehicle_issues`). Middleware: `/api/crew` = STAFF.
+- Pages: `/conductor/*` (`ConductorContext` on `/api/crew/duty`, 8 s poll), `/driver` (`DriverConsole.tsx`, 15 s poll, GPS via `telematicsService.broadcastLiveLocation`). Drivers are blocked from `/conductor`.
+- Student access rule: `src/lib/student-access.ts` `getStudentAccess()` — used by `src/app/portal/layout.tsx` and `src/app/portal/onboarding/layout.tsx`.
 
 ---
 

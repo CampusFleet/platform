@@ -230,12 +230,6 @@ export function MobileBottomNav({
             badge: unreadCount > 0 ? unreadCount : undefined,
           },
           {
-            id: "driver",
-            href: "/driver",
-            label: "Driver HUD",
-            icon: BusFront,
-          },
-          {
             id: "settings",
             href: "/conductor/settings",
             label: "Settings",

@@ -65,7 +65,6 @@ export default function ClientPortalLayout({
   // inactive due to a transient sync/re-render. This prevents the
   // "flicker to /payments" bug caused by the store briefly having an
   // empty students array during re-sync.
-  const confirmedActiveRef = useRef(false);
 
   useEffect(() => {
     const unsub = store.subscribe(() => {
@@ -99,15 +98,9 @@ export default function ClientPortalLayout({
     : null;
 
   const isStudent = currentUser?.role === "student";
-  // The server provides the ultimate source of truth instantly via Redis!
-  const isSubscriptionActiveNow = initialIsSubscribed || isStudentSubscriptionActive(activeStudent) || currentUser?.role === "admin";
-
-  // Sticky guard: once active, stays active (prevents flicker)
-  if (isSubscriptionActiveNow) {
-    confirmedActiveRef.current = true;
-  }
-  // IF the server said they are subscribed, we NEVER block access!
-  const isSubscriptionActive = initialIsSubscribed || confirmedActiveRef.current || isSubscriptionActiveNow;
+  // Single source of truth: the server layout (getStudentAccess). The client never second-guesses it,
+  // which is what used to make /portal and /portal/onboarding redirect into each other.
+  const isSubscriptionActive = initialIsSubscribed || currentUser?.role === "admin";
 
   const hasCompleteProfile = Boolean(activeStudent?.phone && activeStudent.phone.trim() !== "");
 
@@ -171,38 +164,10 @@ export default function ClientPortalLayout({
   // Only block access if the server definitively said they are NOT subscribed!
   const isAccessBlocked = isStudent && !isSubscriptionActive && !isPaymentPage && !isOnboardingPage;
 
-  // Immediate redirect for new or unsubscribed students
+  // Unsubscribed students go to onboarding (one redirect, decided by the server's answer).
   useEffect(() => {
-    // If the server explicitly said we are subscribed, SKIP ALL REDIRECTS!
-    if (initialIsSubscribed) return;
-
-    // Fast-path: If pass was just activated in this session, skip any redirection loop
-    if (typeof window !== "undefined" && window.sessionStorage.getItem("campusfleet_pass_just_activated") === "true") {
-      return;
-    }
-    
-    if (isStudent) {
-      // Seamlessly guide unsubscribed, new, or re-registered students to the Unified Onboarding & Pass Activation gateway
-      const hasPaymentParams = typeof window !== "undefined" && window.location.search.includes("razorpay_");
-      if (!isSubscriptionActive && !isOnboardingPage && (!isPaymentPage || !hasPaymentParams)) {
-        console.warn("[REDIRECT] New or Unsubscribed Commuter -> /portal/onboarding");
-        router.replace("/portal/onboarding");
-      }
-    }
-  }, [isStudent, hasCompleteProfile, activeStudent, pathname, router, isOnboardingPage, isPaymentPage, initialIsSubscribed, isSubscriptionActive]);
-
-  // Fallback safety watchdog: if student access is blocked on /portal, guarantee automatic redirect to /portal/onboarding
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.sessionStorage.getItem("campusfleet_pass_just_activated") === "true") {
-      return;
-    }
-    if (isAccessBlocked && !isOnboardingPage && !isPaymentPage) {
-      const timer = setTimeout(() => {
-        router.replace("/portal/onboarding");
-      }, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [isAccessBlocked, isOnboardingPage, isPaymentPage, router]);
+    if (isAccessBlocked) router.replace("/portal/onboarding");
+  }, [isAccessBlocked, router]);
 
   if (currentUser && !isAuthorizedStudent) {
     const role = currentUser.role;

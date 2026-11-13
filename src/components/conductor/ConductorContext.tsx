@@ -1,57 +1,31 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { store } from "@/lib/store";
-import { Trip, Bus, Route, Booking, Student, Stop, Shift, AttendanceRecord, HaltRequest } from "@/lib/types";
-import { resolveActiveTrip } from "@/lib/trip-resolver";
-import { createAttendanceId } from "@/lib/id";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { Trip, Bus, Route, Booking, Student, Stop, Shift, AttendanceRecord, HaltRequest } from "@/lib/types";
+import type { CrewDuty, DutyPassenger, DutyTrip } from "@/lib/crew/duty";
 
-// Play subtle transit alert chime when new SOS request is received
-function playTransitNotification(type: "sos" | "success" | "toggle") {
+/**
+ * Conductor state. Single source: GET /api/crew/duty (the trip the transport manager assigned
+ * to this conductor today, and its boarding chart). No bus choosing, no client store.
+ */
+
+function chime(type: "sos" | "success" | "toggle") {
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-
-    if (type === "sos") {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.18); // A5
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
-    } else if (type === "success") {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(784, ctx.currentTime); // G5
-      osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.15); // C6
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.25);
-    } else {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-    }
-  } catch {
-    // Ignore audio sandbox restrictions
-  }
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const [from, to, len] = type === "sos" ? [587, 880, 0.35] : type === "success" ? [784, 1046, 0.25] : [659, 659, 0.12];
+    osc.frequency.setValueAtTime(from, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(to, ctx.currentTime + len * 0.6);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + len);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + len);
+  } catch {}
 }
 
 export interface EnrichedPassenger extends Booking {
@@ -69,6 +43,9 @@ export interface EnrichedPassenger extends Booking {
   isWaitlisted: boolean;
   boardedAt?: string;
   unlockedBy?: string;
+  /** On today's chart but no seat yet (seat is chosen / assigned when boarding). */
+  isUnseated: boolean;
+  boardingStopName: string;
 }
 
 export interface BusDepartureAlert {
@@ -84,6 +61,8 @@ export interface BusDepartureAlert {
 
 interface ConductorContextValue {
   currentUser: any;
+  duty: CrewDuty | null;
+  loadError: string | null;
   trips: Trip[];
   buses: Bus[];
   students: Student[];
@@ -93,6 +72,7 @@ interface ConductorContextValue {
   shifts: Shift[];
   attendanceRecords: AttendanceRecord[];
   haltRequests: HaltRequest[];
+  pendingHaltRequests: number;
 
   myTrips: Trip[];
   activeTrip?: Trip;
@@ -110,6 +90,7 @@ interface ConductorContextValue {
   onboardConfirmedCount: number;
   runningCount: number;
   outsideCount: number;
+  unseatedCount: number;
 
   activeDepartureAlert: BusDepartureAlert | null;
   triggerDepartureAlert: (customMessage?: string) => Promise<boolean>;
@@ -118,498 +99,374 @@ interface ConductorContextValue {
   selectedTripId: string;
   setSelectedTripId: (id: string) => void;
   showToast: (msg: string) => void;
-  markAttendance: (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW", method?: string, notes?: string) => Promise<void>;
+  markAttendance: (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW", method?: string, notes?: string, seat?: string) => Promise<boolean>;
   refreshLiveState: () => Promise<void>;
   isSyncing: boolean;
 }
 
 const ConductorContext = createContext<ConductorContextValue | null>(null);
 
+// ── Mapping the duty payload onto the shared domain types the tabs already use ──
+export function toTrip(t: DutyTrip): Trip {
+  return {
+    id: t.id,
+    tripCode: "",
+    routeId: t.route?.id || "",
+    busId: t.bus.id,
+    shiftId: t.shift?.id || "",
+    driverId: "",
+    conductorId: "",
+    tripDate: "",
+    status: t.status as Trip["status"],
+    startedAt: t.startedAt || undefined,
+    completedAt: t.completedAt || undefined,
+    delayMinutes: 0,
+    manifestLocked: t.manifestLocked,
+    currentStopIndex: t.currentStopIndex,
+  };
+}
+export function toBus(t: DutyTrip): Bus {
+  return {
+    id: t.bus.id,
+    busNumber: t.bus.busNumber,
+    registrationNo: t.bus.registrationNo,
+    model: "",
+    capacity: t.bus.capacity,
+    seatLayout: t.bus.seatLayout,
+    totalRows: t.bus.totalRows ?? undefined,
+    status: "ACTIVE" as Bus["status"],
+    gpsDeviceId: "",
+    insuranceExpiry: "",
+    maintenanceDueDate: "",
+    teacherSeatsCount: t.bus.teacherSeatsCount,
+  };
+}
+export function toStops(t: DutyTrip): Stop[] {
+  return (t.route?.stops || []).map((s) => ({
+    id: s.stopId,
+    name: s.name,
+    code: "",
+    latitude: s.latitude,
+    longitude: s.longitude,
+    landmark: "",
+    geofenceRadiusMeters: 100,
+  }));
+}
+export function toRoute(t: DutyTrip): Route | undefined {
+  if (!t.route) return undefined;
+  const stops = toStops(t);
+  return {
+    id: t.route.id,
+    code: "",
+    name: t.route.name,
+    description: "",
+    direction: (t.route.direction || "HOME_TO_CAMPUS") as Route["direction"],
+    color: "#2563EB",
+    isActive: true,
+    totalDistanceKm: 0,
+    estimatedDurationMins: 0,
+    stops: t.route.stops.map((s, i) => ({
+      stopId: s.stopId,
+      stopOrder: s.order,
+      arrivalOffsetMinutes: s.arrivalOffsetMinutes,
+      bufferTimeMinutes: 0,
+      stop: stops[i],
+    })),
+  };
+}
+function toShift(t: DutyTrip): Shift | undefined {
+  if (!t.shift) return undefined;
+  return {
+    id: t.shift.id,
+    name: t.shift.name,
+    shiftType: "MORNING" as Shift["shiftType"],
+    direction: t.shift.direction as Shift["direction"],
+    startTime: t.shift.startTime,
+    endTime: t.shift.endTime,
+    bookingCutoffMins: t.shift.cutoffMinutes,
+  };
+}
+function toStudent(p: DutyPassenger): Student {
+  return {
+    id: p.studentId,
+    userId: p.studentId,
+    fullName: p.fullName,
+    email: "",
+    phone: p.phone,
+    department: "",
+    semester: "",
+    className: p.className,
+    studentIdCode: p.studentIdCode,
+    photoUrl: p.photoUrl,
+    primaryStopId: p.boardingStopId,
+  } as unknown as Student;
+}
+function toPassenger(p: DutyPassenger, trip: DutyTrip): EnrichedPassenger {
+  const isBoarded = p.status === "BOARDED" || p.status === "ALIGHTED" || Boolean(p.boardedAt);
+  const isAbsent = p.status === "ABSENT";
+  // Tabs treat "CONFIRMED" as "on the chart, not boarded yet" (covers ASSIGNED / SEAT_SELECTED).
+  const status = (isBoarded ? "BOARDED" : isAbsent ? "ABSENT" : "CONFIRMED") as Booking["status"];
+  const seat = p.seat || undefined;
+  return {
+    id: p.reservationId,
+    bookingCode: "",
+    studentId: p.studentId,
+    tripId: trip.id,
+    busId: trip.bus.id,
+    boardingStopId: p.boardingStopId,
+    boardingStopName: p.boardingStopName,
+    status,
+    seatNumber: seat,
+    seatCode: seat || (isBoarded ? "ONBOARD" : "NO SEAT"),
+    passengerType: seat ? "SEATED" : "STANDING_TILL_MERGE",
+    roamingStatus: (isBoarded ? "ONBOARD_CONFIRMED" : (p.roamingStatus as any) || "CONFIRMED") as Booking["roamingStatus"],
+    boardedAt: p.boardedAt || undefined,
+    unlockedBy: p.unlockedBy || undefined,
+    createdAt: "",
+    student: toStudent(p),
+    fullName: p.fullName,
+    studentIdCode: p.studentIdCode,
+    photoUrl: p.photoUrl,
+    phone: p.phone,
+    department: "",
+    semester: "",
+    className: p.className,
+    isBoarded,
+    isAbsent,
+    isWaitlisted: false,
+    isUnseated: !seat && !isAbsent,
+  };
+}
+
 export function ConductorProvider({
   children,
   initialUser,
-  initialTrips = [],
-  initialBuses = [],
-  initialRoutes = [],
-  initialBookings = [],
-  initialStops = [],
-  initialShifts = [],
-  initialStudents = [],
-  initialAttendanceRecords = [],
-}: any) {
-  const [currentUser, setCurrentUser] = useState(initialUser || store.getCurrentUser());
-  const [trips, setTrips] = useState<Trip[]>(() => initialTrips.length > 0 ? initialTrips : store.getTrips());
-  const [buses, setBuses] = useState<Bus[]>(() => initialBuses.length > 0 ? initialBuses : store.getBuses());
-  const [students, setStudents] = useState<Student[]>(() => initialStudents.length > 0 ? initialStudents : store.getStudents());
-  const [bookings, setBookings] = useState<Booking[]>(() => initialBookings.length > 0 ? initialBookings : store.getBookings());
-  const [stops, setStops] = useState<Stop[]>(() => initialStops.length > 0 ? initialStops : store.getStops());
-  const [routes, setRoutes] = useState<Route[]>(() => initialRoutes.length > 0 ? initialRoutes : store.getRoutes());
-  const [shifts, setShifts] = useState<Shift[]>(() => initialShifts.length > 0 ? initialShifts : store.getShifts());
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() =>
-    initialAttendanceRecords.length > 0 ? initialAttendanceRecords : store.getAttendanceRecords()
-  );
-  const [haltRequests, setHaltRequests] = useState<HaltRequest[]>([]);
-  const [activeDepartureAlert, setActiveDepartureAlert] = useState<BusDepartureAlert | null>(null);
+  initialDuty,
+}: {
+  children: React.ReactNode;
+  initialUser: any;
+  initialDuty: CrewDuty | null;
+}) {
+  const [duty, setDuty] = useState<CrewDuty | null>(initialDuty);
+  const [selectedTripId, setSelectedTripIdState] = useState(initialDuty?.trip?.id || "");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const prevHalts = useRef(initialDuty?.pendingHaltRequests || 0);
+  const selectedRef = useRef(selectedTripId);
 
-  const [selectedTripId, setSelectedTripId] = useState<string>("");
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const prevHaltCountRef = useRef(0);
-
-  // Sync with store on client mount
-  useEffect(() => {
-    if (initialStudents.length > 0 && store.getStudents().length === 0) {
-      (store as any).students = initialStudents;
-    }
-  }, [initialStudents]);
-
-  // Subscribe to local store mutations
-  useEffect(() => {
-    const unsub = store.subscribe(() => {
-      setCurrentUser(store.getCurrentUser());
-      setTrips(store.getTrips());
-      setBuses(store.getBuses());
-      setStudents(store.getStudents());
-      setBookings(store.getBookings());
-      setStops(store.getStops());
-      setRoutes(store.getRoutes());
-      setShifts(store.getShifts());
-      setAttendanceRecords(store.getAttendanceRecords());
-    });
-    return unsub;
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // Filter visible trips
-  const visibleTripsForConductor = trips.filter(t => {
-    if (store.isTripSpecial(t)) {
-      return Boolean(
-        currentUser?.id &&
-        (t.conductorId === currentUser.id || t.conductorId === currentUser.fullName)
-      );
-    }
-    return true;
-  });
-
-  const myTrips = visibleTripsForConductor.filter(
-    t =>
-      t.conductorId === currentUser?.id ||
-      t.conductorId === currentUser?.fullName
-  );
-
-  const activeTrip = React.useMemo(() => {
-    return resolveActiveTrip(visibleTripsForConductor, shifts, {
-      selectedTripId,
-      conductorId: currentUser?.id,
-      conductorName: currentUser?.fullName,
-    });
-  }, [visibleTripsForConductor, shifts, selectedTripId, currentUser?.id, currentUser?.fullName]);
-
-  const bus = buses.find(b => b.id === activeTrip?.busId) || buses[0];
-  const route = routes.find(r => r.id === activeTrip?.routeId);
-  const shift = shifts.find(sh => sh.id === activeTrip?.shiftId);
-
-  // High-Frequency 4-Second Live Sync for Active Trip
   const refreshLiveState = useCallback(async () => {
-    if (!activeTrip?.id) return;
+    setIsSyncing(true);
     try {
-      setIsSyncing(true);
-      const res = await fetch(`/api/conductor/sync?tripId=${activeTrip.id}`);
-      if (!res.ok) return;
+      const q = selectedRef.current ? `?tripId=${encodeURIComponent(selectedRef.current)}` : "";
+      const res = await fetch(`/api/crew/duty${q}`, { cache: "no-store" });
       const data = await res.json();
-
-      if (data.success) {
-        if (Array.isArray(data.attendance)) {
-          setAttendanceRecords(prev => {
-            const merged = [...data.attendance];
-            prev.forEach(p => {
-              if (!merged.some(m => m.id === p.id)) {
-                merged.push(p);
-              }
-            });
-            return merged;
-          });
-        }
-
-        if (Array.isArray(data.bookings) && data.bookings.length > 0) {
-          setBookings(prev => {
-            const updated = [...prev];
-            data.bookings.forEach((b: any) => {
-              const idx = updated.findIndex(u => u.id === b.id);
-              if (idx >= 0) {
-                updated[idx] = { ...updated[idx], ...b };
-              } else {
-                updated.push(b);
-              }
-            });
-            return updated;
-          });
-        }
-
-        if (Array.isArray(data.haltRequests)) {
-          const pending = data.haltRequests.filter((r: any) => r.status === "PENDING").length;
-          if (pending > prevHaltCountRef.current) {
-            playTransitNotification("sos");
-          }
-          prevHaltCountRef.current = pending;
-          setHaltRequests(data.haltRequests);
-        }
-
-        if (data.activeDepartureAlert !== undefined) {
-          setActiveDepartureAlert(data.activeDepartureAlert);
-        }
-      }
-    } catch {
-      // Silently catch network hiccups
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not load your duty.");
+      if (data.pendingHaltRequests > prevHalts.current) chime("sos");
+      prevHalts.current = data.pendingHaltRequests;
+      setDuty(data);
+      setLoadError(null);
+    } catch (e: any) {
+      setLoadError(e.message || "Network error.");
     } finally {
       setIsSyncing(false);
     }
-  }, [activeTrip?.id]);
-
-  useEffect(() => {
-    if (!activeTrip?.id) return;
-    refreshLiveState();
-
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        refreshLiveState();
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [activeTrip?.id, refreshLiveState]);
-
-  // Combined Authoritative Passenger Roster (Direct Bookings + Assigned Students + Roamers)
-  const tripBookings: EnrichedPassenger[] = React.useMemo(() => {
-    if (!activeTrip) return [];
-
-    const tripId = activeTrip.id;
-    const routeId = activeTrip.routeId;
-
-    const tripAttendance = attendanceRecords.filter(a => a.tripId === tripId);
-    const directBookings = bookings.filter(b => b.tripId === tripId);
-    const routeStudents = students.filter(s => s.primaryRouteId === routeId);
-
-    const studentMap = new Map<string, Student>();
-    students.forEach(s => {
-      if (s.id) studentMap.set(s.id, s);
-      if (s.userId) studentMap.set(s.userId, s);
-    });
-
-    const rosterMap = new Map<string, EnrichedPassenger>();
-
-    // 1. Process Direct Reservations from bookings & bus_reservations
-    directBookings.forEach(b => {
-      const stud = studentMap.get(b.studentId);
-      const att = tripAttendance.find(
-        a => a.studentId === b.studentId || (stud && (a.studentId === stud.id || a.studentId === stud.userId))
-      );
-
-      let status: any = b.status || "CONFIRMED";
-      if (att) {
-        status = att.status;
-      }
-
-      const isBoarded = status === "BOARDED" || b.status === "BOARDED" || Boolean(b.boardedAt) || Boolean(att?.timestamp);
-      const isAbsent = status === "ABSENT" || status === "NO_SHOW";
-      const isWaitlisted = status === "WAITLISTED";
-
-      const seatCode = b.seatNumber || (b as any).seat_number || (
-        isWaitlisted
-          ? (b.waitlistPosition ? `WL-${b.waitlistPosition}` : "WL")
-          : "PASS"
-      );
-
-      const passengerEntry: EnrichedPassenger = {
-        id: b.id,
-        bookingCode: b.bookingCode || `BK-${b.id.substring(0, 6)}`,
-        studentId: b.studentId,
-        tripId: b.tripId,
-        busId: b.busId || activeTrip.busId,
-        boardingStopId: b.boardingStopId || stud?.primaryStopId || "",
-        seatNumber: seatCode,
-        seatCode,
-        status: isBoarded ? "BOARDED" : status,
-        isBoarded,
-        isAbsent,
-        isWaitlisted,
-        waitlistPosition: b.waitlistPosition,
-        passengerType: seatCode !== "PASS" ? "SEATED" : (b.passengerType || "SEATED"),
-        roamingStatus: isBoarded ? "ONBOARD_CONFIRMED" : ((b as any).roamingStatus || (stud && stud.primaryRouteId && stud.primaryRouteId !== routeId ? "ROAMING" : "CONFIRMED")),
-        boardedAt: att?.timestamp || (b as any).boardedAt,
-        unlockedBy: att?.method || (b as any).unlocked_by || (isBoarded ? "GEOFENCE_AUTODETECT" : undefined),
-        student: stud,
-        fullName: stud?.fullName || (b as any).passengerName || "Student Passenger",
-        studentIdCode: stud?.studentIdCode || "",
-        photoUrl: stud?.photoUrl || "",
-        phone: stud?.phone || null,
-        department: stud?.department || "",
-        semester: stud?.semester || "",
-        className: stud?.className || "",
-        createdAt: b.createdAt || new Date().toISOString(),
-      };
-
-      const itemKey = b.studentId || b.id;
-      rosterMap.set(itemKey, passengerEntry);
-      if (stud?.id) rosterMap.set(stud.id, passengerEntry);
-      if (stud?.userId) rosterMap.set(stud.userId, passengerEntry);
-    });
-
-    // 2. Process Route-assigned students (Guaranteed to be present for morning/evening shifts)
-    routeStudents.forEach(s => {
-      if (!rosterMap.has(s.id) && !rosterMap.has(s.userId)) {
-        const att = tripAttendance.find(a => a.studentId === s.id || a.studentId === s.userId);
-        const status: any = att ? att.status : "CONFIRMED";
-        const isBoarded = status === "BOARDED";
-        const isAbsent = status === "ABSENT" || status === "NO_SHOW";
-
-        const passengerEntry: EnrichedPassenger = {
-          id: att?.id || `roster-${s.id}`,
-          bookingCode: `ATD-${s.id.substring(0, 6)}`,
-          studentId: s.id,
-          tripId,
-          busId: activeTrip.busId,
-          boardingStopId: s.primaryStopId || "",
-          seatNumber: "PASS",
-          seatCode: "PASS",
-          status,
-          isBoarded,
-          isAbsent,
-          isWaitlisted: false,
-          passengerType: "SEATED",
-          roamingStatus: isBoarded ? "ONBOARD_CONFIRMED" : "CONFIRMED",
-          boardedAt: att?.timestamp,
-          unlockedBy: att?.method,
-          student: s,
-          fullName: s.fullName,
-          studentIdCode: s.studentIdCode || "",
-          photoUrl: s.photoUrl || "",
-          phone: s.phone || null,
-          department: s.department || "",
-          semester: s.semester || "",
-          className: s.className || "",
-          createdAt: new Date().toISOString(),
-        };
-
-        rosterMap.set(s.id, passengerEntry);
-        if (s.userId) rosterMap.set(s.userId, passengerEntry);
-      }
-    });
-
-    // 3. Process Unexpected Attendees / Roamers who boarded
-    tripAttendance.forEach(a => {
-      const stud = studentMap.get(a.studentId);
-      const itemKey = a.studentId;
-      if (!rosterMap.has(itemKey)) {
-        rosterMap.set(itemKey, {
-          id: a.id,
-          bookingCode: `ROAM-${a.studentId.substring(0, 6)}`,
-          studentId: a.studentId,
-          tripId,
-          busId: activeTrip.busId,
-          boardingStopId: stud?.primaryStopId || "",
-          seatNumber: "ROAM",
-          seatCode: "ROAM",
-          status: a.status as any,
-          isBoarded: a.status === "BOARDED",
-          isAbsent: a.status === "ABSENT" || a.status === "NO_SHOW",
-          isWaitlisted: false,
-          passengerType: "STANDING_TILL_MERGE",
-          roamingStatus: a.status === "BOARDED" ? "ONBOARD_CONFIRMED" : "ROAMING",
-          boardedAt: a.timestamp,
-          unlockedBy: a.method,
-          student: stud,
-          fullName: stud?.fullName || "Roaming Passenger",
-          studentIdCode: stud?.studentIdCode || "",
-          photoUrl: stud?.photoUrl || "",
-          phone: stud?.phone || null,
-          department: stud?.department || "",
-          semester: stud?.semester || "",
-          className: stud?.className || "",
-          createdAt: a.timestamp,
-        });
-      }
-    });
-
-    return Array.from(new Set(rosterMap.values()));
-  }, [activeTrip, attendanceRecords, students, bookings]);
-
-  const totalConfirmed = tripBookings.filter(b => b.status === "CONFIRMED" || b.status === "BOARDED" || b.isBoarded).length;
-  const boardedCount = tripBookings.filter(b => b.status === "BOARDED" || b.isBoarded || b.roamingStatus === "ONBOARD_CONFIRMED").length;
-  const pendingCount = tripBookings.filter(b => (b.status === "CONFIRMED" || (b.status as any) === "ASSIGNED") && !b.isBoarded && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
-  const waitlistCount = tripBookings.filter(b => b.status === "WAITLISTED").length;
-  const absentCount = tripBookings.filter(b => b.status === "ABSENT" || b.status === "NO_SHOW").length;
-  const roamingCount = tripBookings.filter(b => b.roamingStatus === "ROAMING").length;
-  const onboardConfirmedCount = tripBookings.filter(b => b.status === "BOARDED" || b.isBoarded || b.roamingStatus === "ONBOARD_CONFIRMED").length;
-  const runningCount = tripBookings.filter(b => b.roamingStatus === "RUNNING_TO_BUS").length;
-  const outsideCount = tripBookings.filter(b => b.status === "CONFIRMED" && !b.isBoarded && b.roamingStatus !== "ONBOARD_CONFIRMED").length;
-
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
   }, []);
 
-  // Trigger Bus Departure Recall Alert (Audible Siren + Haptics + Modal broadcast)
-  const triggerDepartureAlert = useCallback(
-    async (customMessage?: string) => {
-      if (!activeTrip) return false;
+  const setSelectedTripId = useCallback(
+    (id: string) => {
+      selectedRef.current = id;
+      setSelectedTripIdState(id);
+      void refreshLiveState();
+    },
+    [refreshLiveState]
+  );
+
+  useEffect(() => {
+    const tick = () => document.visibilityState === "visible" && refreshLiveState();
+    const interval = setInterval(tick, 8000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [refreshLiveState]);
+
+  const derived = useMemo(() => {
+    const t = duty?.trip || null;
+    const tripBookings = t ? (duty?.manifest || []).map((p) => toPassenger(p, t)) : [];
+    const attendanceRecords: AttendanceRecord[] = t
+      ? (duty?.attendance || []).map((a) => ({
+          id: a.id,
+          studentId: a.studentId,
+          tripId: t.id,
+          busId: t.bus.id,
+          method: a.method as AttendanceRecord["method"],
+          verifiedBy: a.verifiedBy,
+          status: a.status as AttendanceRecord["status"],
+          timestamp: a.timestamp,
+        }))
+      : [];
+    const onChart = tripBookings.filter((b) => !b.isAbsent);
+    const boarded = tripBookings.filter((b) => b.isBoarded).length;
+    const outside = onChart.filter((b) => !b.isBoarded).length;
+    return {
+      activeTrip: t ? toTrip(t) : undefined,
+      bus: t ? toBus(t) : undefined,
+      route: t ? toRoute(t) : undefined,
+      shift: t ? toShift(t) : undefined,
+      stops: t ? toStops(t) : [],
+      myTrips: (duty?.trips || []).map(toTrip),
+      tripBookings,
+      students: tripBookings.map((b) => b.student!).filter(Boolean),
+      attendanceRecords,
+      totalConfirmed: onChart.length,
+      boardedCount: boarded,
+      pendingCount: outside,
+      absentCount: tripBookings.filter((b) => b.isAbsent).length,
+      roamingCount: tripBookings.filter((b) => b.roamingStatus === "ROAMING").length,
+      runningCount: tripBookings.filter((b) => b.roamingStatus === "RUNNING_TO_BUS").length,
+      outsideCount: outside,
+      unseatedCount: tripBookings.filter((b) => b.isUnseated && !b.isBoarded).length,
+    };
+  }, [duty]);
+
+  const markAttendance = useCallback(
+    async (studentId: string, status: "BOARDED" | "ABSENT" | "NO_SHOW", method = "MANUAL_SELECT", _notes?: string, seat?: string) => {
+      const tripId = duty?.trip?.id;
+      if (!tripId) return false;
+      chime(status === "BOARDED" ? "success" : "toggle");
+      try {
+        const res = await fetch("/api/crew/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tripId,
+            studentId,
+            status: status === "BOARDED" ? "BOARDED" : "ABSENT",
+            method: method === "SEAT_MAP_SELECT" ? "SEAT_MAP_SELECT" : "MANUAL_SELECT",
+            ...(seat ? { seat } : {}),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast(data.error || "Could not save attendance.");
+          return false;
+        }
+        const name = duty?.manifest.find((p) => p.studentId === studentId)?.fullName || "Student";
+        showToast(status === "BOARDED" ? `✓ ${name} boarded${seat ? ` · Seat ${seat}` : ""}` : `${name} marked absent`);
+        await refreshLiveState();
+        return true;
+      } catch {
+        showToast("Network error. Try again.");
+        return false;
+      }
+    },
+    [duty, refreshLiveState, showToast]
+  );
+
+  const roaming = useCallback(
+    async (body: Record<string, unknown>) => {
+      const tripId = duty?.trip?.id;
+      if (!tripId) return false;
       try {
         const res = await fetch("/api/boarding/roaming", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "TRIGGER_DEPARTURE_ALERT",
-            tripId: activeTrip.id,
-            conductorName: currentUser?.fullName || "Conductor",
-            message: customMessage,
-          }),
+          body: JSON.stringify({ ...body, tripId }),
         });
         const data = await res.json();
-        if (data.success) {
-          playTransitNotification("sos");
-          setActiveDepartureAlert({
-            id: data.alertId || `alert-${Date.now()}`,
-            tripId: activeTrip.id,
-            busId: activeTrip.busId,
-            alertType: "MANUAL_RECALL",
-            message: customMessage || "Bus is preparing for departure! Please board immediately.",
-            triggeredAt: new Date().toISOString(),
-            triggeredBy: currentUser?.fullName || "Conductor",
-            status: "ACTIVE",
-          });
-          showToast(`🚨 Departure Recall Alarm broadcasted to ${outsideCount} outside students!`);
-          await refreshLiveState();
-          return true;
-        }
-        return false;
-      } catch (err) {
-        console.error("Failed to trigger departure alert:", err);
-        return false;
-      }
-    },
-    [activeTrip, currentUser?.fullName, outsideCount, refreshLiveState, showToast]
-  );
-
-  // Dismiss / Silence Departure Recall Alert once boarding is resolved
-  const dismissDepartureAlert = useCallback(async () => {
-    if (!activeTrip) return false;
-    try {
-      const res = await fetch("/api/boarding/roaming", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "DISMISS_ALERT",
-          tripId: activeTrip.id,
-          conductorName: currentUser?.fullName || "Conductor",
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActiveDepartureAlert(null);
-        playTransitNotification("success");
-        showToast("✓ Departure Alert dismissed.");
         await refreshLiveState();
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error("Failed to dismiss alert:", err);
-      return false;
-    }
-  }, [activeTrip, currentUser?.fullName, refreshLiveState, showToast]);
-
-  // 1-Tap Attendance Handler with instant optimistic update
-  const markAttendance = useCallback(
-    async (
-      studentId: string,
-      status: "BOARDED" | "ABSENT" | "NO_SHOW",
-      method: string = "MANUAL_SELECT",
-      notes: string = "Conductor Desk 1-Tap Check"
-    ) => {
-      if (!activeTrip) return;
-      playTransitNotification(status === "BOARDED" ? "success" : "toggle");
-
-      const timestamp = new Date().toISOString();
-      const newRecord: AttendanceRecord = {
-        id: createAttendanceId(),
-        studentId,
-        tripId: activeTrip.id,
-        busId: activeTrip.busId,
-        method: method as any,
-        verifiedBy: currentUser?.fullName || "Conductor",
-        status,
-        timestamp,
-        notes,
-      };
-
-      // 1. Optimistic Local Update
-      setAttendanceRecords(prev => [newRecord, ...prev.filter(a => !(a.studentId === studentId && a.tripId === activeTrip.id))]);
-      setBookings(prev =>
-        prev.map(b => (b.studentId === studentId && b.tripId === activeTrip.id ? { ...b, status, boardedAt: timestamp } : b))
-      );
-
-      const stud = students.find(s => s.id === studentId || s.userId === studentId);
-      const studentLabel = stud?.fullName || "Passenger";
-      showToast(status === "BOARDED" ? `✓ Marked Boarded: ${studentLabel}` : `Updated status for ${studentLabel}: ${status}`);
-
-      // 2. Persist to store & backend
-      try {
-        await store.recordAttendance(
-          studentId,
-          activeTrip.id,
-          method as any,
-          status,
-          notes
-        );
-      } catch (err) {
-        console.warn("recordAttendance error:", err);
+        return Boolean(res.ok && data.success);
+      } catch {
+        return false;
       }
     },
-    [activeTrip, currentUser?.fullName, showToast, students]
+    [duty?.trip?.id, refreshLiveState]
   );
+
+  const triggerDepartureAlert = useCallback(
+    async (message?: string) => {
+      const ok = await roaming({ action: "TRIGGER_DEPARTURE_ALERT", message });
+      if (ok) {
+        chime("sos");
+        showToast(`🚨 Departure alarm sent to ${derived.outsideCount} students outside the bus`);
+      } else showToast("Could not send the departure alarm.");
+      return ok;
+    },
+    [roaming, showToast, derived.outsideCount]
+  );
+
+  const dismissDepartureAlert = useCallback(async () => {
+    const ok = await roaming({ action: "DISMISS_ALERT" });
+    if (ok) showToast("Departure alarm stopped.");
+    return ok;
+  }, [roaming, showToast]);
+
+  const t = duty?.trip;
+  const value: ConductorContextValue = {
+    currentUser: initialUser,
+    duty,
+    loadError,
+    trips: derived.myTrips,
+    buses: derived.bus ? [derived.bus] : [],
+    students: derived.students,
+    bookings: derived.tripBookings,
+    stops: derived.stops,
+    routes: derived.route ? [derived.route] : [],
+    shifts: derived.shift ? [derived.shift] : [],
+    attendanceRecords: derived.attendanceRecords,
+    haltRequests: [],
+    pendingHaltRequests: duty?.pendingHaltRequests || 0,
+    myTrips: derived.myTrips,
+    activeTrip: derived.activeTrip,
+    bus: derived.bus,
+    route: derived.route,
+    shift: derived.shift,
+    tripBookings: derived.tripBookings,
+    totalConfirmed: derived.totalConfirmed,
+    boardedCount: derived.boardedCount,
+    pendingCount: derived.pendingCount,
+    waitlistCount: 0,
+    absentCount: derived.absentCount,
+    roamingCount: derived.roamingCount,
+    onboardConfirmedCount: derived.boardedCount,
+    runningCount: derived.runningCount,
+    outsideCount: derived.outsideCount,
+    unseatedCount: derived.unseatedCount,
+    activeDepartureAlert:
+      duty?.departureAlert && t
+        ? {
+            id: duty.departureAlert.id,
+            tripId: t.id,
+            busId: t.bus.id,
+            alertType: "MANUAL_RECALL",
+            message: duty.departureAlert.message,
+            triggeredAt: duty.departureAlert.triggeredAt,
+            status: "ACTIVE",
+          }
+        : null,
+    triggerDepartureAlert,
+    dismissDepartureAlert,
+    selectedTripId,
+    setSelectedTripId,
+    showToast,
+    markAttendance,
+    refreshLiveState,
+    isSyncing,
+  };
 
   return (
-    <ConductorContext.Provider
-      value={{
-        currentUser,
-        trips: visibleTripsForConductor,
-        buses,
-        students,
-        bookings,
-        stops,
-        routes,
-        shifts,
-        attendanceRecords,
-        haltRequests,
-        myTrips,
-        activeTrip,
-        bus,
-        route,
-        shift,
-        tripBookings,
-        totalConfirmed,
-        boardedCount,
-        pendingCount,
-        waitlistCount,
-        absentCount,
-        roamingCount,
-        onboardConfirmedCount,
-        runningCount,
-        outsideCount,
-        activeDepartureAlert,
-        triggerDepartureAlert,
-        dismissDepartureAlert,
-        selectedTripId,
-        setSelectedTripId,
-        showToast,
-        markAttendance,
-        refreshLiveState,
-        isSyncing,
-      }}
-    >
-      {toastMessage && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] max-w-sm w-full p-4 pointer-events-none">
-          <div className="p-3.5 bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 rounded-2xl text-xs font-bold text-center animate-in fade-in slide-in-from-top-4 shadow-2xl flex items-center justify-center gap-2 backdrop-blur-md">
-            <span>{toastMessage}</span>
+    <ConductorContext.Provider value={value}>
+      {toast && (
+        <div className="fixed top-[calc(env(safe-area-inset-top)+4.5rem)] inset-x-0 z-[100] flex justify-center px-4 pointer-events-none">
+          <div className="max-w-sm w-full p-3.5 bg-emerald-950/95 border border-emerald-500/40 text-emerald-100 rounded-2xl text-xs font-bold text-center shadow-2xl">
+            {toast}
           </div>
         </div>
       )}

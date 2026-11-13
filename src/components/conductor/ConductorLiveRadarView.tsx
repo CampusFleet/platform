@@ -399,7 +399,7 @@ export default function ConductorLiveRadarView({
       const nextIdx = currentStopIndex + 1;
       const updates: Partial<Trip> = { currentStopIndex: nextIdx };
       setActiveTrip((prev) => (prev ? { ...prev, ...updates } : prev));
-      await store.updateTrip(activeTrip.id, updates);
+      // Trip progress is owned by the driver (/api/crew/trip); the conductor view only reflects it.
       if (onTripUpdate) await onTripUpdate(activeTrip.id, updates);
     }
   };
@@ -412,7 +412,7 @@ export default function ConductorLiveRadarView({
 
     const updates: Partial<Trip> = { currentStopIndex: nextIdx };
     setActiveTrip((prev) => (prev ? { ...prev, ...updates } : prev));
-    await store.updateTrip(activeTrip.id, updates);
+    // Trip progress is owned by the driver (/api/crew/trip); the conductor view only reflects it.
     if (onTripUpdate) await onTripUpdate(activeTrip.id, updates);
 
     if (targetStopObj) {
@@ -437,7 +437,7 @@ export default function ConductorLiveRadarView({
       const completedAt = new Date().toISOString();
       const updates: Partial<Trip> = { status: "COMPLETED", completedAt };
       setActiveTrip((prev) => (prev ? { ...prev, ...updates } : prev));
-      await store.updateTrip(activeTrip.id, updates);
+      // Trip progress is owned by the driver (/api/crew/trip); the conductor view only reflects it.
       if (onTripUpdate) await onTripUpdate(activeTrip.id, updates);
 
       playChime(440, 0.4);

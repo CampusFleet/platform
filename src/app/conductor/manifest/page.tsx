@@ -3,7 +3,6 @@
 import React from "react";
 import { useConductorContext } from "@/components/conductor/ConductorContext";
 import { ManifestTab } from "@/components/conductor/tabs/ManifestTab";
-import { store } from "@/lib/store";
 
 export default function ManifestPage() {
   const { 

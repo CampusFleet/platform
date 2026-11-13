@@ -217,132 +217,17 @@ export function QRPassScanner({
         });
         setIsProcessing(false);
         return;
-      } catch (err: any) {
-        console.warn("Backend scan call failed, falling back to local verification", err);
-      }
-
-      let parsedPayload: any = null;
-      let urlStudentId: string | null = null;
-      try {
-        parsedPayload = JSON.parse(rawCode);
       } catch {
-        if (typeof rawCode === "string" && (rawCode.includes("http") || rawCode.includes("/verify/student"))) {
-          try {
-            const u = new URL(rawCode, "https://campusfleet.vercel.app");
-            urlStudentId = u.searchParams.get("id") || u.searchParams.get("studentId") || u.searchParams.get("sid");
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      const bookingId = parsedPayload?.bookingId || parsedPayload?.id;
-      const bookingCode = parsedPayload?.bookingCode || (typeof rawCode === "string" && !rawCode.startsWith("{") && !rawCode.includes("http") ? rawCode.trim() : "");
-      const studentId = parsedPayload?.studentId || urlStudentId;
-
-      let targetBooking = tripBookings.find(
-        b =>
-          (bookingId && b.id === bookingId) ||
-          (bookingCode && b.bookingCode?.toLowerCase() === bookingCode.toLowerCase()) ||
-          (studentId && (b.studentId === studentId || b.studentId === `stud-${studentId}`))
-      );
-
-      let isWrongTrip = false;
-      if (!targetBooking) {
-        const anyBooking = bookings.find(
-          b =>
-            (bookingId && b.id === bookingId) ||
-            (bookingCode && b.bookingCode?.toLowerCase() === bookingCode.toLowerCase()) ||
-            (studentId && (b.studentId === studentId || b.studentId === `stud-${studentId}`))
-        );
-
-        if (anyBooking) {
-          targetBooking = anyBooking;
-          isWrongTrip = anyBooking.tripId !== trip.id;
-        } else {
-          const studentMatch = students.find(
-            s =>
-              (studentId && (s.id === studentId || s.userId === studentId)) ||
-              (bookingCode && (s.fullName.toLowerCase().includes(bookingCode.toLowerCase()) || s.email?.toLowerCase() === bookingCode.toLowerCase()))
-          );
-
-          if (studentMatch) {
-            targetBooking = bookings.find(
-              b => b.studentId === studentMatch.id || b.studentId === studentMatch.userId || b.studentId === `stud-${studentMatch.userId}`
-            );
-            if (targetBooking && targetBooking.tripId !== trip.id) {
-              isWrongTrip = true;
-            }
-          }
-        }
-      }
-
-      if (!targetBooking) {
+        // Never verify passes locally: an unsigned code must not board if the server is unreachable.
         if (soundEnabled) playChime("error");
         triggerHaptic("error");
         setLastResult({
           status: "REJECTED",
-          message: `UNVERIFIED PASS: No active reservation found for "${bookingCode || studentId || "Ticket"}".`,
+          message: "Could not reach the server. Check the connection and scan again.",
           timestamp: new Date().toLocaleTimeString(),
         });
         setIsProcessing(false);
-        return;
       }
-
-      const student =
-        students.find(
-          s =>
-            s.id === targetBooking?.studentId ||
-            s.userId === targetBooking?.studentId ||
-            (parsedPayload?.studentName && s.fullName.toLowerCase() === parsedPayload.studentName.toLowerCase())
-        ) || {
-          id: targetBooking.studentId,
-          fullName: parsedPayload?.studentName || "University Student",
-                    photoUrl: "",
-          department: "",
-        };
-
-      if (targetBooking.status === "BOARDED") {
-        if (soundEnabled) playChime("duplicate");
-        triggerHaptic("warning");
-        setLastResult({
-          status: "DUPLICATE",
-          studentName: student.fullName,
-                    seatNumber: targetBooking.seatNumber || `WL-${targetBooking.waitlistPosition}`,
-          photoUrl: student.photoUrl,
-          department: (student as any).department || "",
-          boardedAt: targetBooking.boardedAt,
-          message: `DUPLICATE REPLAY: Pass belongs to ${student.fullName} , who was checked in at ${new Date(targetBooking.boardedAt || "").toLocaleTimeString() || "earlier today"}. Duplicate scan blocked.`,
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        setIsProcessing(false);
-        return;
-      }
-
-      if (isWrongTrip) {
-        if (soundEnabled) playChime("error");
-        triggerHaptic("warning");
-        setLastResult({
-          status: "WRONG_BUS",
-          studentName: student.fullName,
-                    seatNumber: targetBooking.seatNumber || `WL-${targetBooking.waitlistPosition}`,
-          message: `WRONG VEHICLE: Pass is for a DIFFERENT shuttle shift.`,
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        setIsProcessing(false);
-        return;
-      }
-
-      setPendingVerification({
-        student: {
-          ...student,
-          photoUrl: student.photoUrl || "",
-        },
-        booking: targetBooking,
-        rawCode,
-        method,
-      });
-      setIsProcessing(false);
     },
     [tripBookings, students, bookings, trip.id, trip.busId, soundEnabled, isProcessing]
   );

@@ -17,7 +17,7 @@ describe("Driver Portal Production Functionality & Resilience Tests", () => {
       admin: ["/admin", "/transport-admin", "/transport-manager"],
       transport_admin: ["/transport-admin", "/transport-manager"],
       transport_manager: ["/transport-manager"],
-      driver: ["/driver", "/conductor"],
+      driver: ["/driver"],
       conductor: ["/conductor"],
       teacher: ["/teacher"],
     };
@@ -27,12 +27,11 @@ describe("Driver Portal Production Functionality & Resilience Tests", () => {
       return allowed.some(p => targetPath === p || targetPath.startsWith(p + "/"));
     };
 
-    it("should allow verified drivers to access both Driver HUD and Conductor Scanner", () => {
+    it("should allow drivers the Driver console only (no Conductor portal)", () => {
       expect(isPortalAllowed("driver", "/driver")).toBe(true);
       expect(isPortalAllowed("driver", "/driver/settings")).toBe(true);
-      expect(isPortalAllowed("driver", "/conductor")).toBe(true);
-      expect(isPortalAllowed("driver", "/conductor/manifest")).toBe(true);
-      expect(isPortalAllowed("driver", "/conductor/scanner")).toBe(true);
+      expect(isPortalAllowed("driver", "/conductor")).toBe(false);
+      expect(isPortalAllowed("driver", "/conductor/manifest")).toBe(false);
     });
 
     it("should strictly prohibit drivers from accessing Admin, Transport Admin, or Student portal", () => {

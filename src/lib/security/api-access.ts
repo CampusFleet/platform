@@ -68,6 +68,7 @@ const ROLE_RULES: RoleRule[] = [
   { prefix: "/api/boarding/scan", roles: STAFF },
   { prefix: "/api/boarding/rolling-token", roles: STAFF },
   { prefix: "/api/conductor", roles: STAFF },
+  { prefix: "/api/crew", roles: STAFF },
   { prefix: "/api/biometrics/verify-gate", roles: STAFF },
   { prefix: "/api/maintenance", roles: STAFF },
   { prefix: "/api/teacher", roles: [...TEACHING, "transport_admin", "transport_manager"] },

@@ -4,340 +4,145 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslation } from "@/components/common/LanguageProvider";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
-import {
-  BusFront,
-  AlertTriangle,
-  ArrowRight,
-  QrCode,
-  FileText,
-  LayoutGrid,
-  ShieldCheck,
-  Home,
-  Navigation,
-  ScanFace,
-} from "lucide-react";
+import { BusFront, AlertTriangle, QrCode, FileText, LayoutGrid, ShieldCheck, Home, Navigation, ScanFace } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
-import { CrewBusSelectorModal } from "@/components/common/CrewBusSelectorModal";
 import ConductorLiveRadarView from "./ConductorLiveRadarView";
-import { store } from "@/lib/store";
 import { useConductorContext } from "./ConductorContext";
-import { getBestTripForBus, getTodayIST } from "@/lib/trip-resolver";
 import { useAttendancePolicy } from "@/lib/attendance";
 
+/**
+ * Conductor shell. The bus/trip comes from the transport manager's assignment; the conductor can
+ * only switch between their own trips today (e.g. morning and evening runs).
+ */
 export default function ConductorLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useTranslation();
-  const {
-    currentUser,
-    activeTrip,
-    bus,
-    route,
-    shift,
-    trips,
-    buses,
-    routes,
-    shifts,
-    stops,
-    bookings,
-    students,
-    tripBookings,
-    setSelectedTripId,
-    showToast,
-    refreshLiveState,
-  } = useConductorContext();
-  const [isCrewSelectorOpen, setIsCrewSelectorOpen] = useState(false);
-  const [selectorTab, setSelectorTab] = useState<"CARDS" | "SCANNER">("CARDS");
+  const { duty, currentUser, activeTrip, bus, route, shift, trips, routes, stops, bookings, students, tripBookings, selectedTripId, setSelectedTripId } =
+    useConductorContext();
+  const { rules: attendanceRules } = useAttendancePolicy();
   const [isRadarOpen, setIsRadarOpen] = useState(false);
-  const { mode: attendanceMode, rules: attendanceRules } = useAttendancePolicy();
+  const isManager = ["admin", "transport_admin", "transport_manager"].includes(currentUser?.role);
 
-  const isAuthorizedConductor = currentUser?.role === "conductor" || currentUser?.role === "driver";
-  if (currentUser && !isAuthorizedConductor) {
-    const role = currentUser.role;
-    const isAdmin = role === "admin";
-    const isTransportAdmin = role === "transport_admin";
-    const isTransportManager = role === "transport_manager";
-
-    const targetPortal = isAdmin
-      ? "/admin"
-      : isTransportAdmin
-      ? "/transport-admin"
-      : isTransportManager
-      ? "/transport-manager"
-      : "/portal";
-    const targetLabel = isAdmin
-      ? "Return to Admin Operations Center"
-      : isTransportAdmin
-      ? "Return to Transport Admin Desk"
-      : isTransportManager
-      ? "Return to Transport Manager Console"
-      : "Go to Student Portal";
-
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex flex-col pb-16 md:pb-6 font-sans">
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-gray-800 rounded-3xl p-8 border border-gray-700 shadow-2xl text-center space-y-4 animate-in fade-in">
-            <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-black">Access Restricted</h2>
-            <p className="text-xs text-gray-300">
-              {isAdmin
-                ? "Administrators are restricted from the Conductor Console. Please return to the Admin Operations Center."
-                : isTransportAdmin
-                ? "Transport Admin officers are restricted from the Conductor Console. Please return to the Transport Admin Desk."
-                : isTransportManager
-                ? "Transport Managers are restricted from the Conductor Console. Please return to the Transport Manager Console."
-                : "Ticketing & optical manifest authorization required to access the Conductor Console."}
-            </p>
-            <div className="pt-2">
-              <Link
-                href={targetPortal}
-                className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs shadow-lg transition-all"
-              >
-                <span>{targetLabel}</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const topLevelLinks = [
-    { href: "/conductor", label: t('hub'), icon: Home },
-    { href: "/conductor/manifest", label: t('manifest'), icon: FileText },
-    {
-      href: "/conductor/scanner",
-      label: attendanceRules.conductorScannerRole === "PRIMARY" ? "Pass Scanner" : "Backup Scanner",
-      icon: QrCode,
-    },
-    { href: "/conductor/seat-map", label: t('seatMap'), icon: LayoutGrid },
-    { href: "/conductor/late-requests", label: t('sosHalt'), icon: AlertTriangle },
-    { href: "/conductor/audit", label: t('audit'), icon: ShieldCheck },
-    ...(attendanceRules.isConductorBusQrActive
-      ? [{ href: "/conductor/bus-qr", label: "Bus QR", icon: QrCode }]
-      : []),
+  const links = [
+    { href: "/conductor", label: t("hub"), icon: Home },
+    { href: "/conductor/manifest", label: t("manifest"), icon: FileText },
+    { href: "/conductor/scanner", label: attendanceRules.conductorScannerRole === "PRIMARY" ? "Pass Scanner" : "Backup Scanner", icon: QrCode },
+    { href: "/conductor/seat-map", label: t("seatMap"), icon: LayoutGrid },
+    { href: "/conductor/late-requests", label: t("sosHalt"), icon: AlertTriangle },
+    { href: "/conductor/audit", label: t("audit"), icon: ShieldCheck },
+    ...(attendanceRules.isConductorBusQrActive ? [{ href: "/conductor/bus-qr", label: "Bus QR", icon: QrCode }] : []),
   ];
+  const title =
+    pathname.includes("/scanner") ? "Pass Scanner"
+    : pathname.includes("/manifest") ? "Passenger Manifest"
+    : pathname.includes("/seat-map") ? "Live Seat Map"
+    : pathname.includes("/late-requests") ? "SOS / Halt Requests"
+    : pathname.includes("/audit") ? "Attendance Audit"
+    : pathname.includes("/bus-qr") ? "Bus QR"
+    : "Conductor Hub";
 
-  const currentNavLinks = topLevelLinks;
-  let currentTitle = "Conductor Hub";
-
-  if (pathname.includes("/scanner")) {
-    currentTitle = attendanceRules.conductorScannerRole === "PRIMARY" ? "Boarding Pass Scanner" : "Manual Backup Scanner";
-  } else if (pathname.includes("/manifest")) {
-    currentTitle = "Passenger Manifest";
-  } else if (pathname.includes("/seat-map")) {
-    currentTitle = "Live Seat Map";
-  } else if (pathname.includes("/late-requests")) {
-    currentTitle = "SOS / Halt Requests";
-  } else if (pathname.includes("/audit")) {
-    currentTitle = "Attendance Audit";
-  } else if (pathname.includes("/bus-qr")) {
-    currentTitle = "Bus QR";
-  }
-
-  const todayStr = getTodayIST();
-  const currentBusTrips = React.useMemo(() => {
-    if (!bus?.id) return [];
-    return trips
-      .filter(t => t.busId === bus.id && (t.tripDate === todayStr || t.status === "IN_PROGRESS"))
-      .sort((a, b) => {
-        const sA = shifts.find(sh => sh.id === a.shiftId);
-        const sB = shifts.find(sh => sh.id === b.shiftId);
-        return (sA?.startTime || "").localeCompare(sB?.startTime || "");
-      });
-  }, [trips, bus?.id, todayStr, shifts]);
+  const dutyTrips = duty?.trips || [];
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-clip bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6 font-sans transition-colors duration-200">
+    <div className="min-h-[100dvh] w-full overflow-x-clip bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col pb-24 md:pb-6">
       <UnifiedAppHeader
         role="conductor"
-        portalTitle={currentTitle}
-        portalSubtitle={activeTrip ? `Bus ${bus?.busNumber || "Bus"} • ${shift?.name || route?.name || "Corridor"}` : "Conductor Operations"}
-        navLinks={currentNavLinks}
-        mobilePrimaryAction={{
-          label: t('driverHud'),
-          href: "/driver",
-          subtitle: "Live telemetry",
-          icon: BusFront,
-        }}
+        portalTitle={title}
+        portalSubtitle={bus ? `Bus ${bus.busNumber}${shift ? ` • ${shift.name}` : ""}` : "No trip assigned today"}
+        navLinks={links}
         customActions={
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <Link
-              href="/driver"
-              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-green-50 dark:bg-green-950/40 hover:bg-green-100 dark:hover:bg-green-900/60 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-xs font-bold transition-all shadow-2xs"
-              title={t('driverHud')}
-            >
-              <BusFront className="w-3.5 h-3.5 text-green-500" />
-              <span>{t('driverHud')}</span>
-            </Link>
-
-            {/* Dynamic Attendance Policy Telematics Status Indicator */}
-            <div
-              className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold shadow-xs select-none ${
-                attendanceMode === "FACE_ID"
-                  ? "bg-emerald-950/60 border-emerald-800/80 text-emerald-300"
-                  : attendanceMode === "RFID"
-                  ? "bg-indigo-950/60 border-indigo-800/80 text-indigo-300"
-                  : attendanceMode === "DYNAMIC_QR"
-                  ? "bg-blue-950/60 border-blue-800/80 text-blue-300"
-                  : "bg-amber-950/60 border-amber-800/80 text-amber-300"
-              }`}
-              title={`Institutional Attendance Policy: ${attendanceRules.modeLabel}`}
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              {attendanceMode === "FACE_ID" ? (
-                <ScanFace className="w-3.5 h-3.5 text-emerald-400" />
-              ) : (
-                <QrCode className="w-3.5 h-3.5" />
-              )}
-              <span>{attendanceRules.modeLabel}</span>
-            </div>
-
-            {/* Quick Scanner Action Trigger */}
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold bg-emerald-950/60 border-emerald-800/80 text-emerald-300">
+              <ScanFace className="w-3.5 h-3.5" />
+              {attendanceRules.modeLabel}
+            </span>
             <Link
               href="/conductor/scanner"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 active:scale-95 text-xs font-bold shadow-xs transition-all"
-              title={
-                attendanceRules.conductorScannerRole === "PRIMARY"
-                  ? "Primary Boarding Pass Scanner"
-                  : "Manual Backup Scanner for exception cases or unverified students"
-              }
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold"
             >
               <QrCode className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline">
-                {attendanceRules.conductorScannerRole === "PRIMARY" ? "Pass Scanner" : "Backup Scanner"}
-              </span>
+              <span className="hidden sm:inline">Scanner</span>
             </Link>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectorTab("CARDS");
-                setIsCrewSelectorOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800 active:scale-95 text-gray-900 dark:text-gray-100 text-xs font-bold border border-gray-200 dark:border-gray-800 shadow-sm transition-all max-w-[190px] truncate"
-              title="Choose bus from cards"
-            >
-              <BusFront className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="truncate">{bus?.busNumber ? `Bus ${bus.busNumber}` : "Select Bus"}</span>
-            </button>
+            {bus && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-gray-900 text-xs font-bold border border-gray-200 dark:border-gray-800 shrink-0">
+                <BusFront className="w-3.5 h-3.5 text-blue-500" />
+                Bus {bus.busNumber}
+              </span>
+            )}
           </div>
         }
       />
 
-      {/* Dynamic Operational Shift Switcher Bar */}
-      {currentBusTrips.length > 1 && (
-        <div className="w-full bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 px-4 py-2 sticky top-14 z-30 shadow-xs">
-          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
-            <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Bus {bus?.busNumber} Today&apos;s Shifts:</span>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {currentBusTrips.map(t => {
-                const s = shifts.find(sh => sh.id === t.shiftId);
-                const isSelected = activeTrip?.id === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setSelectedTripId(t.id);
-                      showToast(`✓ Shift active: ${s?.name || t.tripCode}`);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      isSelected
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-black"
-                        : "bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-800"
-                    }`}
-                  >
-                    <span>{s?.name || t.tripCode}</span>
-                    {s?.startTime && (
-                      <span className={`text-[10px] font-mono px-1 py-0.5 rounded-md ${
-                        isSelected ? "bg-white/20 text-white font-bold" : "bg-black/5 dark:bg-white/5 text-gray-400"
-                      }`}>
-                        {s.startTime}
-                      </span>
-                    )}
-                    {t.status === "IN_PROGRESS" && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+      {/* Today's trips for this conductor (or all trips for a supervising manager) */}
+      {dutyTrips.length > 1 && (
+        <div className="w-full bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 px-4 py-2">
+          <div className="max-w-6xl mx-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {dutyTrips.map((dt) => {
+              const selected = (selectedTripId || duty?.trip?.id) === dt.id;
+              return (
+                <button
+                  key={dt.id}
+                  type="button"
+                  onClick={() => setSelectedTripId(dt.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+                    selected
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-zinc-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-800"
+                  }`}
+                >
+                  {isManager && <span>Bus {dt.bus.busNumber} ·</span>}
+                  <span>{dt.shift?.name || "Trip"}</span>
+                  {dt.shift?.startTime && <span className="font-mono text-[10px] opacity-80">{dt.shift.startTime}</span>}
+                  {dt.status === "IN_PROGRESS" && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Main Content Viewport */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-24 min-w-0">
-        {children}
+        {!activeTrip ? (
+          <div className="max-w-md mx-auto mt-10 p-6 rounded-3xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-center space-y-2">
+            <BusFront className="w-10 h-10 mx-auto text-gray-400" />
+            <h2 className="text-lg font-black">No trip assigned today</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {duty?.me.staffId || isManager
+                ? "The transport manager has not assigned you to a bus for today."
+                : "Your login is not linked to a conductor profile yet. Ask the transport office to link it."}
+            </p>
+          </div>
+        ) : (
+          children
+        )}
       </main>
 
-      <MobileBottomNav isPaymentApproved={true} navItems={currentNavLinks} />
+      <MobileBottomNav isPaymentApproved={true} navItems={links} />
 
-      {/* Crew Bus Selector & QR Attendance Modal */}
-      <CrewBusSelectorModal
-        isOpen={isCrewSelectorOpen}
-        onClose={() => setIsCrewSelectorOpen(false)}
-        role="conductor"
-        initialTab={selectorTab}
-        currentUser={currentUser}
-        currentTripId={activeTrip?.id}
-        onSelectBusAndTrip={(busId, tripId) => {
-          if (tripId) {
-            setSelectedTripId(tripId);
-          } else {
-            const best = getBestTripForBus(busId, trips, shifts);
-            if (best) {
-              setSelectedTripId(best.id);
-            } else {
-              const match = trips.find(t => t.busId === busId && t.status !== "COMPLETED") || trips.find(t => t.busId === busId);
-              if (match) setSelectedTripId(match.id);
-            }
-          }
-          showToast("✓ Conductor duty active! Bus claimed and attendance recorded.");
-        }}
-      />
+      {activeTrip && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-6 right-4 sm:right-6 z-40">
+          <button
+            type="button"
+            onClick={() => setIsRadarOpen(true)}
+            className="px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-2xl border-2 border-white dark:border-slate-900"
+          >
+            <Navigation className="w-4 h-4" />
+            Live Map
+          </button>
+        </div>
+      )}
 
-      {/* ── FLOATING LIVE MAP RADAR TRIGGER BUTTON (CONDUCTOR CONSOLE) ──── */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-6 right-4 sm:right-6 z-40">
-        <button
-          type="button"
-          onClick={() => setIsRadarOpen(true)}
-          className="px-4 sm:px-5 py-3 sm:py-3.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2.5 shadow-2xl shadow-blue-600/40 border-2 border-white dark:border-slate-900 transition-all cursor-pointer group"
-          title="Open Live Radar Navigation Map"
-          aria-label="Open Live Radar Navigation Map"
-        >
-          <div className="relative flex items-center justify-center">
-            <Navigation className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white/20 transition-transform group-hover:rotate-45 duration-300" />
-            <span className="absolute -top-1 -right-1 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-          </div>
-          <span className="tracking-tight">Live Map Radar</span>
-        </button>
-      </div>
-
-      {/* ── FULLSCREEN LIVE RADAR NAVIGATION MODAL OVERLAY (CONDUCTOR MODE) ── */}
-      {isRadarOpen && (
-        <div className="fixed inset-0 z-50 bg-black animate-in fade-in duration-200 flex flex-col">
+      {isRadarOpen && activeTrip && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
           <ConductorLiveRadarView
             initialUser={currentUser}
-            activeTrip={activeTrip || null}
+            activeTrip={activeTrip}
             route={route || null}
             bus={bus || null}
             shift={shift || null}
             allTrips={trips}
-            allBuses={buses}
+            allBuses={bus ? [bus] : []}
             allRoutes={routes}
             allStops={stops}
             bookings={bookings}
@@ -345,10 +150,6 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
             tripBookings={tripBookings}
             shiftDirection={shift?.direction}
             onClose={() => setIsRadarOpen(false)}
-            onTripUpdate={async (tripId, updates) => {
-              await store.updateTrip(tripId, updates);
-              if (refreshLiveState) await refreshLiveState();
-            }}
           />
         </div>
       )}

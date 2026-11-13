@@ -15,6 +15,10 @@ interface SeatMapTabProps {
   boardedCount: number;
   pendingCount: number;
   onSelectSeat: (seatData: any) => void;
+  /** On today's chart but without a seat (auto-assigned by the boarding chart). */
+  waiting?: EnrichedPassenger[];
+  pickedStudentId?: string | null;
+  onPickPassenger?: (p: EnrichedPassenger | null) => void;
 }
 
 export function SeatMapTab({
@@ -26,6 +30,9 @@ export function SeatMapTab({
   boardedCount,
   pendingCount,
   onSelectSeat,
+  waiting = [],
+  pickedStudentId = null,
+  onPickPassenger,
 }: SeatMapTabProps) {
   const capacity = Number(bus?.capacity || 40);
   const layout = bus?.seatLayout || "TWO_BY_TWO";
@@ -127,6 +134,7 @@ export function SeatMapTab({
     isWaitlisted?: boolean;
   }) => {
     const isTeacherReserved = teacherReservedSet.has(seatData.seatCode);
+    const isPickTarget = Boolean(pickedStudentId) && !seatData.booking;
     const passengerName = seatData.student?.fullName || (seatData.booking as any)?.fullName;
     const initials = passengerName
       ? passengerName
@@ -141,7 +149,7 @@ export function SeatMapTab({
       <button
         key={seatData.seatCode}
         onClick={() => onSelectSeat(seatData)}
-        className={`min-h-[48px] p-2 rounded-2xl font-mono text-xs font-black flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm border ${
+        className={`min-h-[48px] min-w-0 p-1.5 rounded-2xl font-mono text-xs font-black flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm border ${isPickTarget ? "ring-2 ring-amber-400 " : ""}${
           seatData.isBoarded
             ? "bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/30"
             : seatData.isConfirmed
@@ -215,8 +223,56 @@ export function SeatMapTab({
         </div>
       </div>
 
+      {/* ── STUDENTS ON THE CHART WITHOUT A SEAT ── */}
+      {waiting.length > 0 && (
+        <div className="rounded-3xl border border-amber-300/60 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+              <Users className="w-4 h-4" /> On the chart, no seat yet ({waiting.length})
+            </h4>
+            {pickedStudentId && (
+              <button type="button" onClick={() => onPickPassenger?.(null)} className="text-xs font-bold text-amber-800 dark:text-amber-300 underline">
+                Cancel
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-amber-800/90 dark:text-amber-300/90">
+            {pickedStudentId ? "Now tap a free seat to board this student there." : "Tap a student, then tap a free seat to board them."}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {waiting.map((p) => {
+              const picked = p.studentId === pickedStudentId;
+              return (
+                <button
+                  key={p.studentId}
+                  type="button"
+                  onClick={() => onPickPassenger?.(picked ? null : p)}
+                  className={`flex items-center gap-2.5 p-2 rounded-2xl border text-left min-w-0 ${
+                    picked ? "bg-amber-500 border-amber-500 text-white" : "bg-white dark:bg-zinc-900 border-amber-200 dark:border-zinc-800"
+                  }`}
+                >
+                  {p.photoUrl ? (
+                    <img src={p.photoUrl} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                  ) : (
+                    <span className="w-9 h-9 rounded-xl bg-amber-200 dark:bg-amber-900 flex items-center justify-center text-xs font-black shrink-0">
+                      {p.fullName.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold truncate">{p.fullName}</span>
+                    <span className={`block text-[11px] truncate ${picked ? "text-white/90" : "text-zinc-500"}`}>
+                      {[p.studentIdCode, p.boardingStopName].filter(Boolean).join(" · ") || "—"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── BUS CHASSIS COCKPIT MOCKUP ── */}
-      <div className="max-w-md mx-auto bg-black p-6 sm:p-7 rounded-[2.5rem] border-2 border-zinc-800 shadow-2xl space-y-6">
+      <div className="max-w-md mx-auto bg-black p-3 sm:p-7 rounded-[2rem] sm:rounded-[2.5rem] border-2 border-zinc-800 shadow-2xl space-y-6">
         {/* Front Windshield & Driver Cab */}
         <div className="relative rounded-2xl bg-zinc-900/90 border border-zinc-800 p-3.5 text-xs font-bold text-zinc-400 flex items-center justify-between shadow-inner">
           <div className="flex items-center gap-2 text-emerald-400">
@@ -237,7 +293,7 @@ export function SeatMapTab({
             rows.map(row => (
               <div
                 key={row.rowNum}
-                className="grid gap-2.5 items-center"
+                className="grid gap-1.5 sm:gap-2.5 items-center"
                 style={{ gridTemplateColumns: `repeat(${totalGridCols}, minmax(0, 1fr))` }}
               >
                 {/* Left seats */}

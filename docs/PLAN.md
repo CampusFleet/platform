@@ -36,7 +36,7 @@ Steps:
 - ⬜ Remaining per-screen overflow fixes (fixed `min-w-[…]` tiles, unprefixed 3-col grids) — done screen by screen in Phases 2–4.
 - ⬜ Shared components in `src/components/ui`: AppShell, Header, BottomNav, Sheet, Modal, Button, Card, Stat, Badge, Field/Input/Select, Tabs, List/Table, MapLayout, EmptyState, Toast.
 - ⬜ Data layer: TanStack Query + one typed route per screen; generated Supabase types (`supabase gen types`); zod at route boundaries.
-- ⬜ One source of truth for "who am I / subscription": `/api/me`, read by the server layout and client.
+- ✅ One rule for subscription access: `getStudentAccess()` (`src/lib/student-access.ts`) used by the portal layout and a new server-side onboarding layout; client no longer second-guesses it (fixes onboarding ↔ portal flicker).
 - ⬜ Attendance policy served with `/api/me` (no localStorage-first, no "all on" fallback).
 
 ## Phase 2 — Student portal ⬜
@@ -46,10 +46,18 @@ Steps:
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).
 - Remove `store` usage from portal; fix onboarding flicker (single redirect rule).
 
-## Phase 3 — Conductor and driver ⬜
-- Manifest from the final boarding chart; walk-ons; remove the local-verification fallback in `QRPassScanner`.
-- Every boarding API refuses methods whose lock is off.
-- Driver console + gate camera on the new shell.
+## Phase 3 — Conductor and driver 🔄 (pulled forward on owner request)
+- ✅ Crew no longer choose a bus: duty = trips where `driver_id` / `conductor_id` = their staff id (set by transport manager / rollover). `CrewBusSelectorModal` deleted.
+- ✅ Crew logins linked to staff rows (migration `20261113e_crew_duty.sql`, 28 rows); unique `staff.user_id`.
+- ✅ Server duty module `src/lib/crew/duty.ts` + `/api/crew/duty`, `/api/crew/trip` (driver start/stop/end), `/api/crew/attendance` (`crew_mark_attendance` RPC), `/api/crew/sos` (`vehicle_issues`).
+- ✅ Conductor context rewritten on `/api/crew/duty` (8 s poll; no client store, no 300-trip/500-reservation downloads).
+- ✅ Seat map shows chart students without a seat; tap student → tap free seat boards them there.
+- ✅ Driver console rewritten (`DriverConsole.tsx`, ~350 lines replacing 3,400): assigned trip, start/arrived/end, real GPS only, auto-arrive 150 m, Google Maps navigation, real SOS reports, Face ID door camera when enabled.
+- ✅ Drivers can no longer open `/conductor`; conductor's radar is read-only for trip state.
+- ✅ Pass scanner no longer verifies locally when the server is unreachable.
+- ⬜ Rewrite ManifestTab / HaltRequestsTab / AuditTab / ConductorLiveRadarView UI on shared components (they now run on the new data).
+- ⬜ New crew accounts created in admin must get a linked staff row automatically.
+- ⬜ Every boarding API refuses methods whose lock is off.
 
 ## Phase 4 — Admin portals ⬜
 - Transport admin / manager / admin on shared components; merge duplicates (salary ×2, maintenance ×2, users ×2, campuses ×2, trips ×2).

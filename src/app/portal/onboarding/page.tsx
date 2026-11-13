@@ -633,20 +633,7 @@ export default function StudentOnboardingPage() {
     }
   }, [activeStudent?.id, currentUser?.id]);
 
-  // Auto-redirect to Commuter Hub if commuter already has an active transit pass
-  useEffect(() => {
-    if (!dataLoaded) return;
-    // Never auto-redirect if actively processing or celebrating payment
-    if (paymentVerificationState === "VERIFYING" || paymentVerificationState === "SUCCESS") return;
-
-    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    const hasRazorpayParams = params.has("razorpay_payment_id") || params.has("razorpay_payment_link_id");
-    if (hasRazorpayParams) return; // Don't redirect while actively verifying a payment callback
-
-    if (isPassApproved || activeStudent?.hasActiveSubscription || activeStudent?.paymentStatus === "APPROVED") {
-      router.replace("/portal");
-    }
-  }, [dataLoaded, isPassApproved, activeStudent, router, paymentVerificationState]);
+  // Redirect for students who already have a pass happens on the server (onboarding/layout.tsx).
 
   // Save profile and trigger Razorpay Checkout
   const handleSaveAndCheckout = async () => {

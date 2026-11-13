@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Resolve transit zone and prepare student row for upsert
     let resolvedZoneId: string | null = null;
-    let feeDue = 12000; // default fallback
+    let feeDue: number | null = null;
     if (zoneCode && effectiveCampusId) {
       const { data: zone } = await supabaseAdmin.from("transit_zones").select("id, semester_fee").eq("code", zoneCode).eq("campus_id", effectiveCampusId).maybeSingle();
       if (zone?.id) resolvedZoneId = zone.id;

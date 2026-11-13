@@ -222,7 +222,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/app/portal/onboarding/page.tsx`: one page, four cards (details → home and pickup → live pass photo → pay). Loads campuses, classes and stop options from the server only; keeps a localStorage draft (no photo); handles the Razorpay return (`verify-link`).
   Components in `src/components/portal/onboarding/*`: `DetailsSection` (class cascade), `HomePickupSection` (address search, GPS, pin map, stop list), `LiveFaceCapture` (camera, see section 9), `OnboardingHeader`, `form.ts` (form type, `formProblems`, `phoneError`).
 - `src/app/portal/settings/page.tsx`
-- `src/components/common/CommuterHomeLocationCard.tsx`, `CommuterSeatPreferencesCard.tsx`
+- `src/components/portal/HomeStopSettings.tsx` (Settings home + stop, reuses `HomePickupSection`), `src/components/common/CommuterSeatPreferencesCard.tsx`
 - `src/app/verify/student/page.tsx`: public ID verification.
 
 **API routes:**
@@ -234,7 +234,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/students/pickup-options | GET | Nearest stops for `lat,lng,campusId` with zone, fee, route. Read-only | H | via `lib/students/pickup` |
 | /api/students/portrait | POST | Live pass photo without Face ID (no template); locked after payment | H (student) | users, students_full |
 | /api/students/profile | POST | Upsert the student profile (Settings / store). Ignores `photoUrl` from students; never clears zone/stop/emergency contact when omitted | H | students, students_full, transit_zones, users |
-| /api/students/home-location | GET, PUT, POST | Home pin, then zone and stop assignment | H | students, routes, route_stops, stops, transit_zones, trips, buses, bus_reservations, users, audit_logs |
+| /api/students/home-location | GET, PUT | Settings: home pin + pickup stop via `lib/students/home.ts` (same stop rules as onboarding; zone locked after payment). Never books a seat. Students only act on themselves; managers pass studentId | H | students, students_full, audit_logs |
+| /api/students/[id]/portrait | POST | Staff replace a student's pass photo (private store, audit log) | H (MANAGE) | students, users, audit_logs |
 | /api/students/[id]/class | PATCH | Set the student's class | H | students, classes, audit_logs |
 | /api/students/verify | GET | Non-sensitive ID-card check | public GET | students_full, routes, stops |
 | /api/photo-proxy | GET | Proxies images from allow-listed hosts and *.public.blob.vercel-storage.com (L20-35) | public | none |
@@ -244,13 +245,13 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/pickup.ts`: `rankPickupStops` (pure), `resolveZone`, `defaultPickup`, `loadPickupCatalog` (Redis `onboarding:pickup-catalog:v1`, 120 s), `findPickupOptions`, `resolveChosenPickup`. Zone/fee only from the stop's own zone; stops on no active route cannot be chosen; stops without `campus_id` count for a campus within 60 km.
 - `src/lib/students/portrait.ts`: `savePortrait`, `portraitKeyFromUrl`, `isPortraitLocked`, `PortraitLockedError`. Deletes the previous portrait blob.
 - `src/lib/onboarding-cache.ts`: `getOnboardingDraftKey`, `saveOnboardingDraft`, `loadOnboardingDraft`, `clearOnboardingDraft` (client draft storage).
-- `src/lib/zone-detector.ts`: `detectCommuterZoneAndStop` (still used by `CommuterHomeLocationCard`; has hard-coded campus heuristics and a Zone B fallback).
+- `src/lib/students/home.ts`: `getHomeSettings`, `updateHome`, `HomeUpdateError`.
+- `src/lib/students/fees.ts`: `getSemesterFee` (zone fee, else total_fee_due, else null). Used by the payments page and create-link.
 - `src/lib/subscription-utils.ts`: `isStudentSubscriptionActive`, `getSubscriptionRemainingDays`, `getSubscriptionStatusLabel`.
 - `src/lib/image-utils.ts`: `getSafePhotoUrl`.
 - `src/lib/security/student-scope.ts`: `STUDENT_ADMIN_ROLES`, `resolveStudentScope`.
-- Store: `store/crud.ts` L253-394 builds the profile (default zone "ZONE_B", fee fallback 12000 at L261-262) and POSTs `/api/students/profile`.
 
-**Gotcha:** the hard-coded fallbacks `ZONE_B` and 12000 are still at `store/crud.ts` L261-262 and L306 (Settings path), and `home-location` PUT/POST still fall back to the second zone and book a reservation on any trip of the route. Onboarding no longer uses either.
+**Note:** `store.updateStudentProfile` was removed (it wrote defaults like ZONE_B / 12000 and wrote users/students directly through the db proxy). Settings saves through `/api/users/update-profile` and refreshes the cache with `store.applyServerStudent` (local only).
 
 ## 4. Academics / classes
 
@@ -294,7 +295,6 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/payments/razorpay/create-link | POST | Creates a Razorpay payment link (`api.razorpay.com/v1/payment_links`, L110) | H | students_full, transit_zones |
 | /api/payments/razorpay/verify-link | POST | Fetches the link status (L50), activates the subscription, `markStudentSubscriptionActiveInCache` (L134) | H | payment_submissions, students, students_full, subscription_plans, subscriptions |
 | /api/payments/razorpay/webhook | POST | HMAC-verified webhook (RAZORPAY_WEBHOOK_SECRET) activates the subscription (L108) | public + signature | same plus audit_logs |
-| /api/payments/upload-receipt | POST | Uploads a receipt to Blob with `put(..., access:"public")` (L102) | H | none |
 | /api/payments/approvals | GET, POST | GET returns own rows (scoped in handler); POST approve/reject, also queries `v1/payments` (L157), cache L310/L390 | MW write MANAGE | payment_submissions, payment_submissions_full, students, students_full, subscription_plans, subscriptions, notifications, audit_logs |
 | /api/cron/reconcile-payments | GET | Reconciles pending payments | CRON_SECRET | payment_submissions, students, students_full, subscriptions, subscription_plans, audit_logs |
 
@@ -306,7 +306,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **Env:** RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, NEXT_PUBLIC_RAZORPAY_KEY_ID, RAZORPAY_WEBHOOK_SECRET, BLOB_READ_WRITE_TOKEN.
 
-**Gotcha:** receipts are stored in a public Blob (upload-receipt L103).
+**Note:** `/api/payments/upload-receipt` (public Blob) was deleted; pass photos are stored privately via `lib/students/portrait.ts`.
 
 ## 6. Bookings / reservations, seat allocation and daily rollover
 
@@ -764,7 +764,7 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 - **Supabase:** NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (supabaseClient.ts, db proxy, payroll-crypto).
 - **Redis:** KV_REST_API_URL, KV_REST_API_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, REDIS_URL, REDIS_TOKEN (redis.ts).
 - **MongoDB:** MONGODB_URI, MONGODB_DB_NAME (mongodb.ts).
-- **Blob:** BLOB_READ_WRITE_TOKEN (upload-receipt, maintenance/upload, delete-account); EVIDENCE_READ_WRITE_TOKEN (gate/evidence.ts).
+- **Blob:** BLOB_READ_WRITE_TOKEN (maintenance/upload, delete-account); EVIDENCE_READ_WRITE_TOKEN (gate/evidence.ts).
 - **Razorpay:** RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, NEXT_PUBLIC_RAZORPAY_KEY_ID (approvals, create-link, verify-link, razorpay-payouts); RAZORPAY_WEBHOOK_SECRET (webhook); RAZORPAYX_ACCOUNT_NUMBER (payouts).
 - **Face service:** FACE_SERVICE_URL, FACE_SERVICE_KEY (face/client.ts).
 - **Face ID enrollment:** FACE_CHALLENGE_SECRET (optional, falls back to JWT_SECRET; face/challenge.ts); FACE_ENROLL_POSE_CHECK (`off` disables the head-turn check), FACE_ENROLL_TURN_MIN (default 0.12), FACE_ENROLL_FRONTAL_MAX (default 0.10) (enroll-v2).

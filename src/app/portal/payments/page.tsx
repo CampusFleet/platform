@@ -1,109 +1,61 @@
-import { getSession } from "@/lib/jwt";
 import { redirect } from "next/navigation";
-import { supabaseAdmin } from "@/lib/supabaseClient";
-import PortalPaymentsView from "@/components/portal/PortalPaymentsView";
-import type { Student, TransitZone } from "@/lib/types";
+import { getSession } from "@/lib/jwt";
+import { db } from "@/lib/supabaseClient";
+import { isSubscriptionRowActive } from "@/lib/student-access";
+import { getSemesterFee } from "@/lib/students/fees";
+import PortalPaymentsView, { type PaymentsData } from "@/components/portal/PortalPaymentsView";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Server Component: Student Subscription & UPI Billing Gateway
- * - Server-side authentication and fee status verification
- * - Queries past payment transactions, transit zones, and fee balances
- * - Delivers pre-rendered HTML with immediate receipt visibility
+ * Pass and payments. Everything is read on the server for the signed-in student; the fee comes from
+ * getSemesterFee (the same helper create-link charges with). Missing values are null and shown as "Not set".
+ * Students without a paid pass go to onboarding, except when returning from Razorpay.
  */
-export default async function SubscriptionsAndBillingPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
+export default async function PaymentsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await getSession();
+  if (!session) redirect("/login?redirect=/portal/payments");
+  const params = searchParams ? await searchParams : {};
+  const isPaymentReturn = Boolean(params.razorpay_payment_id || params.razorpay_payment_link_id);
 
-  if (!session) {
-    redirect("/login?redirect=/portal/payments");
-  }
+  const { data: s } = await db
+    .from("students_full")
+    .select("id, full_name, zone_id, zone_code, campus_id, total_fee_due, total_fee_paid, has_active_subscription, payment_status, transport_access_suspended, subscription_expiry_date, primary_stop_name, primary_route_name")
+    .eq("user_id", session.userId)
+    .limit(1)
+    .maybeSingle();
 
-  const resolvedSearchParams = searchParams ? await searchParams : {};
-  const hasPaymentCallback = Boolean(
-    resolvedSearchParams.razorpay_payment_id ||
-    resolvedSearchParams.razorpay_payment_link_id
-  );
+  const isActive = s ? isSubscriptionRowActive(s) : false;
+  if (session.role === "student" && !isActive && !isPaymentReturn) redirect("/portal/onboarding");
 
-  const [
-    { data: dbStudents },
-    { data: dbZones },
-  ] = await Promise.all([
-    supabaseAdmin.from("students_full").select("*").eq("user_id", session.userId),
-    supabaseAdmin.from("transit_zones").select("*").order("code"),
+  const [zoneRes, historyRes, fee] = await Promise.all([
+    s?.zone_id ? db.from("transit_zones").select("name").eq("id", s.zone_id).maybeSingle() : Promise.resolve({ data: null }),
+    s?.id
+      ? db.from("payment_submissions").select("id, created_at, amount, status, transaction_id, receipt_number").eq("student_id", s.id).order("created_at", { ascending: false }).limit(50)
+      : Promise.resolve({ data: [] as never[] }),
+    s ? getSemesterFee(s) : Promise.resolve(null),
   ]);
 
-  // Only this student's own payment submissions (the legacy `payments` table was dropped).
-  const ownStudentId = dbStudents?.[0]?.id;
-  const { data: dbPayments } = ownStudentId
-    ? await supabaseAdmin
-        .from("payment_submissions")
-        .select("*")
-        .eq("student_id", ownStudentId)
-        .order("created_at", { ascending: false })
-        .limit(100)
-    : { data: [] as any[] };
+  const paid = Number(s?.total_fee_paid) || 0;
+  const data: PaymentsData = {
+    studentId: s?.id ?? null,
+    fullName: s?.full_name ?? null,
+    isActive,
+    expiry: s?.subscription_expiry_date ?? null,
+    zoneName: (zoneRes.data as { name: string | null } | null)?.name ?? s?.zone_code ?? null,
+    stopName: s?.primary_stop_name ?? null,
+    routeName: s?.primary_route_name ?? null,
+    fee,
+    paid,
+    due: fee != null ? Math.max(0, fee - paid) : null,
+    history: (historyRes.data || []).map((p) => ({
+      id: p.id,
+      createdAt: p.created_at,
+      amount: Number(p.amount) || 0,
+      status: p.status || "PENDING",
+      reference: p.receipt_number || p.transaction_id || null,
+    })),
+  };
 
-  const activeStudentRow = dbStudents?.[0];
-  const isStudentSubscribed =
-    Boolean(activeStudentRow?.has_active_subscription) ||
-    activeStudentRow?.payment_status === "APPROVED" ||
-    activeStudentRow?.payment_status === "COMPLETED";
-
-  // If new / unsubscribed student visits /portal/payments directly without payment callback params, guide them to Unified Onboarding & Pass Activation
-  if (session.role === "student" && !isStudentSubscribed && !hasPaymentCallback) {
-    redirect("/portal/onboarding");
-  }
-
-  const students: Student[] = (dbStudents || []).map((s: any) => ({
-    id: s.id,
-    userId: s.user_id || s.id,
-    fullName: s.full_name || s.name || "Student",
-    email: s.email || "",
-    phone: s.phone || "",
-    department: s.department || "Computer Science",
-    semester: String(s.semester || "4"),
-    zoneCode: s.zone_code || "ZONE_B",
-    primaryStopId: s.primary_stop_id || s.stop_id || "",
-    primaryRouteId: s.primary_route_id || s.route_id || "",
-    campusId: s.campus_id || s.campus || "",
-    campus: s.campus || "",
-    emergencyContact: {
-      name: s.emergency_contact_name || "Parent/Guardian",
-      relationship: "Parent",
-      phone: s.emergency_contact_phone || s.phone || "+91 9876543210",
-    },
-    transportAccessSuspended: Boolean(s.transport_access_suspended),
-    hasActiveSubscription: Boolean(s.has_active_subscription),
-    subscriptionExpiryDate: s.subscription_expiry_date || "2026-12-31",
-    classId: s.class_id,
-    className: s.class_name,
-    paymentStatus: s.payment_status || "UNPAID",
-    totalFeeDue: Number(s.total_fee_due) || 0,
-    totalFeePaid: Number(s.total_fee_paid) || 0,
-  }));
-
-  const zones: TransitZone[] = (dbZones || []).map((z: any) => ({
-    id: z.id,
-    campusId: z.campus_id,
-    code: z.code,
-    name: z.name,
-    corridorDescription: z.corridor_description || z.description || "",
-    semesterFee: Number(z.semester_fee) || 14000,
-    installmentsAllowed: Number(z.installments_allowed) || 3,
-    isActive: z.is_active ?? true,
-  }));
-
-  return (
-    <PortalPaymentsView
-      initialUser={session}
-      initialStudents={students}
-      initialPayments={dbPayments || []}
-      initialZones={zones}
-    />
-  );
+  return <PortalPaymentsView data={data} />;
 }

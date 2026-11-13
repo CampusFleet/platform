@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSemesterFee } from "@/lib/students/fees";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 
@@ -23,28 +24,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Student record not found. Please complete your profile first." }, { status: 404 });
     }
 
-    // Server-authoritative price: look up the fee from transit_zones based on student's zone + campus
-    let serverFee = Number(studentRecord.total_fee_due) || 0;
-    if (studentRecord.zone_code && studentRecord.campus_id) {
-      const { data: zone } = await supabaseAdmin
-        .from("transit_zones")
-        .select("semester_fee")
-        .eq("code", studentRecord.zone_code)
-        .eq("campus_id", studentRecord.campus_id)
-        .maybeSingle();
-      if (zone?.semester_fee) {
-        serverFee = Number(zone.semester_fee);
-      }
-    } else if (studentRecord.zone_code) {
-      const { data: zone } = await supabaseAdmin
-        .from("transit_zones")
-        .select("semester_fee")
-        .eq("code", studentRecord.zone_code)
-        .limit(1)
-        .maybeSingle();
-      if (zone?.semester_fee) {
-        serverFee = Number(zone.semester_fee);
-      }
+    // Server-authoritative price (same helper as the payments page)
+    const serverFee = (await getSemesterFee(studentRecord)) ?? 0;
+    if (serverFee <= 0) {
+      return NextResponse.json({ success: false, error: "Your semester fee is not set yet. Contact the transport office." }, { status: 400 });
     }
 
     const alreadyPaid = Number(studentRecord.total_fee_paid) || 0;
@@ -79,8 +62,10 @@ export async function POST(request: NextRequest) {
 
     const host = request.headers.get("host") || "campusfleet.vercel.app";
     const protocol = host.includes("localhost") ? "http" : "https";
-    const callbackPath = body.callbackPath || `/portal/onboarding?student_id=${studentId}`;
-    const callbackUrl = callbackPath.startsWith("http") ? callbackPath : `${protocol}://${host}${callbackPath}`;
+    // Only our own portal pages may receive the payment return (no open redirect).
+    const requested = typeof body.callbackPath === "string" ? body.callbackPath : "";
+    const callbackPath = /^\/portal\/[a-z0-9/_-]*$/i.test(requested) ? requested : "/portal/onboarding";
+    const callbackUrl = `${protocol}://${host}${callbackPath}`;
 
     const options = {
       amount: amountInPaise,

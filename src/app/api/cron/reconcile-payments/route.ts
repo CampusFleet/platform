@@ -60,8 +60,8 @@ export async function GET(request: NextRequest) {
 
         await supabaseAdmin.from("payment_submissions").insert({
           student_id: studentId,
-          student_name: student?.full_name || "Student Commuter",
-          zone_code: student?.zone_code || "ZONE_B",
+          student_name: student?.full_name ?? null,
+          zone_code: student?.zone_code ?? null,
           amount: amountPaid,
           installment_no: 1,
           total_installments: 1,

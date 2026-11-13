@@ -36,67 +36,7 @@ describe("Attendance and Passport Photo Anti-Impersonation Verification", () => 
     }
   });
 
-  describe("Anti-Fraud Photo Upload and Lockout Guardrail", () => {
-    it("allows a student to upload their initial passport-size photo and automatically locks it", async () => {
-      const initialPhoto = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...";
-      const res = await store.updateStudentProfile(testStudentId, {
-        photoUrl: initialPhoto,
-        performedByStaff: false,
-      });
-
-      expect(res.success).toBe(true);
-
-      const updated = store.getStudents().find((s) => s.id === testStudentId);
-      expect(updated?.photoUrl).toBe(initialPhoto);
-      expect(updated?.photoLocked).toBe(true);
-    });
-
-    it("prevents the student from changing their photo once locked to prevent impersonation/card swapping", async () => {
-      // First upload locks it
-      const originalPhoto = "data:image/jpeg;base64,/original_photo";
-      await store.updateStudentProfile(testStudentId, {
-        photoUrl: originalPhoto,
-        performedByStaff: false,
-      });
-
-      // Student attempts to overwrite with friend's photo without staff authorization
-      const fraudulentPhoto = "data:image/jpeg;base64,/fraudulent_friend_photo";
-      const fraudulentAttempt = await store.updateStudentProfile(testStudentId, {
-        photoUrl: fraudulentPhoto,
-        performedByStaff: false,
-      });
-
-      expect(fraudulentAttempt.success).toBe(false);
-      expect(fraudulentAttempt.message).toContain("Official identity photo is locked");
-
-      // Verify photo was NOT altered
-      const current = store.getStudents().find((s) => s.id === testStudentId);
-      expect(current?.photoUrl).toBe(originalPhoto);
-    });
-
-    it("allows campus transport staff or desk admins to update a student's photo", async () => {
-      // Initial photo locked
-      const originalPhoto = "data:image/jpeg;base64,/original_photo";
-      await store.updateStudentProfile(testStudentId, {
-        photoUrl: originalPhoto,
-        performedByStaff: false,
-      });
-
-      // Staff updates photo
-      const newOfficialPhoto = "data:image/jpeg;base64,/staff_verified_photo";
-      const staffUpdate = await store.updateStudentProfile(testStudentId, {
-        photoUrl: newOfficialPhoto,
-        performedByStaff: true,
-      });
-
-      expect(staffUpdate.success).toBe(true);
-
-      const current = store.getStudents().find((s) => s.id === testStudentId);
-      expect(current?.photoUrl).toBe(newOfficialPhoto);
-      expect(current?.photoLocked).toBe(true);
-    });
-  });
-
+  // Pass-photo locking now lives on the server (src/lib/students/portrait.ts); see portrait-lock.test.ts.
   describe("Single-Use Attendance Per Shift (Anti-Replay Security)", () => {
     const testTripId = "trip-attend-test-01";
 

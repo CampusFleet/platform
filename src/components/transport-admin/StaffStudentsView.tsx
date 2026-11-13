@@ -137,31 +137,31 @@ export default function StaffStudentsView({
     setPhotoModalOpen(true);
   };
 
+  // Staff may replace a student's pass photo from a file. It is resized to a JPEG here and stored
+  // privately through /api/students/[id]/portrait (never the public receipts store).
   const handleStaffPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Photo file size must be under 2MB.");
-      return;
-    }
-
     setIsUpdatingPhoto(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    
     try {
-      const res = await fetch("/api/payments/upload-receipt", {
-        method: "POST",
-        body: formData,
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const scale = Math.min(1, 720 / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL("image/jpeg", 0.85));
+        };
+        img.onerror = () => reject(new Error("That file is not an image."));
+        img.src = url;
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setNewStaffPhotoUrl(data.url);
-      } else {
-        alert(data.error || "Failed to upload photo. Please try again.");
-      }
+      setNewStaffPhotoUrl(dataUrl);
     } catch (err: any) {
-      alert("Upload failed: " + err.message);
+      alert(err.message || "Could not read the photo.");
     } finally {
       setIsUpdatingPhoto(false);
     }
@@ -169,27 +169,23 @@ export default function StaffStudentsView({
 
   const handleSaveStaffPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedStudentForPhoto || !newStaffPhotoUrl) {
-      alert("Please upload or provide a photo URL.");
+    if (!selectedStudentForPhoto || !newStaffPhotoUrl.startsWith("data:image/jpeg")) {
+      alert("Choose a new photo first.");
       return;
     }
-
     try {
       setIsUpdatingPhoto(true);
-      const res = await store.updateStudentProfile(selectedStudentForPhoto.id, {
-        photoUrl: newStaffPhotoUrl,
-        performedByStaff: true,
+      const res = await fetch(`/api/students/${encodeURIComponent(selectedStudentForPhoto.id)}/portrait`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portrait: newStaffPhotoUrl }),
       });
-
-      if (res.success) {
-        selectedStudentForPhoto.photoUrl = newStaffPhotoUrl;
-        selectedStudentForPhoto.photoLocked = true;
-        setToastMessage(`✓ Official identity photo for ${selectedStudentForPhoto.fullName} updated and locked by staff.`);
-        setPhotoModalOpen(false);
-        setTimeout(() => setToastMessage(null), 3500);
-      } else {
-        alert(res.message || "Failed to update official photo.");
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to update the photo.");
+      selectedStudentForPhoto.photoUrl = data.photoUrl;
+      setToastMessage(`✓ Pass photo for ${selectedStudentForPhoto.fullName} updated.`);
+      setPhotoModalOpen(false);
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (err: any) {
       alert(err.message || "Network error.");
     } finally {

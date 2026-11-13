@@ -49,6 +49,10 @@ Steps:
 - ✅ Students who decline Face ID take a live photo only (`/api/students/portrait`, no template).
 - ✅ `/api/students/profile` ignores `photoUrl` from students (no more base64 overwrite) and no longer clears zone/stop/emergency contact when they are omitted.
 - ✅ Boarding methods follow `validation_locks` everywhere: every boarding API refuses a switched-off method (403 `METHOD_DISABLED`); student text comes from `boardingWays()`; `/portal/qr` lists only active methods; seat card says "Not checked in" instead of "Locked • Scan to Reveal"; QR pass buttons only when the QR pass is on; nav tab renamed "Boarding".
+- ✅ Payments page rebuilt: server builds one view model (fee from `getSemesterFee`, same as create-link); "Not set" instead of the Zone B / ₹12000 / ₹14000 fallbacks; history as a list. create-link only redirects back to `/portal/*` (no open redirect).
+- ✅ Settings home + stop rebuilt on the onboarding picker (`HomeStopSettings`, `/api/students/home-location` rewritten on `lib/students/home.ts`); it no longer books a seat on an arbitrary trip. `CommuterHomeLocationCard` and `zone-detector` deleted.
+- ✅ `store.updateStudentProfile` removed (it wrote defaults and wrote to the DB from the browser). Staff photo replacement goes through `/api/students/[id]/portrait` (private); public `upload-receipt` deleted.
+- ✅ Payment records no longer store "ZONE_B" / "Student Commuter" when the value is unknown (webhook, verify-link, reconcile cron).
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

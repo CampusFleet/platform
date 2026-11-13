@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
           subscriptionExpiryDate: freshStudent.subscription_expiry_date || null,
           classId: freshStudent.class_id || studentUpdate.class_id || null,
           className: freshStudent.class_name || className || null,
-          zoneCode: freshStudent.zone_code || "ZONE_B",
+          zoneCode: freshStudent.zone_code || undefined,
           paymentStatus: freshStudent.payment_status || "UNPAID",
           totalFeeDue: Number(freshStudent.total_fee_due) || 0,
           totalFeePaid: Number(freshStudent.total_fee_paid) || 0,

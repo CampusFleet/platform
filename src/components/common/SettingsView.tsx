@@ -18,11 +18,10 @@ import { useTranslation } from "@/components/common/LanguageProvider";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
 import { UserRole } from "@/lib/types";
-import { createStudentId } from "@/lib/id";
 
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
-import { CommuterHomeLocationCard } from "@/components/common/CommuterHomeLocationCard";
+import { HomeStopSettings } from "@/components/portal/HomeStopSettings";
 import { CommuterSeatPreferencesCard } from "@/components/common/CommuterSeatPreferencesCard";
 import { BiometricPrivacyCard } from "@/components/common/BiometricPrivacyCard";
 
@@ -405,32 +404,6 @@ export function SettingsView() {
   const isStudent = (currentUser as any)?.role === "student" || (currentUser as any)?.role === "portal" || !currentUser?.role;
   const isCommuter = isStudent || (currentUser as any)?.role === "teacher" || (currentUser as any)?.role === "faculty" || (currentUser as any)?.role === "staff";
 
-  // Student Transit State
-  const [homeAddress, setHomeAddress] = useState("");
-  const [homeLat, setHomeLat] = useState("");
-  const [homeLng, setHomeLng] = useState("");
-  const [autoAssignedStopId, setAutoAssignedStopId] = useState<string | null>(null);
-  const [nearestStops, setNearestStops] = useState<any[]>([]);
-  const [isDetectingGPS, setIsDetectingGPS] = useState(false);
-  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
-  const [isSavingHome, setIsSavingHome] = useState(false);
-  const [homeStatusMsg, setHomeStatusMsg] = useState<string | null>(null);
-
-  const fetchAddressForCoordinates = async (lat: number, lng: number) => {
-    setIsResolvingAddress(true);
-    try {
-      const res = await fetch(`/api/geo/reverse-geocode?lat=${lat}&lng=${lng}`);
-      const data = await res.json();
-      if (data.success && data.address) {
-        setHomeAddress(data.address);
-      }
-    } catch (err) {
-      console.warn("Could not reverse geocode coordinates:", err);
-    } finally {
-      setIsResolvingAddress(false);
-    }
-  };
-
   // Bus Switch / Transfer Request State
   const [switchType, setSwitchType] = useState<"TEMPORARY_SWAP" | "PERMANENT_TRANSFER" | "STOP_CHANGE">("TEMPORARY_SWAP");
   const [targetBusId, setTargetBusId] = useState("");
@@ -550,19 +523,6 @@ export function SettingsView() {
       })
       .catch(() => {});
 
-    fetch(`/api/students/home-location?studentId=${studentId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.homeLocation) {
-          if (data.homeLocation.address) setHomeAddress(data.homeLocation.address);
-          if (data.homeLocation.latitude) setHomeLat(String(data.homeLocation.latitude));
-          if (data.homeLocation.longitude) setHomeLng(String(data.homeLocation.longitude));
-          if (data.homeLocation.autoAssignedStopId) setAutoAssignedStopId(data.homeLocation.autoAssignedStopId);
-          if (data.nearestStops) setNearestStops(data.nearestStops);
-        }
-      })
-      .catch(() => {});
-
     fetch(`/api/students/switch-requests?studentId=${studentId}`)
       .then(res => res.json())
       .then(data => {
@@ -572,128 +532,6 @@ export function SettingsView() {
       })
       .catch(() => {});
   }, [currentUser, isCommuter]);
-
-  const handleDetectGPS = () => {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      showToast("warning", "Geolocation is not supported by your browser.", "GPS Error");
-      return;
-    }
-    setIsDetectingGPS(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setHomeLat(lat.toFixed(6));
-        setHomeLng(lng.toFixed(6));
-        setIsDetectingGPS(false);
-        showToast("success", `GPS location locked (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "Location Acquired");
-        // Automatically fetch street/area address from map provider (OSM / Google)
-        fetchAddressForCoordinates(lat, lng);
-      },
-      err => {
-        showToast("error", "Failed to acquire GPS location: " + err.message, "GPS Error");
-        setIsDetectingGPS(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
-
-  const handleSaveHomeLocation = async () => {
-    const lat = parseFloat(homeLat);
-    const lng = parseFloat(homeLng);
-    if (isNaN(lat) || isNaN(lng)) {
-      showToast("warning", "Please provide valid numeric latitude and longitude coordinates.", "Coordinates Required");
-      return;
-    }
-    const user = store.getCurrentUser();
-    const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-    const studentId = activeStudent?.id || user?.id;
-    if (!studentId) return;
-
-    setIsSavingHome(true);
-    setHomeStatusMsg(null);
-    try {
-      const res = await fetch("/api/students/home-location", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          latitude: lat,
-          longitude: lng,
-          address: homeAddress.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Failed to save home location");
-      if (data.homeLocation?.autoAssignedStopId) {
-        setAutoAssignedStopId(data.homeLocation.autoAssignedStopId);
-      }
-      if (data.nearestStops) {
-        setNearestStops(data.nearestStops);
-      }
-      const successMsg = data.message || "Home coordinates and stop assignment saved successfully!";
-      setHomeStatusMsg(successMsg);
-      showToast("success", successMsg, "Stop Assignment Saved");
-
-      // Refresh today's reservation immediately
-      fetch(`/api/students/attendance?studentId=${studentId}`)
-        .then(r => r.json())
-        .then(resData => {
-          if (resData.success && resData.reservation) {
-            setActiveReservation(resData.reservation);
-          }
-        })
-        .catch(() => {});
-    } catch (err: any) {
-      showToast("error", err.message || "Error saving home location", "Save Error");
-    } finally {
-      setIsSavingHome(false);
-    }
-  };
-
-  const [isSelectingStop, setIsSelectingStop] = useState(false);
-
-  const handleSelectPickupStop = async (stopId: string, stopName: string) => {
-    const user = store.getCurrentUser();
-    const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-    const studentId = activeStudent?.id || user?.id;
-    if (!studentId) return;
-
-    setIsSelectingStop(true);
-    try {
-      const res = await fetch("/api/students/home-location", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "SELECT_PICKUP_STOP",
-          studentId,
-          stopId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        showToast("error", data.message || "Failed to update pickup stop", "Stop Selection Failed");
-      } else {
-        setAutoAssignedStopId(stopId);
-        const successMsg = `Primary pickup stop updated to "${stopName}"`;
-        setHomeStatusMsg(`✓ ${successMsg}`);
-        showToast("success", successMsg, "Stop Assigned");
-        // Refresh today's reservation
-        fetch(`/api/students/attendance?studentId=${studentId}`)
-          .then(r => r.json())
-          .then(resData => {
-            if (resData.success && resData.reservation) {
-              setActiveReservation(resData.reservation);
-            }
-          })
-          .catch(() => {});
-      }
-    } catch (e: any) {
-      showToast("error", e.message || "Error selecting stop", "Stop Selection Error");
-    } finally {
-      setIsSelectingStop(false);
-    }
-  };
 
   const courseOptions = useMemo(() => {
     return (academicData.courses || []).map(crs => ({
@@ -781,26 +619,9 @@ export function SettingsView() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update profile");
 
+      // The server route above saved everything; only refresh the local cache from its answer.
       const user = store.getCurrentUser();
-      const activeStudent = store.getStudents().find(s => s.userId === user?.id || s.id === user?.id);
-      const studentId = data.student?.id || activeStudent?.id || (user ? (user.studentId || createStudentId()) : "");
-
-      if (studentId) {
-        await store.updateStudentProfile(studentId, {
-          fullName: profileForm.fullName.trim(),
-          phone: profileForm.phone?.trim(),
-          department: data.student?.department || profileForm.department,
-          semester: profileForm.semester,
-          classId: profileForm.classId,
-          className: data.student?.className || profileForm.className,
-          studentIdCode: profileForm.studentIdCode,
-          emergencyContact: {
-            name: profileForm.emergencyContactName?.trim(),
-            relationship: "Parent / Guardian",
-            phone: profileForm.emergencyContactPhone?.trim()
-          }
-        });
-      }
+      if (data.student?.id) store.applyServerStudent(data.student);
 
       // Update current user state and local storage
       if (user) {
@@ -1217,37 +1038,7 @@ export function SettingsView() {
         {/* Commute Transit Settings: Interactive Onboarding Pin Drop & Seat Preferences */}
         {isCommuter && (
           <>
-            <CommuterHomeLocationCard
-              studentId={
-                store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                store.getStaff().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                currentUser?.id ||
-                ""
-              }
-              initialAddress={homeAddress}
-              initialLat={parseFloat(homeLat) || 29.220936}
-              initialLng={parseFloat(homeLng) || 79.514496}
-              onLocationSaved={({ address, latitude, longitude, autoAssignedStopId }) => {
-                setHomeAddress(address);
-                setHomeLat(String(latitude));
-                setHomeLng(String(longitude));
-                if (autoAssignedStopId) setAutoAssignedStopId(autoAssignedStopId);
-                const sId =
-                  store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                  currentUser?.id;
-                if (sId) {
-                  fetch(`/api/students/attendance?studentId=${sId}`)
-                    .then(r => r.json())
-                    .then(resData => {
-                      if (resData.success && resData.reservation) {
-                        setActiveReservation(resData.reservation);
-                      }
-                    })
-                    .catch(() => {});
-                }
-              }}
-              showToast={showToast}
-            />
+            {isStudent && <HomeStopSettings />}
 
             {isStudent && <BiometricPrivacyCard />}
             <CommuterSeatPreferencesCard

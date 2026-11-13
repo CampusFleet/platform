@@ -36,7 +36,7 @@ export async function GET() {
       const stopsOnRoute = rawStops.map((rs: any, idx: number) => {
         const stopId = rs.stop_id || rs.stops?.id || `stop-${idx}`;
         const stopName = rs.stops?.name || `Stop ${idx + 1}`;
-        const zoneCode = rs.stops?.zone_code || "ZONE_B";
+        const zoneCode = rs.stops?.zone_code || null;
         const stopStudents = routeStudents.filter(s => s.primary_stop_id === stopId);
         const stopBookings = routeBookings.filter(b => b.boarding_stop_id === stopId);
         return {

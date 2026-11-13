@@ -2,7 +2,7 @@ import { CampusFleetStore } from "./_base";
 import { supabase } from "../supabaseClient";
 import { telematicsService } from "../telematicsService";
 import { lockFinalManifest } from "../reservation-engine";
-import { createTripId, createStudentId } from "../id";
+import { createTripId } from "../id";
 import { clearClientUserData } from "../clear-user-data";
 import type {
   Bus, Route, Stop, Campus, Shift, Trip, Student, Staff,
@@ -22,7 +22,7 @@ declare module "./_base" {
     // Users & Students
     updateUserRole(userId: string, newRole: UserRole): Promise<void>;
     updateUserRoleLocal(userId: string, newRole: UserRole): void;
-    updateStudentProfile(studentId: string, profileData: any): Promise<any>;
+    applyServerStudent(server: Partial<Student> & { id: string }): void;
     markStudentSubscribed(studentId: string): void;
     // Notifications
     markNotificationAsRead(id: string): void;
@@ -223,220 +223,27 @@ CampusFleetStore.prototype.updateUserRoleLocal = function (this: CampusFleetStor
   this.notify();
 };
 
-CampusFleetStore.prototype.updateStudentProfile = async function (
-  this: CampusFleetStore,
-  studentId: string,
-  profileData: {
-    fullName?: string;
-    campusId?: string;
-    campus?: string;
-    department?: string;
-    semester?: string;
-    classId?: string;
-    className?: string;
-    zoneCode?: string;
-    phone?: string;
-    emergencyContact?: { name: string; relationship: string; phone: string };
-    photoUrl?: string;
-    performedByStaff?: boolean;
-    studentIdCode?: string;
-    primaryStopId?: string;
-    primaryRouteId?: string;
-    homeLatitude?: number;
-    homeLongitude?: number;
-    homeAddress?: string;
-    autoAssignedStopId?: string;
-  }
-) {
-  let student = this.students.find(s => s.id === studentId || s.userId === studentId || s.email?.toLowerCase() === this.currentUser?.email?.toLowerCase());
-
-  const resolvedCampusId = profileData.campusId || (profileData.campus ? (this.campuses.find(c => c.name === profileData.campus || c.id === profileData.campus)?.id || profileData.campus) : undefined);
-  const resolvedCampusName = profileData.campus || (resolvedCampusId ? this.campuses.find(c => c.id === resolvedCampusId)?.name : "") || this.getPrimaryCampus()?.name || "";
-  const resolvedStudentIdCode = (profileData.studentIdCode || "").trim().toUpperCase() || undefined;
-
-  if (!student) {
-    const u = this.currentUser;
-    const targetId = studentId || createStudentId();
-    // Compute fee from zone — never hardcode 0 for a new student
-    const zoneCode = profileData.zoneCode || "ZONE_B";
-    const zoneFee = this.transitZones.find(z => z.code === zoneCode)?.semesterFee || 12000;
-    student = {
-      id: targetId,
-      userId: u?.id || studentId,
-      fullName: profileData.fullName || u?.fullName || "",
-      email: u?.email || "",
-      phone: profileData.phone || "",
-      department: profileData.department || "",
-      semester: profileData.semester || "",
-      campusId: resolvedCampusId || u?.campusId || this.getPrimaryCampus()?.id || "",
-      campus: resolvedCampusName || (u as any)?.campus || "",
-      primaryStopId: profileData.primaryStopId || "",
-      primaryRouteId: "",
-      emergencyContact: profileData.emergencyContact || { name: "", relationship: "", phone: "" },
-      transportAccessSuspended: false,
-      hasActiveSubscription: false,
-      subscriptionExpiryDate: "2026-12-31",
-      zoneCode,
-      paymentStatus: "UNPAID",
-      totalFeeDue: zoneFee,
-      totalFeePaid: 0,
-      photoUrl: profileData.photoUrl || "",
-      photoLocked: false,
-      studentIdCode: resolvedStudentIdCode,
-    };
-    this.students.push(student);
-  }
-
-  // Anti-fraud guardrail: if student has active/approved subscription and photo is locked, deny overwrite unless staff
-  const isApproved = student.paymentStatus === "APPROVED" || Boolean(student.hasActiveSubscription);
-  let targetPhotoUrl = student.photoUrl;
-  let targetPhotoLocked = Boolean(isApproved && student.photoLocked);
-  if (profileData.photoUrl && profileData.photoUrl !== student.photoUrl) {
-    if (targetPhotoLocked && !profileData.performedByStaff) {
-      return {
-        success: false,
-        message: "Official identity photo is locked after payment approval. Only campus transport staff can update your verification photo.",
-      };
-    }
-    targetPhotoUrl = profileData.photoUrl;
-    targetPhotoLocked = isApproved;
-  }
-
-  // Recompute fee if zone changed, otherwise preserve existing fee/payment state
-  const newZoneCode = profileData.zoneCode || student.zoneCode || "ZONE_B";
-  const zoneChanged = newZoneCode !== student.zoneCode;
-  const newZoneFee = this.transitZones.find(z => z.code === newZoneCode)?.semesterFee;
-  const preservedFeeDue = zoneChanged && newZoneFee
-    ? newZoneFee
-    : (student.totalFeeDue && student.totalFeeDue > 0 ? student.totalFeeDue : (newZoneFee || 12000));
-
-  const updatedStudent: Student = {
-    ...student,
-    fullName: profileData.fullName || student.fullName,
-    campusId: resolvedCampusId || student.campusId || this.getPrimaryCampus()?.id || "",
-    campus: resolvedCampusName || student.campus || this.getPrimaryCampus()?.name || "",
-    department: profileData.department || student.department,
-    semester: profileData.semester || student.semester,
-    classId: profileData.classId || student.classId,
-    className: profileData.className || student.className,
-    zoneCode: newZoneCode,
-    phone: profileData.phone || student.phone,
-    primaryStopId: profileData.primaryStopId || student.primaryStopId,
-    emergencyContact: profileData.emergencyContact || student.emergencyContact,
-    photoUrl: targetPhotoUrl,
-    photoLocked: targetPhotoLocked,
-    studentIdCode: resolvedStudentIdCode || student.studentIdCode,
-    // Preserve all payment & subscription fields — never overwrite with defaults
-    totalFeeDue: preservedFeeDue,
-    totalFeePaid: student.totalFeePaid || 0,
-    paymentStatus: student.paymentStatus || "UNPAID",
-    hasActiveSubscription: student.hasActiveSubscription || false,
-    subscriptionExpiryDate: student.subscriptionExpiryDate,
-    transportAccessSuspended: student.transportAccessSuspended || false,
-  };
-
-  this.students = this.students.map(s => s.id === student!.id ? updatedStudent : s);
-  
-  // Also update users table entry
-  this.users = this.users.map(u => (u.id === student!.userId || u.email?.toLowerCase() === student!.email?.toLowerCase()) ? {
-    ...u,
-    fullName: updatedStudent.fullName,
-    phone: updatedStudent.phone,
-    campusId: updatedStudent.campusId,
-    campus: updatedStudent.campus,
-    avatarUrl: updatedStudent.photoUrl || (u as any).avatarUrl,
-  } : u);
-
-  if (this.currentUser && (this.currentUser.id === student.userId || this.currentUser.email?.toLowerCase() === student.email?.toLowerCase())) {
+/**
+ * Local-only merge of a student row the server just returned (e.g. from /api/users/update-profile).
+ * Never writes to the database: profile writes go through server routes only, so this cache can't
+ * overwrite real data with stale copies or defaults.
+ */
+CampusFleetStore.prototype.applyServerStudent = function (this: CampusFleetStore, server: Partial<Student> & { id: string }) {
+  const idx = this.students.findIndex((s) => s.id === server.id || (server.userId && s.userId === server.userId));
+  if (idx >= 0) this.students[idx] = { ...this.students[idx], ...server };
+  else this.students.push(server as Student);
+  if (this.currentUser && server.userId && this.currentUser.id === server.userId) {
     this.currentUser = {
       ...this.currentUser,
-      fullName: updatedStudent.fullName,
-      studentId: updatedStudent.id,
-      campusId: updatedStudent.campusId,
-      campus: updatedStudent.campus,
-      avatarUrl: (this.currentUser as any).avatarUrl,
+      fullName: server.fullName || this.currentUser.fullName,
+      studentId: server.id,
+      campusId: server.campusId || this.currentUser.campusId,
+      campus: server.campus || (this.currentUser as any).campus,
     };
   }
-
   this.saveToLocalStorage();
   this.notify();
-
-  // Persist via Server API (using supabaseAdmin for guaranteed privileges)
-  try {
-    if (typeof window !== "undefined") {
-      const res = await fetch("/api/students/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: updatedStudent.id,
-          fullName: updatedStudent.fullName,
-          campusId: updatedStudent.campusId,
-          campus: updatedStudent.campus,
-          department: updatedStudent.department,
-          semester: updatedStudent.semester,
-          classId: updatedStudent.classId,
-          className: updatedStudent.className,
-          zoneCode: updatedStudent.zoneCode,
-          phone: updatedStudent.phone,
-          primaryStopId: updatedStudent.primaryStopId,
-          emergencyContact: updatedStudent.emergencyContact,
-          photoUrl: updatedStudent.photoUrl,
-          performedByStaff: profileData.performedByStaff || false,
-          studentIdCode: updatedStudent.studentIdCode,
-          homeLatitude: profileData.homeLatitude,
-          homeLongitude: profileData.homeLongitude,
-          homeAddress: profileData.homeAddress,
-          autoAssignedStopId: profileData.autoAssignedStopId,
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        console.error("API /api/students/profile failed:", errJson);
-        return { success: false, message: errJson?.error || "Failed to save profile to database." };
-      }
-    }
-  } catch (apiErr: any) {
-    console.warn("API /api/students/profile error:", apiErr);
-  }
-
-  // Secondary client-side fallback
-  try {
-    const studentPayload: Record<string, any> = {
-      id: updatedStudent.id,
-      user_id: updatedStudent.userId,
-      full_name: updatedStudent.fullName,
-      student_id_code: updatedStudent.studentIdCode || null,
-      semester: updatedStudent.semester,
-      class_id: updatedStudent.classId || null,
-      campus_id: updatedStudent.campusId || null,
-      campus: updatedStudent.campus,
-      primary_stop_id: updatedStudent.primaryStopId || null,
-      primary_route_id: updatedStudent.primaryRouteId || null,
-      emergency_contact: updatedStudent.emergencyContact,
-      photo_locked: updatedStudent.photoLocked || false,
-    };
-    if (updatedStudent.zoneId) {
-      studentPayload.zone_id = updatedStudent.zoneId;
-    }
-    await supabase.from("students").upsert(studentPayload, { onConflict: "user_id" });
-
-    if (updatedStudent.userId) {
-      await supabase.from("users").update({
-        full_name: updatedStudent.fullName,
-        phone: updatedStudent.phone,
-        campus_id: updatedStudent.campusId || null,
-        photo_url: updatedStudent.photoUrl || null,
-        photo_locked: updatedStudent.photoLocked || false,
-      }).eq("id", updatedStudent.userId);
-    }
-  } catch (e) {
-    console.warn("DB updateStudentProfile notice:", e);
-  }
-
-  return { success: true, message: "Profile successfully saved to institutional database." };
 };
-
 CampusFleetStore.prototype.markStudentSubscribed = function (
   this: CampusFleetStore,
   studentId: string
@@ -447,7 +254,7 @@ CampusFleetStore.prototype.markStudentSubscribed = function (
         ...s,
         hasActiveSubscription: true,
         paymentStatus: "APPROVED",
-        totalFeePaid: s.totalFeeDue || s.totalFeePaid || 12000,
+        totalFeePaid: s.totalFeeDue || s.totalFeePaid || 0,
       };
     }
     return s;

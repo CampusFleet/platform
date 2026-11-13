@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
       subscriptionExpiryDate: student.subscription_expiry_date || null,
       classId: student.class_id || null,
       className: student.class_name || null,
-      zoneCode: student.zone_code || "ZONE_B",
+      zoneCode: student.zone_code || undefined,
       paymentStatus: student.payment_status || "UNPAID",
       totalFeeDue: Number(student.total_fee_due) || 0,
       totalFeePaid: Number(student.total_fee_paid) || 0,

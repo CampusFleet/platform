@@ -35,6 +35,7 @@ export function HomePickupSection({
   onHome,
   onStop,
   showErrors,
+  title = "2. Home and pickup stop",
 }: {
   home: HomeLocation | null;
   stopId: string;
@@ -45,6 +46,7 @@ export function HomePickupSection({
   onHome: (h: HomeLocation) => void;
   onStop: (id: string) => void;
   showErrors: boolean;
+  title?: string;
 }) {
   const [query, setQuery] = useState(home?.address || "");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -130,7 +132,7 @@ export function HomePickupSection({
 
   return (
     <Card>
-      <CardHeader icon={<MapPin className="w-5 h-5" />} title="2. Home and pickup stop" subtitle="We suggest the nearest stop on a bus route" />
+      <CardHeader icon={<MapPin className="w-5 h-5" />} title={title} subtitle="We suggest the nearest stop on a bus route" />
 
       <div className="space-y-3">
         <div className="relative">

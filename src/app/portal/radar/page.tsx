@@ -239,7 +239,7 @@ export default async function LiveRadarPage({
         subscriptionExpiryDate: activeStudentRow.subscription_expiry_date || null,
         classId: activeStudentRow.class_id,
         className: activeStudentRow.class_name,
-        zoneCode: activeStudentRow.zone_code || "ZONE_B",
+        zoneCode: activeStudentRow.zone_code || undefined,
         paymentStatus: activeStudentRow.payment_status || "UNPAID",
         totalFeeDue: Number(activeStudentRow.total_fee_due) || 0,
         totalFeePaid: Number(activeStudentRow.total_fee_paid) || 0,

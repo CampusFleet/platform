@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
       const receiptNumber = `RZP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       await supabaseAdmin.from("payment_submissions").insert({
         student_id: studentId,
-        student_name: studentRecord.full_name || "Student",
-        zone_code: studentRecord.zone_code || "ZONE_B",
+        student_name: studentRecord.full_name ?? null,
+        zone_code: studentRecord.zone_code ?? null,
         amount: amountPaid,
         receipt_url: `https://dashboard.razorpay.com/app/payments/${razorpay_payment_id}`,
         transaction_id: razorpay_payment_id,

@@ -168,6 +168,15 @@ const nextConfig = {
         destination: "/transport-manager",
         permanent: true,
       },
+      // Pages that only redirected (removed in the Phase 0 cleanup)
+      { source: "/portal/late", destination: "/portal/radar?action=sos", permanent: false },
+      { source: "/transport-admin/billing/qr", destination: "/transport-admin/billing/approvals", permanent: true },
+      { source: "/transport-admin/academics/campuses", destination: "/admin/campuses", permanent: true },
+      { source: "/transport-admin/campuses", destination: "/admin/campuses", permanent: true },
+      { source: "/transport-admin/academics/classes", destination: "/transport-admin/classes", permanent: true },
+      { source: "/transport-admin/routes/stops/:path*", destination: "/transport-admin/routes", permanent: true },
+      { source: "/transport-admin/routes/corridors", destination: "/transport-admin/routes", permanent: true },
+      { source: "/transport-manager/flowchart", destination: "/transport-manager/trips", permanent: true },
     ];
   },
 };

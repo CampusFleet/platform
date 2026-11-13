@@ -64,7 +64,7 @@ describe("Step 4: Conductor & Driver Cockpits APC Gate Mirroring & Modality Inte
         studentId: "stud-02",
         tripId: "trip-1",
         busId: 40,
-        method: "FACE_ID",
+        method: "FACE_ID" as any, // legacy raw value still present in old rows
         status: "BOARDED",
         timestamp: "2026-11-09T08:00:30Z",
         verifiedBy: "Autonomous AI Dual-Gate",
@@ -84,7 +84,7 @@ describe("Step 4: Conductor & Driver Cockpits APC Gate Mirroring & Modality Inte
         studentId: "stud-04",
         tripId: "trip-1",
         busId: 40,
-        method: "RFID",
+        method: "RFID" as any, // legacy raw value still present in old rows
         status: "BOARDED",
         timestamp: "2026-11-09T08:01:30Z",
         verifiedBy: "PN532 NFC Sensor",
@@ -94,7 +94,7 @@ describe("Step 4: Conductor & Driver Cockpits APC Gate Mirroring & Modality Inte
         studentId: "stud-05",
         tripId: "trip-1",
         busId: 40,
-        method: "MANUAL",
+        method: "MANUAL" as any, // legacy raw value still present in old rows
         status: "BOARDED",
         timestamp: "2026-11-09T08:02:00Z",
         verifiedBy: "Conductor Desk Override",

@@ -195,7 +195,7 @@ describe("Step 2: Modular Multi-Modal Attendance Strategy Architecture", () => {
       );
       expect(outcome.isValid).toBe(false);
       expect(outcome.status).toBe("INVALID_CREDENTIAL");
-      expect(outcome.reason).toContain("Unpaired RFID card");
+      if (!outcome.isValid) expect(outcome.reason).toContain("Unpaired RFID card");
     });
 
     it("authorizes student paired with physical RFID UID", async () => {
@@ -263,7 +263,7 @@ describe("Step 2: Modular Multi-Modal Attendance Strategy Architecture", () => {
       );
       expect(outcome.isValid).toBe(false);
       expect(outcome.status).toBe("OUT_OF_GEOFENCE");
-      expect(outcome.reason).toContain("exceeds 150m geofence");
+      if (!outcome.isValid) expect(outcome.reason).toContain("exceeds 150m geofence");
     });
   });
 

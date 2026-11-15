@@ -16,6 +16,10 @@ export interface FleetRun {
   bus: { id: number; number: string | null; registrationNo: string | null; capacity: number | null } | null;
   routeName: string | null;
   shift: { name: string | null; start: string | null; end: string | null; direction: string | null } | null;
+  routeId: string | null;
+  shiftId: string | null;
+  driverId: string | null;
+  conductorId: string | null;
   driverName: string | null;
   conductorName: string | null;
   riders: { assigned: number; boarded: number; absent: number };
@@ -24,11 +28,11 @@ export interface FleetRun {
 
 const todayIst = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
-export async function getFleetLive(): Promise<FleetRun[]> {
+export async function getFleetLive(date: string = todayIst()): Promise<FleetRun[]> {
   const { data: trips } = await db
     .from("trips")
     .select("id, status, current_stop_index, delay_minutes, bus_id, route_id, shift_id, driver_id, conductor_id")
-    .eq("trip_date", todayIst())
+    .eq("trip_date", date)
     .neq("status", "CANCELLED");
   const list = trips || [];
   if (list.length === 0) return [];
@@ -91,6 +95,10 @@ export async function getFleetLive(): Promise<FleetRun[]> {
         bus: b ? { id: b.id, number: b.bus_number, registrationNo: b.registration_no, capacity: b.capacity } : null,
         routeName: (t.route_id && (routeBy.get(t.route_id) as any)?.name) || null,
         shift: sh ? { name: sh.name, start: (sh.start_time || "").slice(0, 5) || null, end: (sh.end_time || "").slice(0, 5) || null, direction: sh.direction } : null,
+        routeId: t.route_id ?? null,
+        shiftId: t.shift_id ?? null,
+        driverId: t.driver_id ?? null,
+        conductorId: t.conductor_id ?? null,
         driverName: (t.driver_id && (staffBy.get(t.driver_id) as any)?.full_name) || null,
         conductorName: (t.conductor_id && (staffBy.get(t.conductor_id) as any)?.full_name) || null,
         riders: riders.get(t.id) || { assigned: 0, boarded: 0, absent: 0 },

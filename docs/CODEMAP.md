@@ -249,7 +249,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/portrait.ts`: `savePortrait`, `portraitKeyFromUrl`, `isPortraitLocked`, `PortraitLockedError`. Deletes the previous portrait blob.
 - `src/lib/onboarding-cache.ts`: `getOnboardingDraftKey`, `saveOnboardingDraft`, `loadOnboardingDraft`, `clearOnboardingDraft` (client draft storage).
 - `src/components/portal/CommuteHome.tsx` (My Commute), `StudentCrewSheet.tsx` (header contact sheet).
-- `src/lib/students/seating.ts`: `assignTripSeats(tripId, busId)` gives chart passengers a final seat (`chosen_seat`) using row/position/partner preferences, skipping teacher seats; called from `loadManifest` (conductor poll) and the student ride build. Unique index `uq_bus_reservations_trip_seat` prevents double seats.
+- `src/lib/students/seating.ts`: `assignTripSeats(tripId, busId)` gives chart passengers a final seat (`chosen_seat`) using row/position/partner preferences, front `teacher_seats_count` seats used for students only when the rest is full; called from `loadManifest` (conductor poll) and the student ride build. Unique index `uq_bus_reservations_trip_seat` prevents double seats.
 - `src/components/portal/SeatPreferencesSettings.tsx`: Settings row/window/aisle + mutual seat partner by university ID.
 - Crash reporting: `src/app/error.tsx`, `src/app/global-error.tsx` and `components/maps/MapBoundary.tsx` call `lib/client/report-error.ts` → `POST /api/client-errors`, which only logs `[client-error] {...}` to the server log (read with `vercel logs`).
 - `src/lib/trip-planner.ts`: `planTrips` (pure; used by `daily-rollover.ts`).

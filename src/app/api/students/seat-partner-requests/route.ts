@@ -109,12 +109,28 @@ export async function GET(req: NextRequest) {
 
     // Other students on the bus are not listed (privacy); partners are invited by university ID.
     const busPeers: never[] = [];
+    // Classmates who can be chosen as seat partner: paying students on the same route (same bus).
+    const myRoute = await routeOfStudent(resolvedStudentId);
+    let classmates: { id: string; name: string; className: string | null }[] = [];
+    if (myRoute) {
+      const { data: rows } = await supabaseAdmin
+        .from("students_full")
+        .select("id, full_name, class_name, has_active_subscription, payment_status, transport_access_suspended")
+        .eq("primary_route_id", myRoute)
+        .neq("id", resolvedStudentId)
+        .order("full_name")
+        .limit(300);
+      classmates = (rows || [])
+        .filter((r: any) => !r.transport_access_suspended && (r.has_active_subscription || r.payment_status === "APPROVED" || r.payment_status === "COMPLETED"))
+        .map((r: any) => ({ id: r.id, name: r.full_name || "Student", className: r.class_name || null }));
+    }
     return NextResponse.json({
       success: true,
       incomingRequests: incoming || [],
       outgoingRequests: outgoing || [],
       activePartnership,
       busPeers,
+      classmates,
       busInfo,
       busId: resolvedBusId,
     });
@@ -195,6 +211,13 @@ export async function POST(req: NextRequest) {
       }
 
       const resolvedReceiverId = receiverStudent.id;
+      // Partners must ride the same bus (same route).
+      if (!acting.isStaff) {
+        const [a, b] = await Promise.all([routeOfStudent(me), routeOfStudent(resolvedReceiverId)]);
+        if (!a || a !== b) {
+          return NextResponse.json({ success: false, message: "You can only choose a classmate who rides your bus." }, { status: 400 });
+        }
+      }
 
       // Edge Case A: Cannot invite yourself
       if (resolvedSenderId === resolvedReceiverId || senderStudent?.user_id === receiverStudent.user_id) {
@@ -325,7 +348,10 @@ export async function POST(req: NextRequest) {
     // ══════════════════════════════════════════════════════════════════
     if (action === "ACCEPT_REQUEST") {
       const { requestId } = body;
-      if (!(await requestFor(requestId, "receiver"))) return notYours();
+      const pair = await requestFor(requestId, "receiver");
+      if (!pair) return notYours();
+      const [ra, rb] = await Promise.all([routeOfStudent(pair.sender_id as string), routeOfStudent(pair.receiver_id as string)]);
+      if (!ra || ra !== rb) return NextResponse.json({ success: false, message: "You no longer ride the same bus, so you cannot be seat partners." }, { status: 400 });
       return await executeAcceptance(requestId, me);
     }
 
@@ -434,4 +460,20 @@ async function executeAcceptance(requestId: string, _respondingStudentId?: strin
     message: "Seat partner confirmed. You will be seated together from the next boarding chart.",
     request: updatedReq,
   });
+}
+
+/** The route a student rides: their primary route, else the route of their pickup stop. */
+async function routeOfStudent(studentId: string | null | undefined): Promise<string | null> {
+  if (!studentId) return null;
+  const { data } = await supabaseAdmin
+    .from("students_full")
+    .select("primary_route_id, primary_stop_id, auto_assigned_stop_id")
+    .eq("id", studentId)
+    .maybeSingle();
+  if (!data) return null;
+  if (data.primary_route_id) return data.primary_route_id;
+  const stop = data.auto_assigned_stop_id || data.primary_stop_id;
+  if (!stop) return null;
+  const { data: rs } = await supabaseAdmin.from("route_stops").select("route_id").eq("stop_id", stop).limit(1).maybeSingle();
+  return rs?.route_id ?? null;
 }

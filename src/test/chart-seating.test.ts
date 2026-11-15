@@ -70,3 +70,17 @@ describe("assignTripSeats (boarding chart seats)", () => {
     expect(await assignTripSeats("t1", null)).toBe(0);
   });
 });
+
+describe("teacher front seats", () => {
+  it("students fill front seats only after every other seat is taken", async () => {
+    state.clashOnce = null;
+    state.reservations = Array.from({ length: 7 }, (_, i) => ({ id: `r${i}`, student_id: `s${i}`, chosen_seat: null, status: "ASSIGNED" }));
+    await assignTripSeats("t1", 1);
+    const layout = generateSeatLayout(8, "2x2");
+    const front = getTeacherStartingSeats(layout, 2);
+    const used = state.reservations.map((r) => r.chosen_seat!);
+    expect(new Set(used).size).toBe(7);
+    // 6 non-front seats used first, then exactly one front seat
+    expect(used.filter((s) => front.includes(s)).length).toBe(layout.length - front.length < 7 ? 7 - (layout.length - front.length) : 0);
+  });
+});

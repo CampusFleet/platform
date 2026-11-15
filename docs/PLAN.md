@@ -64,6 +64,9 @@ Steps:
 - ⬜ `/api/telematics/live` POST accepts unsigned location updates (open DEVICE_PATH). Require a crew session or a device signature once all GPS hardware signs requests.
 - ✅ Onboarding photo split into two steps after owner feedback (auto-capture gave blurry photos): step 1 manual shutter + sharpest of 3 + review; step 2 optional Face ID.
 - ✅ Crash safety: `app/error.tsx`, `global-error.tsx`, `MapBoundary`; client crashes logged via `/api/client-errors`.
+- ✅ Seat partner is chosen from a dropdown of paying students on the same route (`classmates` in the partner GET); send and accept are refused across routes.
+- ✅ Teacher front seats (`buses.teacher_seats_count`): students are seated there only after every other seat is taken.
+- ⬜ Teachers have no bus reservation at all (the legacy `bookings` table was dropped in 20261102, so `/api/bookings` and teacher seat logic query a missing table). Needs an owner decision on how teachers are assigned to a bus, plus a migration, before teachers can get front seats automatically.
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

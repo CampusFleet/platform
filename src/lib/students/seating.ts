@@ -7,7 +7,8 @@ import type { Bus } from "@/lib/types";
  * Boarding-chart seats. Server-only.
  *
  * Every reservation on the chart gets a seat (bus_reservations.chosen_seat) chosen with the
- * student's saved preferences (row, window/aisle, seat partner) and keeping teacher seats free.
+ * student's saved preferences (row, window/aisle, seat partner). The first buses.teacher_seats_count
+ * seats (front) are for teachers: students are put there only when every other seat is taken.
  * The seat is final: students do not pick or change it; the conductor can move a student on the
  * seat map. Students see the number only after check-in.
  *
@@ -79,8 +80,11 @@ export async function assignTripSeats(tripId: string, busId: number | null): Pro
         occupiedSeats: Array.from(occupied),
         allTripReservations: tripRes,
       });
-      const seat = alloc.allocatedSeat;
-      if (!seat || occupied.has(seat)) return assigned; // only teacher seats left
+      // Front (teacher) seats are skipped by the allocator; students get them only once every
+      // other seat is taken, so they stay free for teachers as long as possible.
+      let seat: string | undefined = alloc.allocatedSeat;
+      if (!seat || occupied.has(seat)) seat = seats.find((x) => !occupied.has(x));
+      if (!seat) return assigned;
       const { data, error } = await db
         .from("bus_reservations")
         .update({ chosen_seat: seat, auto_assigned_seat: seat })

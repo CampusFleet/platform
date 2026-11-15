@@ -2,12 +2,12 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Armchair, Users } from "lucide-react";
-import { Button, Card, CardHeader, Field, Input, Segmented } from "@/components/ui";
+import { Button, Card, CardHeader, Field, Segmented, Select } from "@/components/ui";
 
 /**
  * Settings → seat preferences. The boarding chart assigns every seat; these preferences (row,
- * window/aisle, seat partner) are what it uses. A seat partner needs both students to agree:
- * one sends a request by university ID, the other accepts it here.
+ * window/aisle, seat partner) are what it uses. A seat partner is chosen from students on the same
+ * bus route (server-checked) and needs both students to agree: one invites, the other accepts here.
  */
 
 type Row = "FRONT" | "MIDDLE" | "BACK" | "NO_PREFERENCE";
@@ -31,7 +31,8 @@ export function SeatPreferencesSettings() {
   const [incoming, setIncoming] = useState<PartnerReq[]>([]);
   const [outgoing, setOutgoing] = useState<PartnerReq[]>([]);
   const [me, setMe] = useState<string | null>(null);
-  const [partnerCode, setPartnerCode] = useState("");
+  const [partnerId, setPartnerId] = useState("");
+  const [classmates, setClassmates] = useState<{ id: string; name: string; className: string | null }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [partnerMsg, setPartnerMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -42,6 +43,7 @@ export function SeatPreferencesSettings() {
     setActive(d.activePartnership || null);
     setIncoming(d.incomingRequests || []);
     setOutgoing(d.outgoingRequests || []);
+    setClassmates(d.classmates || []);
   }, []);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export function SeatPreferencesSettings() {
       const d = await r.json().catch(() => ({}));
       setPartnerMsg({ ok: Boolean(d.success), text: d.message || (d.success ? "Done." : "Something went wrong.") });
       if (d.success) {
-        setPartnerCode("");
+        setPartnerId("");
         await loadPartners();
       }
     } finally {
@@ -158,24 +160,28 @@ export function SeatPreferencesSettings() {
                   </div>
                 ))}
                 {outgoing.length === 0 && (
-                  <div className="flex items-end gap-2">
-                    <Field label="Classmate's university ID" className="flex-1">
-                      <Input value={partnerCode} onChange={(e) => setPartnerCode(e.target.value.toUpperCase())} maxLength={30} autoCapitalize="characters" />
-                    </Field>
-                    <Button
-                      size="md"
-                      disabled={partnerCode.trim().length < 3}
-                      loading={busy === "SEND_REQUEST"}
-                      onClick={() => partnerAction("SEND_REQUEST", { receiverStudentIdCode: partnerCode.trim() })}
-                    >
-                      Invite
-                    </Button>
-                  </div>
+                  classmates.length === 0 ? (
+                    <p className="text-xs text-gray-500">No other students ride your bus yet.</p>
+                  ) : (
+                    <div className="flex items-end gap-2">
+                      <Field label="Choose someone on your bus" className="flex-1 min-w-0">
+                        <Select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
+                          <option value="">Select a classmate</option>
+                          {classmates.map((c) => (
+                            <option key={c.id} value={c.id}>{c.className ? `${c.name} · ${c.className}` : c.name}</option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Button size="md" disabled={!partnerId} loading={busy === "SEND_REQUEST"} onClick={() => partnerAction("SEND_REQUEST", { receiverId: partnerId })}>
+                        Invite
+                      </Button>
+                    </div>
+                  )
                 )}
               </>
             )}
             {partnerMsg && <p className={`text-xs font-semibold ${partnerMsg.ok ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600"}`}>{partnerMsg.text}</p>}
-            <p className="text-[11px] text-gray-500">Partners must ride the same bus. You are seated together from the next boarding chart, if two seats side by side are free.</p>
+            <p className="text-[11px] text-gray-500">Only students on your bus are listed. You are seated together from the next boarding chart, if two seats side by side are free.</p>
           </div>
         </div>
       )}

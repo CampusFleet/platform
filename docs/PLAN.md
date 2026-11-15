@@ -76,6 +76,7 @@ Steps:
 - ✅ Conductor context rewritten on `/api/crew/duty` (8 s poll; no client store, no 300-trip/500-reservation downloads).
 - ✅ Seat map shows chart students without a seat; tap student → tap free seat boards them there.
 - ✅ Driver console rewritten (`DriverConsole.tsx`, ~350 lines replacing 3,400): assigned trip, start/arrived/end, real GPS only, auto-arrive 150 m, Google Maps navigation, real SOS reports, Face ID door camera when enabled.
+- ✅ Crew can no longer switch runs: the current run is picked on the server (running → next → last) and moves on when a run ends; `TodayRuns` shows the day read-only; a driver cannot start a run while another of theirs or the bus's is running. Managers can still open any trip.
 - ✅ Drivers can no longer open `/conductor`; conductor's radar is read-only for trip state.
 - ✅ Pass scanner no longer verifies locally when the server is unreachable.
 - ⬜ Rewrite ManifestTab / HaltRequestsTab / AuditTab / ConductorLiveRadarView UI on shared components (they now run on the new data).

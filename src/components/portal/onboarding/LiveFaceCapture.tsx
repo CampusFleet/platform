@@ -135,7 +135,7 @@ export function LiveFaceCapture({
     return c.toDataURL("image/jpeg", 0.88);
   }, []);
 
-  /** Head-and-shoulders crop around the face, mirrored like the preview the student saw. */
+  /** Head-and-shoulders crop around the face, in true (not mirrored) orientation like an ID photo. */
   const cropPortrait = useCallback((lm: Point2D[]): HTMLCanvasElement | null => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return null;
@@ -151,8 +151,6 @@ export function LiveFaceCapture({
     c.height = out;
     const ctx = c.getContext("2d");
     if (!ctx) return null;
-    ctx.translate(out, 0);
-    ctx.scale(-1, 1);
     ctx.drawImage(v, sx, sy, side, side, 0, 0, out, out);
     return c;
   }, []);

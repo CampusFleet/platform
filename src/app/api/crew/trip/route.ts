@@ -24,6 +24,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "This trip is not assigned to you." }, { status: 403 });
   }
 
+  // One running trip at a time: the next run starts only after the current one ends.
+  if (action === "START") {
+    const { data: me } = await supabaseAdmin.from("trips").select("bus_id, driver_id, trip_date").eq("id", tripId).maybeSingle();
+    if (me) {
+      let running = supabaseAdmin.from("trips").select("id").eq("trip_date", me.trip_date as string).eq("status", "IN_PROGRESS").neq("id", tripId).limit(1);
+      running = me.driver_id ? running.or(`driver_id.eq.${me.driver_id},bus_id.eq.${me.bus_id}`) : running.eq("bus_id", me.bus_id as number);
+      const { data: other } = await running.maybeSingle();
+      if (other) return NextResponse.json({ success: false, error: "End the current run before starting the next one." }, { status: 409 });
+    }
+  }
   const now = new Date().toISOString();
   const update =
     action === "START"

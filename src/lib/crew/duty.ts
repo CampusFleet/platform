@@ -242,7 +242,8 @@ export async function getCrewDuty(session: SessionPayload, requestedTripId?: str
   const column = session.role === "driver" ? "driver_id" : "conductor_id";
 
   const trips = manager ? await loadTodayTrips(null) : staffId ? await loadTodayTrips({ column, staffId }) : [];
-  const trip = (requestedTripId && trips.find((t) => t.id === requestedTripId)) || pickCurrentTrip(trips);
+  // Crew always work on the current run (no manual switching); managers may open any trip.
+  const trip = (manager && requestedTripId && trips.find((t) => t.id === requestedTripId)) || pickCurrentTrip(trips);
 
   const empty = { manifest: [] as DutyPassenger[], attendance: [] as DutyAttendance[] };
   const [{ manifest, attendance }, alert, halts] = await Promise.all([

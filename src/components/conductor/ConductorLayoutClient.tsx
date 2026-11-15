@@ -1,4 +1,5 @@
 "use client";
+import { TodayRuns } from "./TodayRuns";
 
 import React, { useState } from "react";
 import Link from "next/link";
@@ -75,34 +76,39 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
         }
       />
 
-      {/* Today's trips for this conductor (or all trips for a supervising manager) */}
+      {/* Conductors: today's runs, read-only (current run is automatic). Managers: pick any bus/trip. */}
       {dutyTrips.length > 1 && (
         <div className="w-full bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 px-4 py-2">
-          <div className="max-w-6xl mx-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {dutyTrips.map((dt) => {
-              const selected = (selectedTripId || duty?.trip?.id) === dt.id;
-              return (
-                <button
-                  key={dt.id}
-                  type="button"
-                  onClick={() => setSelectedTripId(dt.id)}
-                  className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
-                    selected
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-zinc-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-800"
-                  }`}
-                >
-                  {isManager && <span>Bus {dt.bus.busNumber} ·</span>}
-                  <span>{dt.shift?.name || "Trip"}</span>
-                  {dt.shift?.startTime && <span className="font-mono text-[10px] opacity-80">{dt.shift.startTime}</span>}
-                  {dt.status === "IN_PROGRESS" && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
-                </button>
-              );
-            })}
+          <div className="max-w-6xl mx-auto">
+            {isManager ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {dutyTrips.map((dt) => {
+                const selected = (selectedTripId || duty?.trip?.id) === dt.id;
+                return (
+                  <button
+                    key={dt.id}
+                    type="button"
+                    onClick={() => setSelectedTripId(dt.id)}
+                    className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+                      selected
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 dark:bg-zinc-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-800"
+                    }`}
+                  >
+                    {isManager && <span>Bus {dt.bus.busNumber} ·</span>}
+                    <span>{dt.shift?.name || "Trip"}</span>
+                    {dt.shift?.startTime && <span className="font-mono text-[10px] opacity-80">{dt.shift.startTime}</span>}
+                    {dt.status === "IN_PROGRESS" && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+                  </button>
+                );
+              })}
+            </div>
+            ) : (
+              <TodayRuns trips={dutyTrips} currentId={activeTrip?.id} />
+            )}
           </div>
         </div>
       )}
-
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-24 min-w-0">
         {!activeTrip ? (
           <EmptyState className="mt-10" icon={<BusFront className="w-6 h-6" />} title="No trip assigned today">

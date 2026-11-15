@@ -8,6 +8,7 @@ import { DriverGateCameraConsole } from "@/components/driver/DriverGateCameraCon
 import { telematicsService } from "@/lib/telematicsService";
 import { useAttendancePolicy } from "@/lib/attendance";
 import type { CrewDuty, DutyTrip } from "@/lib/crew/duty";
+import { TodayRuns } from "@/components/conductor/TodayRuns";
 import { EmptyState, Sheet } from "@/components/ui";
 
 /**
@@ -153,12 +154,6 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
     void tripAction("SET_STOP", idx + 1);
   }, [distToNext, running, nextStop, idx, stops.length, tripAction]);
 
-  const pickTrip = (id: string) => {
-    selectedRef.current = id;
-    setSelectedTripId(id);
-    void refresh();
-  };
-
   const sendSos = async (type: "BREAKDOWN" | "TRAFFIC" | "MEDICAL") => {
     if (!trip) return;
     try {
@@ -204,22 +199,7 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
           </EmptyState>
         ) : (
           <>
-            {(duty?.trips.length || 0) > 1 && (
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-                {duty!.trips.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => pickTrip(t.id)}
-                    className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold ${
-                      t.id === trip.id ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
-                    }`}
-                  >
-                    {t.shift?.name || "Trip"} {t.shift?.startTime && <span className="font-mono opacity-80">{t.shift.startTime}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+            <TodayRuns trips={duty?.trips || []} currentId={trip.id} />
 
             {/* Trip card */}
             <section className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">

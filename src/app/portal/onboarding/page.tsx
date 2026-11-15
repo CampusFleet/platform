@@ -281,10 +281,10 @@ export default function StudentOnboardingPage() {
     return data.studentId as string;
   };
 
-  const openCamera = async () => {
+  const openCamera = async (mode: CaptureMode) => {
     setBusy("photo");
     try {
-      if (await save()) setCapture(consent ? "faceid" : "photo");
+      if (await save()) setCapture(mode);
     } finally {
       setBusy(null);
     }
@@ -380,7 +380,7 @@ export default function StudentOnboardingPage() {
           showErrors={showErrors}
         />
 
-        {/* 3. Live pass photo */}
+        {/* 3. Pass photo (step 1) and optional Face ID (step 2) */}
         <Card>
           <CardHeader
             icon={<Camera className="w-5 h-5" />}
@@ -397,32 +397,39 @@ export default function StudentOnboardingPage() {
                 <Camera className="w-7 h-7 text-gray-400" />
               )}
             </div>
-            <div className="min-w-0 flex-1 space-y-3">
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0" />
-                <span className="text-xs text-gray-700 dark:text-gray-300">
-                  <span className="font-bold block">Also set up Face ID for boarding (optional)</span>
-                  {CONSENT_SUMMARY}
-                </span>
-              </label>
-              <details className="text-xs text-gray-500">
-                <summary className="cursor-pointer font-semibold">How we use your face data</summary>
-                <ul className="list-disc pl-4 mt-1 space-y-1">
-                  {CONSENT_POINTS.map((p) => (
-                    <li key={p}>{p}</li>
-                  ))}
-                </ul>
-              </details>
-              {faceIdDone && (
-                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                  <ScanFace className="w-4 h-4" /> Face ID is set up
-                </p>
-              )}
-              <Button variant={photo ? "secondary" : "primary"} onClick={openCamera} loading={busy === "photo"} disabled={busy !== null}>
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                <span className="font-bold">Step 1.</span> Centre your face and tap the button. You can check the photo and retake it.
+              </p>
+              <Button variant={photo ? "secondary" : "primary"} onClick={() => openCamera("photo")} loading={busy === "photo" && capture !== "faceid"} disabled={busy !== null}>
                 <Camera className="w-4 h-4" />
-                {photo ? "Retake photo" : consent ? "Take photo and set up Face ID" : "Take photo"}
+                {photo ? "Retake photo" : "Take pass photo"}
               </Button>
             </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-zinc-900 space-y-2.5">
+            <p className="text-sm font-black flex items-center gap-2">
+              <ScanFace className="w-4 h-4" /> Step 2. Face ID for boarding (optional)
+              {faceIdDone && <Badge tone="green" dot>Set up</Badge>}
+            </p>
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0" />
+              <span className="text-xs text-gray-700 dark:text-gray-300">{CONSENT_SUMMARY}</span>
+            </label>
+            <details className="text-xs text-gray-500">
+              <summary className="cursor-pointer font-semibold">How we use your face data</summary>
+              <ul className="list-disc pl-4 mt-1 space-y-1">
+                {CONSENT_POINTS.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </details>
+            <Button variant="secondary" onClick={() => openCamera("faceid")} disabled={!photo || !consent || busy !== null} loading={busy === "photo" && capture === "faceid"}>
+              <ScanFace className="w-4 h-4" /> {faceIdDone ? "Redo Face ID" : "Set up Face ID"}
+            </Button>
+            {!photo && <p className="text-[11px] text-gray-500">Take your pass photo first.</p>}
+            <p className="text-[11px] text-gray-500">You can skip this. Boarding with your pass or the conductor still works.</p>
           </div>
         </Card>
 
@@ -471,7 +478,7 @@ export default function StudentOnboardingPage() {
         mode={capture ?? "photo"}
         onClose={() => setCapture(null)}
         onDone={({ photoUrl, preview, faceId }) => {
-          setPhoto({ url: photoUrl, preview });
+          if (photoUrl) setPhoto({ url: photoUrl, preview });
           if (faceId) setFaceIdDone(true);
           setError(null);
         }}

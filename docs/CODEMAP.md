@@ -477,7 +477,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **Pages:**
 - `src/app/privacy/biometrics/page.tsx` (`BiometricPrivacyCard`)
-- `src/components/portal/onboarding/LiveFaceCapture.tsx`: camera only, no upload. Face ID mode: look straight → turn to the side from the challenge → look straight; frames + portrait to enroll-v2. Photo mode (no consent): one straight capture to `/api/students/portrait`. Pose from MediaPipe landmarks with the face-service yaw ratio (`lib/face/pose.ts`). No skin-colour fallback, no bypass.
+- `src/components/portal/onboarding/LiveFaceCapture.tsx`: camera only, no upload, two separate steps. `photo`: student presses the shutter (enabled only when framed and looking straight), 3 frames, sharpest kept (Laplacian variance), review Use/Retake → `/api/students/portrait`. `faceid` (consent only, after the photo): look straight → turn to the challenge side → straight, auto-captured frames → enroll-v2 (no portrait). Pose from MediaPipe landmarks with the face-service yaw ratio (`lib/face/pose.ts`).
 - `src/components/driver/DriverGateCameraConsole.tsx`
 - Transport manager: `src/app/transport-manager/face-metrics` (`FaceIdMetricsView`), `src/app/transport-manager/security` (`SecurityIncidentsCenterView`, `SecurityThreatAlertBanner`).
 - `src/components/transport-admin/GateDevicesPanel.tsx`

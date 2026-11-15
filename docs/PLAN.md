@@ -62,6 +62,8 @@ Steps:
 - ✅ Rollover creates one trip per (route, shift) that students' class timetables need (`lib/trip-planner.ts`), instead of one incoming + one rotating outgoing shift per bus. Overlapping shifts use another bus on the route, else the trip is created with no bus and counted as `needsBusCount`. Crew carried over from the bus's last trip. A forced re-run only adds missing trips and no longer resets occupancy.
 - ⬜ Push instead of polling for the radar (Supabase Realtime needs Supabase-signed tokens; our auth is custom). Revisit if polling load matters.
 - ⬜ `/api/telematics/live` POST accepts unsigned location updates (open DEVICE_PATH). Require a crew session or a device signature once all GPS hardware signs requests.
+- ✅ Onboarding photo split into two steps after owner feedback (auto-capture gave blurry photos): step 1 manual shutter + sharpest of 3 + review; step 2 optional Face ID.
+- ✅ Crash safety: `app/error.tsx`, `global-error.tsx`, `MapBoundary`; client crashes logged via `/api/client-errors`.
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

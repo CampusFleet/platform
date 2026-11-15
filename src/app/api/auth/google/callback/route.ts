@@ -21,9 +21,14 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
   const stateParam = req.nextUrl.searchParams.get("state");
   const fallbackOrigin = req.nextUrl.origin;
+  // Popup flow: hand the result to /auth/google-done, which tells the main tab
+  // and closes the popup. The flag only changes where the browser lands.
+  const popup = readPopupFlag(stateParam);
+  const finish = (base: string, path: string) =>
+    NextResponse.redirect(popup ? `${base}/auth/google-done?next=${encodeURIComponent(path)}` : `${base}${path}`);
 
   if (!code) {
-    return NextResponse.redirect(`${fallbackOrigin}/login?error=no_code`);
+    return finish(fallbackOrigin, `/login?error=no_code`);
   }
 
   // ── CSRF State Validation ──────────────────────────────────────────
@@ -32,12 +37,12 @@ export async function GET(req: NextRequest) {
 
   if (!csrfCookie || !stateParam) {
     console.warn("OAuth CSRF: Missing state cookie or parameter");
-    return NextResponse.redirect(`${fallbackOrigin}/login?error=csrf_validation_failed`);
+    return finish(fallbackOrigin, `/login?error=csrf_validation_failed`);
   }
 
   if (csrfCookie !== stateParam) {
     console.warn("OAuth CSRF: State mismatch — possible CSRF attack");
-    return NextResponse.redirect(`${fallbackOrigin}/login?error=csrf_state_mismatch`);
+    return finish(fallbackOrigin, `/login?error=csrf_state_mismatch`);
   }
 
   // Parse origin from state
@@ -48,7 +53,7 @@ export async function GET(req: NextRequest) {
 
     // Validate state is not too old (10 minute max)
     if (Date.now() - stateTimestamp > 10 * 60 * 1000) {
-      return NextResponse.redirect(`${fallbackOrigin}/login?error=oauth_state_expired`);
+      return finish(fallbackOrigin, `/login?error=oauth_state_expired`);
     }
 
     // Validate origin against allowlist
@@ -64,7 +69,7 @@ export async function GET(req: NextRequest) {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${origin}/login?error=oauth_not_configured`);
+    return finish(origin, `/login?error=oauth_not_configured`);
   }
 
   try {
@@ -85,7 +90,7 @@ export async function GET(req: NextRequest) {
 
     if (!tokenData.access_token) {
       console.error("Google token exchange failed:", tokenData);
-      return NextResponse.redirect(`${origin}/login?error=token_exchange_failed`);
+      return finish(origin, `/login?error=token_exchange_failed`);
     }
 
     // 2. Get user profile from Google
@@ -99,7 +104,7 @@ export async function GET(req: NextRequest) {
     const avatarUrl = profile.picture || null;
 
     if (!email) {
-      return NextResponse.redirect(`${origin}/login?error=no_email`);
+      return finish(origin, `/login?error=no_email`);
     }
 
     // 3. Find or create user via centralized account service
@@ -140,7 +145,7 @@ export async function GET(req: NextRequest) {
     // IMPORTANT: The middleware.ts MUST have an early return for /api/auth/*
     // routes to prevent NextResponse.next({ request: { headers } }) from
     // stripping this Set-Cookie header. See middleware.ts for details.
-    const response = NextResponse.redirect(`${origin}${redirectPath}`);
+    const response = finish(origin, `${redirectPath}`);
     response.headers.set("Set-Cookie", createSessionCookie(token));
 
     // Clear the CSRF state cookie (using append to not overwrite session cookie)
@@ -152,7 +157,7 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (e: any) {
     console.error("Google OAuth callback error:", e);
-    return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+    return finish(origin, `/login?error=oauth_failed`);
   }
 }
 
@@ -187,6 +192,15 @@ function isAllowedOrigin(testOrigin: string): boolean {
     }
 
     return false;
+  } catch {
+    return false;
+  }
+}
+
+function readPopupFlag(state: string | null): boolean {
+  if (!state) return false;
+  try {
+    return JSON.parse(Buffer.from(state, "base64url").toString()).popup === true;
   } catch {
     return false;
   }

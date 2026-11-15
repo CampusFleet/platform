@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
     csrfToken: crypto.randomUUID(),
     origin,
     timestamp: Date.now(),
+    // Popup sign-in (see src/lib/client/auth-navigation.ts): the callback then
+    // lands on /auth/google-done instead of the portal.
+    popup: req.nextUrl.searchParams.get("mode") === "popup",
   });
   const stateBase64 = Buffer.from(statePayload).toString("base64url");
 

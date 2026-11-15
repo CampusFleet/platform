@@ -146,6 +146,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **Pages:**
 - `src/app/login/page.tsx`
+- `src/app/auth/google-done/page.tsx`: last page of the Google popup; posts `{type:"google-done", next}` on BroadcastChannel `campusfleet-auth`, closes itself, or continues in place after 400 ms.
 - `src/app/page.tsx`
 - `src/components/auth/AuthModal.tsx`
 
@@ -155,8 +156,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 |---|---|---|---|---|
 | /api/auth/send-otp | POST | Stores `auth_otp:{email}` (codeHash, 10 min expiry, 5 attempts; L45-56) and emails it | public | auth_otps |
 | /api/auth/verify-otp | POST | Reads and deletes `auth_otp:{email}` (L55-62), creates or finds the user, sets the cookie | public | auth_otps |
-| /api/auth/google | GET | Starts OAuth | public | none |
-| /api/auth/google/callback | GET | Exchanges the code and sets the cookie | public | none |
+| /api/auth/google | GET | Starts OAuth; `?mode=popup` puts `popup: true` in the state | public | none |
+| /api/auth/google/callback | GET | Exchanges the code and sets the cookie. Popup state → lands on `/auth/google-done?next=` instead of the portal | public | none |
 | /api/auth/session | GET | Current user; caches role in `user:role:{id}` | H | users, students_full |
 | /api/auth/logout | POST | Invalidates role, profile and photo caches; clears the cookie | H (verifyToken) | students |
 | /api/auth/update-profile | POST | Updates profile fields | H | users, students |
@@ -173,7 +174,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/email.ts`: `sendOtpEmail` (GMAIL_USER, GMAIL_APP_PASSWORD, SMTP_PASS).
 - `src/lib/auth-service.ts`: `authService`, the client singleton; `src/lib/client-store` takes the current user from it.
 - `src/lib/clear-user-data.ts`: `clearClientUserData`.
-- `src/lib/client/auth-navigation.ts`: `homeForRole`, `replaceLocation` (`location.replace`), `redirectIfSignedIn` (GET /api/auth/session → role home). Sign-in (OTP, Google start, AuthModal) and sign-out (header → `/login`, account deletion) all use `location.replace`, so the page being left is not in history. The login page also calls `redirectIfSignedIn` on mount and on `pageshow` with `persisted`.
+- `src/lib/client/auth-navigation.ts`: `homeForRole`, `replaceLocation` (`location.replace`), `redirectIfSignedIn` (GET /api/auth/session → role home). Sign-in (OTP, Google start, AuthModal) and sign-out (header → `/login`, account deletion) all use `location.replace`, so the page being left is not in history. The login page also calls `redirectIfSignedIn` on mount and on `pageshow` with `persisted`. `startGoogleSignIn` opens Google in a popup so Google's account chooser never enters the app tab's history (a full redirect left it there, so Back from the portal showed it). The main tab waits for the BroadcastChannel message, with a session re-check on focus as backup. It falls back to a full redirect when the popup is blocked or in the installed app (standalone display mode). `safeNextPath` allows only same-site paths.
 
 **Gotchas:**
 - Never `router.push` into or out of an auth state: Back would return to `/login` (after sign-in) or a cached portal page (after sign-out). Use `replaceLocation`.

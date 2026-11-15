@@ -1,5 +1,6 @@
 import { UserRole } from "./types";
 import { clearClientUserData } from "./clear-user-data";
+import { startGoogleSignIn } from "./client/auth-navigation";
 
 export interface AuthUser {
   id: string;
@@ -135,10 +136,9 @@ class AuthService {
    */
   public async signInWithGoogle(): Promise<{ success: boolean; message: string }> {
     try {
-      // Redirect to our Google OAuth API route
-      // replace(): keep /login out of history so Back after sign-in skips it.
-      window.location.replace("/api/auth/google");
-      return { success: true, message: "Redirecting to Google..." };
+      // Popup when possible so Google's pages never enter this tab's history.
+      const mode = startGoogleSignIn();
+      return { success: true, message: mode === "popup" ? "Finish signing in in the Google window." : "Redirecting to Google..." };
     } catch (e: any) {
       return { success: false, message: e.message || "Google OAuth failed" };
     }

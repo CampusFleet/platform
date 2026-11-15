@@ -42,3 +42,73 @@ export async function redirectIfSignedIn(): Promise<boolean> {
     return false;
   }
 }
+
+// ─── Google sign-in in a popup ────────────────────────────────────────────
+// A full-page redirect leaves Google's account chooser in this tab's history,
+// so Back from the portal lands on it. Opening Google in a popup keeps the
+// main tab's history clean. The popup ends on /auth/google-done, which
+// announces the result on a BroadcastChannel (window.opener is cut by
+// Google's Cross-Origin-Opener-Policy) and closes itself.
+
+export const AUTH_CHANNEL = "campusfleet-auth";
+export type AuthChannelMessage = { type: "google-done"; next: string };
+
+/** Only same-site paths, so a crafted `next` can't send anyone off-site. */
+export function safeNextPath(next: string | null | undefined): string {
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return "/login";
+  return next;
+}
+
+function isStandaloneApp(): boolean {
+  return (
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+/**
+ * Start Google sign-in. Uses a popup when possible; falls back to a full-page
+ * redirect when the popup is blocked or in the installed app (where a popup
+ * may open a separate browser without our cookie).
+ * Returns "popup" while the popup is open, or "redirect".
+ */
+export function startGoogleSignIn(): "popup" | "redirect" {
+  if (!isStandaloneApp() && typeof BroadcastChannel !== "undefined") {
+    const w = 480;
+    const h = 640;
+    const left = Math.max(0, window.screenX + (window.outerWidth - w) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - h) / 2);
+    const popup = window.open(
+      "/api/auth/google?mode=popup",
+      "campusfleet-google",
+      `popup=yes,width=${w},height=${h},left=${left},top=${top}`
+    );
+    if (popup) {
+      listenForPopupSignIn();
+      return "popup";
+    }
+  }
+  replaceLocation("/api/auth/google");
+  return "redirect";
+}
+
+let listening = false;
+function listenForPopupSignIn(): void {
+  if (listening) return;
+  listening = true;
+  const channel = new BroadcastChannel(AUTH_CHANNEL);
+  channel.onmessage = (event: MessageEvent<AuthChannelMessage>) => {
+    if (event.data?.type !== "google-done") return;
+    channel.close();
+    listening = false;
+    replaceLocation(safeNextPath(event.data.next));
+  };
+  // Backup if the message is missed: when the user comes back to this tab,
+  // ask the server whether the popup finished signing in.
+  const onFocus = () => {
+    void redirectIfSignedIn().then((done) => {
+      if (done) window.removeEventListener("focus", onFocus);
+    });
+  };
+  window.addEventListener("focus", onFocus);
+}

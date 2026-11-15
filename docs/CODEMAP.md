@@ -248,7 +248,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/pickup.ts`: `rankPickupStops` (pure), `resolveZone`, `defaultPickup`, `loadPickupCatalog` (Redis `onboarding:pickup-catalog:v1`, 120 s), `findPickupOptions`, `resolveChosenPickup`. Zone/fee only from the stop's own zone; stops on no active route cannot be chosen; stops without `campus_id` count for a campus within 60 km.
 - `src/lib/students/portrait.ts`: `savePortrait`, `portraitKeyFromUrl`, `isPortraitLocked`, `PortraitLockedError`. Deletes the previous portrait blob.
 - `src/lib/onboarding-cache.ts`: `getOnboardingDraftKey`, `saveOnboardingDraft`, `loadOnboardingDraft`, `clearOnboardingDraft` (client draft storage).
-- `src/lib/students/ride.ts`: `getRideInternal` (Redis `ride:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
+- `src/components/portal/CommuteHome.tsx` (My Commute), `StudentCrewSheet.tsx` (header contact sheet).
+- `src/lib/students/ride.ts`: `getDayOff` (Redis `schedule:class:{classId}:{DAY}`), `getRideInternal` (Redis `ride:v2:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
 - `src/lib/dispatch/halt.ts`: `haltKey`, `getHaltRequest`, `createHaltRequest` (Redis `halt_request:{tripId}:{studentId}`, 15 min).
 - `src/lib/students/home.ts`: `getHomeSettings`, `updateHome`, `HomeUpdateError`.
 - `src/lib/students/fees.ts`: `getSemesterFee` (zone fee, else total_fee_due, else null). Used by the payments page and create-link.
@@ -684,7 +685,7 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | `conductor:shared_fleet_data`, `conductor:reservations_manifest_v3`, `conductor:students_full`, `conductor:attendance_records` | conductor/layout L39-86 | same | TTL |
 | `staff:transport_admin_raw_tables_v3` | transport-admin-data L33 | same | TTL |
 | `telematics:hardware_desk_server_data` | transport-admin-data L380 | same | telematics/devices L223 |
-| `ride:{userId}` | lib/students/ride `getRideInternal` | ride, ride/live, ride/halt | TTL 20 s |
+| `ride:v2:{userId}` | lib/students/ride `getRideInternal` | ride, ride/live, ride/halt | TTL 20 s |
 | `onboarding:pickup-catalog:v1` | lib/students/pickup `loadPickupCatalog` | pickup-options, students/onboarding | TTL 120 s |
 | `faceid:challenge:{nonce}` | lib/face/challenge `consumeFaceChallenge` (SET NX) | enroll-v2 | TTL 5 min (single use) |
 | `campusfleet:state:{routes,stops,shifts,trips,stop_routes,buses,transit_zones,campuses,subscription_plans}` | sync/state | sync/state | Supabase webhook (partial, see §7) |

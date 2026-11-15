@@ -4,7 +4,7 @@ import { BusFront, Clock, MapPin, QrCode } from "lucide-react";
 export default function PortalLoading() {
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 pb-12 animate-in fade-in duration-200">
-      {/* ── Modern Shimmer Commute Skeleton (1:1 with UnifiedCommuteHub) ──── */}
+      {/* ── Modern Shimmer Commute Skeleton (matches CommuteHome) ──── */}
       <div className="space-y-5">
         {/* Header Greeting Placeholder */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-white dark:bg-gray-950 rounded-2xl border border-gray-200/80 dark:border-gray-800/80 shadow-xs">

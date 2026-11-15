@@ -32,7 +32,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import BusDepartureAlertModal from "@/components/portal/BusDepartureAlertModal";
-import { ContactCrewModal } from "@/components/portal/ContactCrewModal";
+import { StudentCrewSheet } from "@/components/portal/StudentCrewSheet";
 
 export default function ClientPortalLayout({
   children,
@@ -326,29 +326,8 @@ export default function ClientPortalLayout({
           }}
         />
       )}
-      {/* Contact Bus Conductor & Transport Helpline Modal */}
-      <ContactCrewModal
-        isOpen={isContactCrewOpen}
-        onClose={() => setIsContactCrewOpen(false)}
-        bus={(() => {
-          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
-          return t ? store.getBuses().find(b => b.id === t.busId) : null;
-        })()}
-        shift={(() => {
-          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
-          return t ? store.getShifts().find(s => s.id === t.shiftId) : null;
-        })()}
-        route={(() => {
-          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
-          return t ? store.getRoutes().find(r => r.id === t.routeId) : null;
-        })()}
-        conductor={(() => {
-          const t = store.getTrips().find(tr => tr.status === "IN_PROGRESS" || tr.routeId === activeStudent?.primaryRouteId);
-          return store.getStaff().find(s => (t && s.id === t.conductorId) || s.role === "conductor") || null;
-        })()}
-        transportManager={store.getStaff().find(s => s.role === "transport_manager" || s.role === "transport_admin") || null}
-        stopName={activeStudent?.primaryStopId ? store.getStops().find(st => st.id === activeStudent.primaryStopId)?.name : undefined}
-      />
+      {/* Contact the crew of the student's own bus */}
+      <StudentCrewSheet open={isContactCrewOpen} onClose={() => setIsContactCrewOpen(false)} />
     </div>
   );
 

@@ -80,7 +80,6 @@ const ROLE_RULES: RoleRule[] = [
   { prefix: "/api/campus", write: MANAGE },
   { prefix: "/api/rest-zones", write: MANAGE },
   { prefix: "/api/classes", write: [...MANAGE, "teacher"] },
-  { prefix: "/api/sync/state", write: MANAGE },
 ];
 
 export type ApiAccessDecision =

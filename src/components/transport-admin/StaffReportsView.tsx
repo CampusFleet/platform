@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { formatDate } from "@/lib/utils";
 import { FileBarChart, Download, FileSpreadsheet, CheckCircle2, Calendar, User } from "lucide-react";
 

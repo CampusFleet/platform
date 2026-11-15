@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Campus, TransitZone, Stop } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {

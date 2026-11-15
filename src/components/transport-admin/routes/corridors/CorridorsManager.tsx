@@ -7,7 +7,7 @@ import TransitStudioMap from "@/components/maps/TransitStudioMap";
 import Link from "next/link";
 import React, { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import dynamic from "next/dynamic";
 import { Route, Stop, Bus, Campus, Student } from "@/lib/types";
 import { WhereIsMyBusFlowchart } from "@/components/transit/WhereIsMyBusFlowchart";

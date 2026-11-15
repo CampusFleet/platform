@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { formatTime, formatDate } from "@/lib/utils";
 import { getTodayIST, isTripCutoffPassed } from "@/lib/time-manager";
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { formatDate } from "@/lib/utils";
 import { CalendarCheck, Search, Filter, Sparkles, XCircle, ArrowRight, ShieldCheck } from "lucide-react";
 import type { Booking, Student, Trip, Bus, Stop } from "@/lib/types";

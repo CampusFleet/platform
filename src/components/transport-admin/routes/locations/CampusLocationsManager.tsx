@@ -2,7 +2,7 @@
 
 
 import React, { useEffect, useState, useMemo } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import dynamic from "next/dynamic";
 import { Route, Stop, Bus, Campus } from "@/lib/types";
 import { WhereIsMyBusFlowchart } from "@/components/transit/WhereIsMyBusFlowchart";

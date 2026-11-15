@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import jsQR from "jsqr";
 import { Camera, CameraOff, QrCode, MapPin, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
-import { store } from "@/lib/store";
 
 export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSuccess: () => void, fullScreenMode?: boolean }) {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -144,11 +143,6 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
         console.warn("GPS lookup timeout or denied:", geoErr);
       }
 
-      // 2. Fetch live bus location from store if available
-      const liveBusLoc = store.getLiveLocation();
-      const busLat = String(liveBusLoc.busId) === String(busId) ? liveBusLoc.latitude : undefined;
-      const busLng = String(liveBusLoc.busId) === String(busId) ? liveBusLoc.longitude : undefined;
-
       // 3. Directly call self-service boarding attendance API
       const res = await fetch("/api/students/board-self-service", {
         method: "POST",
@@ -158,8 +152,6 @@ export function StudentSelfScanner({ onSuccess, fullScreenMode = false }: { onSu
           seatId,
           latitude: lat,
           longitude: lng,
-          busLatitude: busLat,
-          busLongitude: busLng,
           rollingPayload,
           rollingToken,
         })

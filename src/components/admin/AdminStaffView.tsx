@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { authService } from "@/lib/auth-service";
 import { createUserId } from "@/lib/id";
 import { UserAccount, UserRole, Campus } from "@/lib/types";
@@ -53,7 +53,7 @@ export default function AdminStaffView({
     email: "",
     phone: "",
     role: "student" as UserRole,
-    campus: store.getPrimaryCampus()?.name || "Main Campus",
+    campus: store.getPrimaryCampus()?.name || "",
     campusId: store.getPrimaryCampus()?.id || "",
     provider: "Institutional SSO",
   });
@@ -181,7 +181,7 @@ export default function AdminStaffView({
       email: "",
       phone: "+91 98765 43210",
       role: "student",
-      campus: store.getPrimaryCampus()?.name || "Main Campus",
+      campus: store.getPrimaryCampus()?.name || "",
       campusId: store.getPrimaryCampus()?.id || "",
       provider: "Institutional SSO",
     });
@@ -421,7 +421,7 @@ export default function AdminStaffView({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-gray-400">{user.campus || store.getPrimaryCampus()?.name || "Campus Terminal"}</div>
+                            <div className="text-[11px] text-gray-400">{user.campus || "Not set"}</div>
                           </div>
                         </div>
                       </td>

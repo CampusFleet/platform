@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Bus, VehicleStatus, Route, Trip } from "@/lib/types";
 import { parseSeatLayout, calculateBusCapacity } from "@/lib/utils";
 import { BusFront, Plus, Edit2, Trash2, ShieldAlert, CheckCircle2, Wrench, Search, MapPin, Sparkles, RefreshCw, QrCode, X } from "lucide-react";

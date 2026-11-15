@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useTheme } from "@/components/common/ThemeProvider";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { clearClientUserData } from "@/lib/clear-user-data";
 import { 
   Sun, Moon, Bell, Shield, Database, Download, RefreshCw, MessageSquare, Trash, 

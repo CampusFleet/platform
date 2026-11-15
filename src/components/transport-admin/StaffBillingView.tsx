@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Campus, TransitZone, Stop } from "@/lib/types";
 import { getSafePhotoUrl } from "@/lib/image-utils";

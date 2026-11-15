@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Route, Stop, Bus, Campus, Trip, Student, RestZone } from "@/lib/types";
 
 interface RoutesContextValue {

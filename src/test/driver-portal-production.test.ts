@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { store } from "../lib/store";
 import { telematicsService } from "../lib/telematicsService";
 import { Trip, UserRole, LiveBusLocation } from "../lib/types";
 import { calculateHaversineDistanceKm } from "../lib/eta-calculator";
@@ -161,97 +160,6 @@ describe("Driver Portal Production Functionality & Resilience Tests", () => {
     });
   });
 
-  // ── 4. Trip State Updates & Centralized Store Sync ────────────────────────
-  describe("Centralized Trip State Synchronization (`store.updateTrip`)", () => {
-    const initialTrip: Trip = {
-      id: "trip-sync-test",
-      tripCode: "TRIP-SYNC-01",
-      routeId: "route-1",
-      busId: 1,
-      shiftId: "shift-1",
-      driverId: "driver-1",
-      conductorId: "cond-1",
-      tripDate: "2026-10-19",
-      status: "SCHEDULED",
-      currentStopIndex: 0,
-      delayMinutes: 0,
-      manifestLocked: false,
-    };
-
-    beforeEach(() => {
-      // Seed the trip into the store
-      store.wipeAllData();
-      (store as any).trips = [{ ...initialTrip }];
-    });
-
-    it("should update trip status to IN_PROGRESS with startedAt timestamp", async () => {
-      const startedAt = new Date().toISOString();
-      await store.updateTrip(initialTrip.id, {
-        status: "IN_PROGRESS",
-        startedAt,
-        currentStopIndex: 0,
-      });
-
-      const updated = store.getTrips().find(t => t.id === initialTrip.id);
-      expect(updated?.status).toBe("IN_PROGRESS");
-      expect(updated?.startedAt).toBe(startedAt);
-      expect(updated?.currentStopIndex).toBe(0);
-    });
-
-    it("should advance currentStopIndex accurately during route progression", async () => {
-      await store.updateTrip(initialTrip.id, {
-        status: "IN_PROGRESS",
-        currentStopIndex: 1,
-      });
-
-      let updated = store.getTrips().find(t => t.id === initialTrip.id);
-      expect(updated?.currentStopIndex).toBe(1);
-
-      await store.updateTrip(initialTrip.id, {
-        currentStopIndex: 4,
-      });
-
-      updated = store.getTrips().find(t => t.id === initialTrip.id);
-      expect(updated?.currentStopIndex).toBe(4);
-    });
-
-    it("should mark trip COMPLETED with completedAt timestamp on trip termination", async () => {
-      const completedAt = new Date().toISOString();
-      await store.updateTrip(initialTrip.id, {
-        status: "COMPLETED",
-        completedAt,
-      });
-
-      const updated = store.getTrips().find(t => t.id === initialTrip.id);
-      expect(updated?.status).toBe("COMPLETED");
-      expect(updated?.completedAt).toBe(completedAt);
-    });
-
-    it("should notify all store listeners immediately when updateTrip is called", async () => {
-      let notified = false;
-      const unsub = store.subscribe(() => {
-        notified = true;
-      });
-
-      await store.updateTrip(initialTrip.id, {
-        status: "IN_PROGRESS",
-      });
-
-      expect(notified).toBe(true);
-      unsub();
-    });
-
-    it("should support switching duty bus and rebind trip bus assignment in store", async () => {
-      const newBusId = 37;
-      await store.updateTrip(initialTrip.id, {
-        busId: newBusId,
-      });
-
-      const updated = store.getTrips().find(t => t.id === initialTrip.id);
-      expect(updated?.busId).toBe(newBusId);
-    });
-  });
-
   // ── 5. Real Device Hardware GPS Ingestion & Telematics Pipeline ───────────
   describe("Hardware GPS Sensor Telematics Ingestion", () => {
     it("should accurately convert device speed from m/s to integer km/h", () => {
@@ -289,7 +197,7 @@ describe("Driver Portal Production Functionality & Resilience Tests", () => {
         delayMinutes: 0,
       };
 
-      store.updateLiveLocation(payload);
+      void telematicsService.broadcastLiveLocation(payload);
 
       expect(latestLocation).not.toBeNull();
       expect((latestLocation as any)?.latitude).toBe(29.2183);

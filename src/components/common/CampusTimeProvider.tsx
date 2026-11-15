@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Shift, Trip } from "@/lib/types";
 import {
   getNowIST,

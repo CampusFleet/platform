@@ -10,7 +10,7 @@ import {
   UserCircle, RefreshCcw, Map, Edit3, Trash2, Plus, CheckCircle2, AlertCircle, X
 } from "lucide-react";
 import { useRoutesContext } from "@/components/transport-admin/routes/RoutesContext";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { RouteBuilderModal } from "./RouteBuilderModal";
 import { AllocateBusModal } from "./AllocateBusModal";
 

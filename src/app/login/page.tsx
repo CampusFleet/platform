@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 
 import { UserRole, Stop, Campus } from "@/lib/types";
 import { ThemeToggle } from "@/components/common/ThemeToggle";

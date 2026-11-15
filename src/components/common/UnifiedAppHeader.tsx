@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { UserRole } from "@/lib/types";
 import { useTheme } from "./ThemeProvider";
 import { getSafePhotoUrl } from "@/lib/image-utils";

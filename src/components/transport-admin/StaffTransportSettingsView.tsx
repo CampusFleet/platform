@@ -24,7 +24,7 @@ import {
 import type { TransportSettings, SeatSelectionMode, TransitAttendanceMode, ValidationLocksConfig } from "@/lib/types";
 import { DEFAULT_VALIDATION_LOCKS } from "@/lib/types";
 import { broadcastAttendanceModeChange } from "@/lib/attendance";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 
 // ─── Default settings (before DB load) ──────────────────────────────────────
 

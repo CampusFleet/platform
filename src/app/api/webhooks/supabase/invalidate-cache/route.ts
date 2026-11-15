@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cacheDel } from "@/lib/redis";
+import { CLIENT_STATE_MASTER_KEY } from "@/lib/client-state-data";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -29,36 +30,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing table in payload" }, { status: 400 });
     }
 
-    // Map table names to Redis cache keys
-    const keysToDelete: string[] = [];
-
-    switch (table) {
-      case "routes":
-        keysToDelete.push("campusfleet:state:routes");
-        break;
-      case "stops":
-        keysToDelete.push("campusfleet:state:stops");
-        break;
-      case "shifts":
-        keysToDelete.push("campusfleet:state:shifts");
-        break;
-      case "trips":
-        keysToDelete.push("campusfleet:state:trips");
-        break;
-      case "route_stops":
-        keysToDelete.push("campusfleet:state:stop_routes");
-        break;
-      case "buses":
-        keysToDelete.push("campusfleet:state:buses");
-        break;
-      case "transit_zones":
-      case "campuses":
-        keysToDelete.push("campusfleet:state:routes");
-        break;
-      default:
-        console.log(`[Webhook] Ignored cache invalidation for table: ${table}`);
-        return NextResponse.json({ success: true, message: "Ignored table" });
+    // Tables behind the master data of GET /api/client-state (src/lib/client-state-data.ts).
+    const MASTER_TABLES = ["routes", "stops", "shifts", "route_stops", "buses", "transit_zones", "campuses"];
+    if (!MASTER_TABLES.includes(table)) {
+      console.log(`[Webhook] Ignored cache invalidation for table: ${table}`);
+      return NextResponse.json({ success: true, message: "Ignored table" });
     }
+    const keysToDelete: string[] = [CLIENT_STATE_MASTER_KEY];
 
     // Execute deletions in parallel
     await Promise.all(keysToDelete.map(key => cacheDel(key)));

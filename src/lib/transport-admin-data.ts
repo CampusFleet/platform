@@ -1,90 +1,35 @@
 import { getSession } from "@/lib/jwt";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabaseClient";
-import { getOrFetchWithCache } from "@/lib/redis";
+import { getOrFetchWithCache, cacheDel } from "@/lib/redis";
 import type { Route, Bus, Stop, Student, Trip, Booking, Staff, UserAccount, Campus, ClassItem, Shift, TripDirection, RestZone } from "@/lib/types";
 
-export async function getStaffServerData(redirectPath: string = "/transport-admin") {
-  const session = await getSession();
+// ── Row → type mappers (shared with src/lib/client-state-data.ts) ───────────
 
-  if (!session) {
-    redirect(`/login?redirect=${encodeURIComponent(redirectPath)}`);
-  }
+export function mapCampusRow(c: any): Campus {
+  return {
+    id: c.id,
+    name: c.name,
+    code: c.code,
+    address: c.address || "",
+    landmark: c.landmark || "",
+    city: c.city || undefined,
+    latitude: Number(c.latitude),
+    longitude: Number(c.longitude),
+    geofenceRadiusMeters: Number(c.geofence_radius || 0),
+    fleetCapacity: c.fleet_capacity != null ? Number(c.fleet_capacity) : undefined,
+    parkingBays: c.parking_bays != null ? Number(c.parking_bays) : undefined,
+    contactPhone: c.contact_phone || "",
+    contactEmail: c.contact_email || "",
+    isPrimary: Boolean(c.is_primary),
+    isActive: Boolean(c.is_active ?? true),
+    createdAt: c.created_at,
+    updatedAt: c.updated_at,
+  };
+}
 
-  if (session.role !== "transport_admin" && session.role !== "admin" && session.role !== "transport_manager") {
-    redirect(session.role === "driver" ? "/driver" : session.role === "conductor" ? "/conductor" : "/portal");
-  }
-
-  const {
-    dbTrips,
-    dbBuses,
-    dbRoutes,
-    dbBookings,
-    dbStops,
-    dbStudents,
-    dbStaff,
-    dbUsers,
-    dbRouteStops,
-    dbCampuses,
-    dbClasses,
-    dbShifts,
-    dbRestZones,
-  } = await getOrFetchWithCache({
-    key: "staff:transport_admin_raw_tables_v3",
-    ttl: 20, // 20s cache with jitter for instant page switching
-    allowEmpty: true,
-    fetchFn: async () => {
-      const [
-        { data: dbTrips },
-        { data: dbBuses },
-        { data: dbRoutes },
-        { data: dbBookings },
-        { data: dbStops },
-        { data: dbStudents },
-        { data: dbStaff },
-        { data: dbUsers },
-        { data: dbRouteStops },
-        { data: dbCampuses },
-        { data: dbClasses },
-        { data: dbShifts },
-        { data: dbRestZones },
-      ] = await Promise.all([
-        supabaseAdmin.from("trips").select("*").order("trip_code"),
-        supabaseAdmin.from("buses").select("*"),
-        supabaseAdmin.from("routes").select("*"),
-        supabaseAdmin.from("bus_reservations_full").select("*").order("created_at", { ascending: false }).limit(250),
-        supabaseAdmin.from("stops").select("*"),
-        supabaseAdmin.from("students_full").select("*"),
-        supabaseAdmin.from("staff").select("*"),
-        supabaseAdmin.from("users").select("id, full_name, email, role, phone"),
-        supabaseAdmin.from("route_stops").select("*").order("stop_order", { ascending: true }),
-        supabaseAdmin.from("campuses").select("*"),
-        supabaseAdmin.from("v_classes_expanded").select("*"),
-        supabaseAdmin.from("shifts").select("*"),
-        supabaseAdmin.from("rest_zones").select("*"),
-      ]);
-
-      return {
-        dbTrips,
-        dbBuses,
-        dbRoutes,
-        dbBookings,
-        dbStops,
-        dbStudents,
-        dbStaff,
-        dbUsers,
-        dbRouteStops,
-        dbCampuses,
-        dbClasses,
-        dbShifts,
-        dbRestZones,
-      };
-    },
-  });
-
-  const campusNameMap = new Map((dbCampuses || []).map((c: any) => [c.id, c.name]));
-
-  const stops: Stop[] = (dbStops || []).map((s: any) => ({
+export function mapStopRows(dbStops: any[], campusNameMap: Map<string, string>): Stop[] {
+  return (dbStops || []).map((s: any) => ({
     id: s.id,
     name: s.name,
     code: s.code,
@@ -97,10 +42,11 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     isBusMergeStop: Boolean(s.is_bus_merge_stop),
     zoneCode: s.zone_code,
   }));
+}
 
-  const stopMap = new Map(stops.map((s) => [s.id, s]));
-
-  const routes: Route[] = (dbRoutes || []).map((r: any) => {
+/** Routes with their ordered stops (route_stops first, legacy `stops_data` JSON as fallback). */
+export function mapRouteRows(dbRoutes: any[], dbRouteStops: any[], stopMap: Map<string, Stop>): Route[] {
+  return (dbRoutes || []).map((r: any) => {
     let routeStops = (dbRouteStops || [])
       .filter((rs: any) => rs.route_id === r.id && stopMap.has(rs.stop_id))
       .sort((a: any, b: any) => (a.stop_order ?? a.stop_sequence ?? 0) - (b.stop_order ?? b.stop_sequence ?? 0))
@@ -147,31 +93,46 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
       stops: routeStops,
     };
   });
+}
 
-  const buses: Bus[] = (dbBuses || []).map((b: any) => ({
+export function mapBusRow(b: any): Bus {
+  return {
     id: Number(b.id),
     busNumber: Number(b.bus_number),
     registrationNo: b.registration_no || String(b.bus_number),
     model: b.model || "",
     capacity: Number(b.capacity || 0),
     seatLayout: (b.seat_layout as any) || "NONE",
+    totalRows: b.total_rows ? Number(b.total_rows) : undefined,
     status: b.status || "ACTIVE",
     gpsDeviceId: b.gps_device_id || "",
     rfidDeviceId: b.rfid_device_id || "",
     insuranceExpiry: b.insurance_expiry || "",
     maintenanceDueDate: b.maintenance_due_date || "",
     currentRouteId: b.current_route_id,
-  }));
+  };
+}
 
-  // Deduplicate students by id
-  const studentMap = new Map<string, any>();
-  for (const s of dbStudents || []) {
-    if (s.id && !studentMap.has(s.id)) {
-      studentMap.set(s.id, s);
-    }
-  }
+/** `isSpecial` also covers CUSTOM / placement / conclave shifts created before the `is_special` column was set. */
+export function mapShiftRow(sh: any): Shift {
+  const name = String(sh.name || "").toLowerCase();
+  return {
+    id: sh.id,
+    name: sh.name,
+    shiftType: sh.type,
+    direction: (sh.direction || "HOME_TO_CAMPUS") as TripDirection,
+    startTime: sh.start_time ? sh.start_time.slice(0, 5) : "",
+    endTime: sh.end_time ? sh.end_time.slice(0, 5) : "",
+    bookingCutoffMins: Number(sh.booking_cutoff_minutes || 0),
+    isSpecial: Boolean(
+      sh.is_special || sh.type === "CUSTOM" || name.includes("placement") || name.includes("conclave") || name.includes("special")
+    ),
+    isPlacement: name.includes("placement"),
+  };
+}
 
-  const students: Student[] = Array.from(studentMap.values()).map((s: any) => ({
+export function mapStudentRow(s: any): Student {
+  return {
     id: s.id,
     userId: s.user_id,
     fullName: s.full_name || s.name || "",
@@ -200,23 +161,123 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     homeLatitude: s.home_latitude !== null && s.home_latitude !== undefined ? Number(s.home_latitude) : undefined,
     homeLongitude: s.home_longitude !== null && s.home_longitude !== undefined ? Number(s.home_longitude) : undefined,
     homeAddress: s.home_address || "",
-  }));
+  };
+}
+
+export function mapStaffRow(st: any): Staff {
+  return {
+    id: st.id,
+    userId: st.user_id,
+    employeeCode: st.employee_code || st.employee_id || "",
+    fullName: st.full_name || st.name || "",
+    email: st.email || "",
+    phone: st.phone || null,
+    category: st.category as any,
+    rank: st.rank as any,
+    role: st.role as any,
+    permissions: st.permissions || [],
+    licenseNo: st.license_no || st.license_number,
+    isActive: Boolean(st.is_active ?? true),
+  };
+}
+
+const STAFF_RAW_KEY = "staff:transport_admin_raw_tables_v3";
+
+/**
+ * Typed admin data set (every table the transport-admin screens show), cached 20 s in Redis.
+ * No session checks: callers must only use this for MANAGE roles.
+ * `fresh` drops the cached copy first (used right after an admin write).
+ */
+export async function loadStaffData(options: { fresh?: boolean } = {}) {
+  if (options.fresh) await cacheDel(STAFF_RAW_KEY);
+
+  const {
+    dbTrips,
+    dbBuses,
+    dbRoutes,
+    dbBookings,
+    dbStops,
+    dbStudents,
+    dbStaff,
+    dbUsers,
+    dbRouteStops,
+    dbCampuses,
+    dbClasses,
+    dbShifts,
+    dbRestZones,
+  } = await getOrFetchWithCache({
+    key: STAFF_RAW_KEY,
+    ttl: 20, // 20s cache with jitter for instant page switching
+    allowEmpty: true,
+    fetchFn: async () => {
+      const [
+        { data: dbTrips },
+        { data: dbBuses },
+        { data: dbRoutes },
+        { data: dbBookings },
+        { data: dbStops },
+        { data: dbStudents },
+        { data: dbStaff },
+        { data: dbUsers },
+        { data: dbRouteStops },
+        { data: dbCampuses },
+        { data: dbClasses },
+        { data: dbShifts },
+        { data: dbRestZones },
+      ] = await Promise.all([
+        supabaseAdmin.from("trips").select("*").order("trip_code"),
+        supabaseAdmin.from("buses").select("*"),
+        supabaseAdmin.from("routes").select("*"),
+        supabaseAdmin.from("bus_reservations_full").select("*").order("created_at", { ascending: false }).limit(250),
+        supabaseAdmin.from("stops").select("*"),
+        supabaseAdmin.from("students_full").select("*"),
+        supabaseAdmin.from("staff").select("*"),
+        supabaseAdmin.from("users").select("id, full_name, email, role, phone"),
+        supabaseAdmin.from("route_stops").select("*").order("stop_order", { ascending: true }),
+        supabaseAdmin.from("campuses").select("*").order("is_primary", { ascending: false }).order("name", { ascending: true }),
+        supabaseAdmin.from("v_classes_expanded").select("*"),
+        supabaseAdmin.from("shifts").select("*"),
+        supabaseAdmin.from("rest_zones").select("*"),
+      ]);
+
+      return {
+        dbTrips,
+        dbBuses,
+        dbRoutes,
+        dbBookings,
+        dbStops,
+        dbStudents,
+        dbStaff,
+        dbUsers,
+        dbRouteStops,
+        dbCampuses,
+        dbClasses,
+        dbShifts,
+        dbRestZones,
+      };
+    },
+  });
+
+  const campusNameMap = new Map<string, string>((dbCampuses || []).map((c: any) => [c.id, c.name]));
+  const stops = mapStopRows(dbStops || [], campusNameMap);
+  const stopMap = new Map(stops.map((s) => [s.id, s]));
+  const routes = mapRouteRows(dbRoutes || [], dbRouteStops || [], stopMap);
+  const buses: Bus[] = (dbBuses || []).map(mapBusRow);
+
+  // Deduplicate students by id
+  const studentMap = new Map<string, any>();
+  for (const s of dbStudents || []) {
+    if (s.id && !studentMap.has(s.id)) {
+      studentMap.set(s.id, s);
+    }
+  }
+  const students: Student[] = Array.from(studentMap.values()).map(mapStudentRow);
 
   const shiftMap = new Map((dbShifts || []).map((s: any) => [s.id, s]));
-
-  const shifts: Shift[] = (dbShifts || []).map((sh: any) => ({
-    id: sh.id,
-    name: sh.name,
-    shiftType: sh.type,
-    direction: (sh.direction || "HOME_TO_CAMPUS") as TripDirection,
-    startTime: sh.start_time ? sh.start_time.slice(0, 5) : "",
-    endTime: sh.end_time ? sh.end_time.slice(0, 5) : "",
-    bookingCutoffMins: Number(sh.booking_cutoff_minutes || 0),
-    isSpecial: Boolean(sh.is_special),
-  }));
+  const shifts: Shift[] = (dbShifts || []).map(mapShiftRow);
 
   const trips: Trip[] = (dbTrips || []).map((t: any) => {
-    const shift = shiftMap.get(t.shift_id);
+    const shift: any = shiftMap.get(t.shift_id);
     const direction: TripDirection =
       (shift?.direction as TripDirection) ||
       (t.direction as TripDirection) ||
@@ -277,20 +338,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     createdAt: b.created_at || new Date().toISOString(),
   }));
 
-  const staff: Staff[] = (dbStaff || []).map((st: any) => ({
-    id: st.id,
-    userId: st.user_id,
-    employeeCode: st.employee_code || st.employee_id || "",
-    fullName: st.full_name || st.name || "",
-    email: st.email || "",
-    phone: st.phone || null,
-    category: st.category as any,
-    rank: st.rank as any,
-    role: st.role as any,
-    permissions: st.permissions || [],
-    licenseNo: st.license_no || st.license_number,
-    isActive: Boolean(st.is_active ?? true),
-  }));
+  const staff: Staff[] = (dbStaff || []).map(mapStaffRow);
 
   const users: UserAccount[] = (dbUsers || []).map((u: any) => ({
     id: u.id,
@@ -302,17 +350,7 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     createdAt: u.created_at || new Date().toISOString(),
   }));
 
-  const campuses: Campus[] = (dbCampuses || []).map((c: any) => ({
-    id: c.id,
-    name: c.name,
-    code: c.code,
-    address: c.address,
-    city: c.city,
-    latitude: Number(c.latitude),
-    longitude: Number(c.longitude),
-    geofenceRadiusMeters: Number(c.geofence_radius || 0),
-    isPrimary: Boolean(c.is_primary),
-  }));
+  const campuses: Campus[] = (dbCampuses || []).map(mapCampusRow);
 
   const restZones: RestZone[] = (dbRestZones || []).map((rz: any) => ({
     id: rz.id,
@@ -343,7 +381,6 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
   }));
 
   return {
-    session,
     stops,
     routes,
     buses,
@@ -357,6 +394,21 @@ export async function getStaffServerData(redirectPath: string = "/transport-admi
     classes,
     shifts,
   };
+}
+
+/** Server pages under /transport-admin etc.: session + MANAGE role check (redirects), then `loadStaffData()`. */
+export async function getStaffServerData(redirectPath: string = "/transport-admin") {
+  const session = await getSession();
+
+  if (!session) {
+    redirect(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+  }
+
+  if (session.role !== "transport_admin" && session.role !== "admin" && session.role !== "transport_manager") {
+    redirect(session.role === "driver" ? "/driver" : session.role === "conductor" ? "/conductor" : "/portal");
+  }
+
+  return { session, ...(await loadStaffData()) };
 }
 
 /**

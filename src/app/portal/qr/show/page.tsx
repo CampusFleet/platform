@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import { getSafePhotoUrl } from "@/lib/image-utils";

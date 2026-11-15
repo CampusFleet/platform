@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import {
   Wrench,
   Search,

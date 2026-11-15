@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { LiveBusLocation, Stop, FleetBusMarkerData, Campus } from "@/lib/types";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { MapPin, Zap, Crosshair, Building2, Navigation } from "lucide-react";
 import GoogleTransitMap from "./GoogleTransitMap";
 

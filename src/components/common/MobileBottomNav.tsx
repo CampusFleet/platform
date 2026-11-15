@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import {
   CreditCard,
   Settings as SettingsIcon,

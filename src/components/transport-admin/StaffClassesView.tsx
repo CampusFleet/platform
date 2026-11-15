@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import SearchableDropdown, { DropdownOption } from "@/components/ui/SearchableDropdown";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 
 export interface ClassItem {
   id: string;

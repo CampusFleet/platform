@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { authService } from "@/lib/auth-service";
 import { useTranslation } from "@/components/common/LanguageProvider";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
@@ -48,7 +48,6 @@ export default function ClientPortalLayout({
   const { t } = useTranslation();
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
   const [students, setStudents] = useState(store.getStudents());
-  const [activeChildId, setActiveChildId] = useState(store.getActiveChildId());
   const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isStoreReady, setIsStoreReady] = useState(store.isReady());
@@ -70,7 +69,6 @@ export default function ClientPortalLayout({
     const unsub = store.subscribe(() => {
       setCurrentUser(store.getCurrentUser());
       setStudents(store.getStudents());
-      setActiveChildId(store.getActiveChildId());
       setIsStoreReady(store.isReady());
     });
     return unsub;
@@ -89,7 +87,6 @@ export default function ClientPortalLayout({
   const activeStudent = currentUser
     ? students.find(
         s =>
-          (activeChildId && (s.id === activeChildId || s.userId === activeChildId)) ||
           (currentUser.studentId && s.id === currentUser.studentId) ||
           s.userId === currentUser.id ||
           s.id === currentUser.id ||
@@ -242,7 +239,7 @@ export default function ClientPortalLayout({
       <UnifiedAppHeader
         role="student"
         portalTitle="CampusFleet"
-        portalSubtitle={activeStudent ? (activeStudent.campus || store.getStudentPrimaryCampus(activeStudent).name) : "Student & Mobility Portal"}
+        portalSubtitle={activeStudent ? (activeStudent.campus || store.getStudentPrimaryCampus(activeStudent)?.name || "Campus not set") : "Student & Mobility Portal"}
         navLinks={processedNavLinks}
         userPhotoUrl={initialPhotoUrl}
         showSOS={true}

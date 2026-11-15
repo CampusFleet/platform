@@ -17,7 +17,7 @@ which tables / Redis keys / services each feature touches, and the known traps.
 | 2. Student portal (single-page onboarding, commute, pass, radar, payments) | In progress: onboarding done |
 | 3. Conductor + driver | Partly done (`175141f`) |
 | 4. Transport admin / manager / admin (merge duplicate screens) | Planned |
-| 5. Remove `src/lib/store/*` and the `/api/db` proxy | Planned |
+| 5. Remove `src/lib/store/*` and the `/api/db` proxy | Done: replaced by `src/lib/client-store` + `GET /api/client-state` (§18) |
 
 ## Decisions already made (do not reopen without the owner)
 - Keep Supabase + `supabase-js` (no Prisma). Add generated types; multi-write operations go in Postgres functions (`.rpc`).
@@ -28,7 +28,7 @@ which tables / Redis keys / services each feature touches, and the known traps.
 - Code style: plain typed functions and React components, not classes. Route handlers stay thin: session → zod validate → service function → response.
 
 ## Known open issues found during the survey (fix when touching the area)
-- `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Replaced in Phases 1–5.
+- `src/lib/store/*`: whole-database client cache, cross-tab re-sync storm, 2.5 s "ready" race, fake defaults (fee 12000, ZONE_B). Deleted in Phase 5 (now `src/lib/client-store`, §18).
 
 ## Boarding chart (incoming / outgoing shifts)
 Owner rules: cutoff = `shifts.booking_cutoff_minutes` (Transport Admin → Shifts, "Final Boarding Chart");
@@ -132,17 +132,11 @@ Handler helpers in `src/lib/security/actor.ts`:
    - L25-27: if `student:subscription:{userId}` is present, deletes `portal:student_row:{userId}`;
    - `getOrFetchWithCache` for `portal:student_row:{userId}`, `portal:shared_fleet_data` and `schedule:class:{class_id}:{dow}` (L30, 67, 114).
 4. **`ClientPortalLayout.tsx`** (client):
-   - imports `store` from `src/lib/store`;
-   - subscribes with `store.subscribe` (L71) for user, students, activeChildId and `isReady`;
-   - polls `/api/boarding/roaming?studentId=` every 5 s while the tab is visible (L121-165);
+   - imports `store` from `src/lib/client-store`;
+   - subscribes with `store.subscribe` for user, students (own row only) and `isReady`; shows a spinner until the first `/api/client-state` answer;
+   - polls `/api/boarding/roaming?studentId=` every 5 s while the tab is visible;
    - renders `UnifiedAppHeader`, `MobileBottomNav`, `SOSModal`, `AuthModal`, `BusDepartureAlertModal` and `ContactCrewModal`.
-5. **Store bootstrap** (`src/lib/store/index.ts`, on module load in the browser): `loadFromLocalStorage`, `syncFromSupabase`, `initAuthSync`, `initTelematicsSync`, `initCrossTabSync`, `initSupabaseRealtime`, `initStudentPaymentSync`.
-6. **`syncFromSupabase`** (`store/sync.ts` L720), each step debounced (L37-45):
-   - **`syncMasterData` (L228):** `getCachedState()` (L187) calls `GET /api/sync/state`, which serves `campusfleet:state:*` from Redis. Without a session it skips other DB reads (L184).
-   - **`syncLiveTransit` (L404)** and **`syncUserData` (L505):** read through the browser `supabase` client, which goes to the `/api/db/rest/v1/{table}` proxy. GETs issued within ~15 ms are combined into one `POST /api/db/batch` (`src/lib/supabaseClient.ts` L14-24).
-   - **L749:** the client calls `fetch("/api/cron/daily-rollover")`.
-7. **`initStudentPaymentSync`** (L96): one `GET /api/students/me` call. The 30 s interval was removed (L155).
-8. **`initTelematicsSync`** (L167): subscribes to `telematicsService`. Live-radar components start its polling.
+5. **Client cache bootstrap** (`src/lib/client-store/index.ts`, on module load in the browser): takes the user from `authService`, subscribes to it (user change → re-load, sign-out → clear), calls `GET /api/client-state` once, and re-loads on tab focus when the data is older than 60 s. No localStorage, no cross-tab broadcast, no realtime.
 
 ---
 
@@ -177,7 +171,7 @@ Handler helpers in `src/lib/security/actor.ts`:
   - `createSessionCookie`, `clearSessionCookie`.
 - `src/lib/account-service.ts`: `findOrCreateUser` (uses ADMIN_EMAIL).
 - `src/lib/email.ts`: `sendOtpEmail` (GMAIL_USER, GMAIL_APP_PASSWORD, SMTP_PASS).
-- `src/lib/auth-service.ts`: `authService`, the client singleton the store uses (`store/auth.ts`).
+- `src/lib/auth-service.ts`: `authService`, the client singleton; `src/lib/client-store` takes the current user from it.
 - `src/lib/clear-user-data.ts`: `clearClientUserData`.
 
 **Gotchas:**
@@ -255,7 +249,6 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/teachers/ride.ts`: `getTeacherRideSettings`, `saveTeacherRideSettings`, `getTeacherRide`, `getTeacherRideLive` (Redis `teacher-ride:{userId}`, 20 s). Tables `teacher_rides`, `teacher_reservations`; function `teacher_chart_tick()`; trigger `check_trip_seat_unique` (one seat per trip across `bus_reservations` and `teacher_reservations`).
 - Routes: `/api/teacher/ride-settings` (GET, PUT), `/api/teacher/ride`, `/api/teacher/ride/live`. Page `src/app/teacher/commute/page.tsx` renders `CommuteHome audience="teacher"`.
 - `src/lib/admin/fleet.ts`: buses (`createBus`, `updateBus`, `deleteBus` retires if history), routes (`saveRoute`, `deleteRoute` via RPCs, migration 20261116), special-shift allocations. Routes `/api/transport-admin/{buses,routes,special-allocations}` (MANAGE).
-- `/api/db/rest/v1/[table]` is read-only (writes → 405).
 - `src/lib/manager/dispatch.ts`: `getDispatchBoard(date)`, `runDispatchAction` → `/api/transport-manager/dispatch` (GET board, POST UPDATE/ADD/CANCEL); RPCs in migration 20261115.
 - `src/lib/manager/fleet-live.ts`: `getFleetLive` → `GET /api/transport-manager/fleet-live`; page `/transport-manager/live` (`LiveFleetTelematicsView`).
 - `POST /api/students/sos`: rider SOS → `vehicle_issues` (CRITICAL) + notifications to managers and the trip conductor.
@@ -367,12 +360,12 @@ Handler helpers in `src/lib/security/actor.ts`:
   - `scoreTripForNow`, `getBestTripForBus`, `resolveActiveTrip`: active-trip resolution.
   - `mapBusReservationToBooking`, `mergeReservationsIntoBookings`: reservation-to-booking mapping.
 - `src/lib/utils.ts`: `parseSeatLayout`, `calculateBusCapacity`, `generateSeatLayout`, `isStartingSeat`, `getTeacherStartingSeats`, `isSeatRestrictedForTeachers`.
-- Store: `store/booking.ts` L385 POSTs `/api/bookings` and L490 POSTs `/api/bookings/cancel`. L428 also calls `createBooking` locally.
+- Client cache: `store.cancelBooking` (`src/lib/client-store`) POSTs `/api/bookings/cancel` (staff reservations screen).
 
 **DB migrations:** `20261022_atomic_seat_attendance_rpcs.sql`, `20261030_fix_seat_attendance_transaction_types.sql`, `20261102_drop_legacy_bookings_and_promote_reservations.sql`, `20261103_seat_preferences_and_partner_allocation.sql`.
 
 **Gotchas:**
-- `vercel.json` schedules only `/api/cron/biometric-retention`. Daily-rollover is triggered by the client from `store/sync.ts` L749 on every store sync.
+- `vercel.json` schedules only `/api/cron/biometric-retention`. Daily-rollover is not triggered by browsers (the legacy store sync that used to call it is deleted).
 - `getTodayIST` exists twice: `time-manager.ts` L42 and `trip-resolver.ts` L6.
 
 ## 7. Master data: trips, shifts, routes, stops, zones, campuses
@@ -395,9 +388,9 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/campus | GET, POST, PATCH, DELETE | MW write MANAGE | campuses, stops, audit_logs |
 | /api/rest-zones | GET, POST, PATCH, DELETE | MW write MANAGE | rest_zones |
 | /api/fleet/settings | GET, POST | MW write MANAGE + H | transport_settings, users, audit_logs |
-| /api/sync/state | GET | session | Cached master data: routes, stops, shifts, trips, route_stops, buses, transit_zones, campuses, subscription_plans |
+| /api/client-state | GET | session; `?fresh=1` honoured for MANAGE only | Data for `src/lib/client-store`: MANAGE → admin data set; others → master data + own student/staff row (no trips, bookings, trip codes, other people, device ids). See §18 |
 | /api/staff/route-analytics | GET | MW MANAGE | bus_reservations, buses, route_stops, routes, students_full, trips |
-| /api/webhooks/supabase/invalidate-cache | POST | public + SUPABASE_WEBHOOK_SECRET | Deletes `campusfleet:state:*` per table |
+| /api/webhooks/supabase/invalidate-cache | POST | public + SUPABASE_WEBHOOK_SECRET | Deletes `client-state:master:v1` when routes, stops, shifts, route_stops, buses, transit_zones or campuses change |
 
 **Lib:**
 - `src/lib/route-optimizer.ts`:
@@ -412,11 +405,11 @@ Handler helpers in `src/lib/security/actor.ts`:
   - shift and trip status: `getShiftOperationalStatus`, `getActiveShift`, `getNextUpcomingShift`, `isTripCutoffPassed`, `getTripLiveStatus`.
 - `src/lib/transit-timing.ts`: `formatTimeWithOffset`, `formatTimeFromDateWithOffset`, `estimateRouteStopTimings`.
 - `src/lib/types.ts`: `TRANSIT_ZONES` (L513), `DEFAULT_VALIDATION_LOCKS` (L831).
-- `src/lib/transport-admin-data.ts`: `getStaffServerData` (cache `staff:transport_admin_raw_tables_v3`), `getHardwareDeskServerData` (cache `telematics:hardware_desk_server_data`).
-- Store: `store/graph.ts` (campus stops, stop graph); `store/getters.ts`; `store/crud.ts` (shifts CRUD through `/api/shifts`, L84-142).
+- `src/lib/transport-admin-data.ts`: `loadStaffData({ fresh })` (typed admin data set, cache `staff:transport_admin_raw_tables_v3`, no session checks), `getStaffServerData` (session + MANAGE redirect, then `loadStaffData`), row mappers `mapCampusRow`, `mapStopRows`, `mapRouteRows`, `mapBusRow`, `mapShiftRow`, `mapStudentRow`, `mapStaffRow`, `getHardwareDeskServerData` (cache `telematics:hardware_desk_server_data`).
+- Client cache: `src/lib/client-store/graph.ts` (campus terminal stops, stop graph, `recommendRoutes`, `networkStats`); shift/zone/campus/stop/route writes in `src/lib/client-store/index.ts` go through `/api/shifts`, `/api/zones`, `/api/campus`, `/api/stops`, `/api/transport-admin/routes`.
 
 **Gotchas:**
-- In invalidate-cache L32-60, `transit_zones` and `campuses` fall through to pushing `campusfleet:state:routes`. Nothing pushes `campusfleet:state:transit_zones`, `campusfleet:state:campuses` or `campusfleet:state:subscription_plans`, so those wait for TTL (MASTER_DATA_PERMANENT, 3600 s). Check the break/fallthrough.
+- invalidate-cache only drops `client-state:master:v1`; `staff:transport_admin_raw_tables_v3` and `client-state:admin-extra:v1` expire after 20 s, or are dropped by an admin's `?fresh=1` reload after a write.
 - AGENTS.md forbids showing trip_id or trip_code to students. Student components that read trips (ClientPortalLayout L369-382 finds trips but shows only bus, shift, route, staff and stop) should be audited.
 
 ## 8. Boarding / attendance
@@ -469,7 +462,6 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/security/safe-id.ts`: `isSafeId`, `isSafeDeviceId`, `orEqFilter`.
 - `src/lib/eta-calculator.ts`: `calculateHaversineDistanceKm`, `isWithinGeofence`, `calculateETA`.
 - `src/lib/transit-sound.ts`: `primeAudioContext`, `playBusFullAlarm`, `playBoardingConfirmedChime`, `stopAlarm`, `isAlarmRunning`.
-- Store `store/booking.ts`: local attendance-record creation (L43-260).
 
 **DB migrations:** `20260920_attendance_architecture.sql`, `20260924_create_halt_requests.sql`, `20261109_attendance_mode_settings.sql`, `20261110_validation_locks_settings.sql`, `20261022_integrate_attendance_reservations_rfid.sql`.
 
@@ -649,7 +641,6 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Tables:** `notifications` rows are written by bookings, bookings/cancel, boarding/scan, boarding/roaming, payments/approvals and seat-partner-requests.
 - **Preferences:** `/api/users/notifications` (users table; migration `20260924_add_notification_prefs.sql`).
 - **Departure alerts:** `bus_departure_alerts`, through `/api/boarding/roaming` and `BusDepartureAlertModal`.
-- **Store seed:** `INITIAL_NOTIFICATIONS` (`store/_base.ts`).
 
 ## 16. Geo / maps
 
@@ -698,7 +689,8 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | `ride:v2:{userId}` | lib/students/ride `getRideInternal` | ride, ride/live, ride/halt | TTL 20 s |
 | `onboarding:pickup-catalog:v1` | lib/students/pickup `loadPickupCatalog` | pickup-options, students/onboarding | TTL 120 s |
 | `faceid:challenge:{nonce}` | lib/face/challenge `consumeFaceChallenge` (SET NX) | enroll-v2 | TTL 5 min (single use) |
-| `campusfleet:state:{routes,stops,shifts,trips,stop_routes,buses,transit_zones,campuses,subscription_plans}` | sync/state | sync/state | Supabase webhook (partial, see §7) |
+| `client-state:master:v1` (60 s) | client-state-data `loadMasterData` | /api/client-state (non-MANAGE) | Supabase webhook; MANAGE `?fresh=1` |
+| `client-state:admin-extra:v1` (20 s: transit_zones, special_shift_allocations, subscription_plans) | client-state-data `loadAdminExtras` | /api/client-state (MANAGE) | TTL; MANAGE `?fresh=1` |
 | `telematics:bus:{alias}` (many aliases) | telematics/live POST (120 s), GET warm (60 s) | telematics/live GET | TTL |
 | `telematics:rfid:latest:{busId}` | RFID ingest (route not re-read) | telematics/live L110 | TTL |
 | `telematics:device_bus_map:{dev}`, `telematics:device_bus_number:{dev}`, `telematics:device_status:{dev}` | telematics/devices, rfid/latest-tap (300 s) | device ingest | devices and latest-tap DELETE |
@@ -709,22 +701,17 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | `gate:nonce:{device}:{nonce}` | device-auth L107 (NX) | same | TTL |
 | `ops:events` (list), `ops:events:seq` | ops-events L23-26 | ops/stream | LTRIM |
 
-## 18. Client store (`src/lib/store/*`) and DB proxy
-- **`_base.ts`:** `CampusFleetStore` class and `INITIAL_*` seed arrays (L30-45).
-- **`index.ts`:** singleton `store`, plus the bootstrap sequence in §0.
-- **`sync.ts`:** prototype methods, listed in §0:
-  - debounced syncs;
-  - `initCrossTabSync` (L51), `initSupabaseRealtime` (L86), `initStudentPaymentSync` (L96), `initTelematicsSync` (L167);
-  - `getCachedState`, `syncMasterData`, `syncLiveTransit`, `syncUserData`, `syncFromSupabase`.
-- **`auth.ts`:** `initAuthSync` using `authService`; role-switch helpers.
-- **`getters.ts`:** role-scoped getters (`getTrips(user, studentId)`, today's trips in IST, zones by campus, live-status helpers).
-- **`graph.ts`:** campus stops, primary campus, stop-graph wrappers over route-optimizer.
-- **`crud.ts`:** shift CRUD through `/api/shifts`, special shift allocations, student profile through `/api/students/profile`.
-- **`booking.ts`:** local attendance records; booking through `/api/bookings` and `/api/bookings/cancel`.
-- **`src/lib/supabaseClient.ts`:** `supabase` (browser client pointed at `/api/db`, with 15 ms read batching into `/api/db/batch`) and `supabaseAdmin` (service role, server only).
-- **`/api/db/rest/v1/[table]`** (GET, POST, PATCH, DELETE; H session): applies `db-proxy-policy` and forwards with the service key. Logic: read checks L76-81, staff write rules L106-110, end-user self-PATCH L118, own-student scoping L208.
-- **`/api/db/batch`** (POST): runs several proxy GETs in one call through `proxyGet`.
-- **`src/lib/security/db-proxy-policy.ts`:** `READABLE_TABLES`, `STAFF_READABLE_TABLES`, `STAFF_WRITE_RULES`, `FORBIDDEN_WRITE_COLUMNS`, `CREW_PATCH_COLUMNS`, `SELF_PATCH_COLUMNS`, `ALWAYS_STRIPPED`, `END_USER_STRIPPED`, `OTHER_RIDER_STRIPPED`, `isManage`, `isStaff`.
+## 18. Client cache (`src/lib/client-store`) and `/api/client-state`
+Replaced the legacy `src/lib/store/*` (whole-DB browser sync, localStorage, cross-tab broadcast) and the `/api/db` PostgREST proxy (`/api/db/rest/v1/[table]`, `/api/db/batch`, `db-proxy-policy.ts`), all deleted in Phase 5. `/api/sync/state` was deleted too.
+- **`src/lib/client-store/index.ts`:** plain module exporting `store` (no class). In-memory state, `subscribe` / `isReady` / `syncFromSupabase` (re-load). Current user from `authService`; `logout` → `authService.logout()` + `wipeAllData` (`clearClientUserData`).
+  - Reads: `getCurrentUser`, `getCampuses`, `getPrimaryCampus`, `getStudentPrimaryCampus(student)` (undefined when not set; no fallback campus), `getStops`, `getRoutes`, `getShifts`, `getBuses`, `getStudents`, `getStaff`, `getUsers`, `getTrips`, `getBookings`, `getSpecialShiftAllocations`, `getPlans`, `getTransitZones(campusId?, includeInactive?)`, `recommendRoute(lat, lng, campusId?)`, `getNetworkStats`. `getPayments` / `getGuardians` / `getMaintenance` return `[]` (no source table; pages pass their own rows).
+  - Local-only updates: `setCurrentUser` (re-loads when the user id changes), `updateUserRoleLocal`, `applyServerStudent`.
+  - Writes (each calls the server route, then re-loads `?fresh=1` before returning; throws on failure): bus create/update/delete + `allocateBusToRoute` (`/api/transport-admin/buses`), stop CRUD (`/api/stops`), campus CRUD + `setPrimaryCampus` (`/api/campus`), zone CRUD (`/api/zones`), route CRUD (`/api/transport-admin/routes`), shift CRUD (`/api/shifts`), special allocations (`/api/transport-admin/special-allocations`), `createTrip` / `deleteTrip` (`/api/transport-manager/dispatch` ADD / CANCEL), `cancelBooking` (`/api/bookings/cancel`).
+- **`src/lib/client-store/graph.ts`:** pure helpers over `route-optimizer`: `primaryCampusOf`, `stopsIncludingCampuses`, `routesWithCampusTerminus`, `buildNetworkGraph`, `recommendRoutes`, `networkStats`.
+- **`src/lib/client-state-data.ts`** (server): `ClientState` type, `getClientState(session, { fresh })`, `CLIENT_STATE_MASTER_KEY`.
+  - MANAGE (admin, transport_admin, transport_manager): `loadStaffData()` (all students, staff, users, trips with `tripCode`, latest 250 bookings, buses, routes, stops, shifts, campuses) + transit zones, special shift allocations, subscription plans.
+  - Everyone else: campuses, stops, routes with stops, shifts, transit zones, buses (number/registration/capacity/status/route only), plus the caller's own `students_full` row (students, by session user id then email) or own `staff` row (other roles). No trips, bookings, users, other students, trip codes or device ids.
+- **`src/lib/supabaseClient.ts`:** `supabaseAdmin` (service role, server only) and `db` (typed). The browser `supabase` client was removed.
 - **Other small libs:**
   - `src/lib/id.ts`: `generateTypeId`; the create*Id family (booking, trip, attendance, user, student, staff, payment, gate pass, subscription, request, audit log, halt, message, conversation); `typeIdToUuid`, `uuidToTypeId`, `isValidTypeId`, `getTypeIdTimestamp`.
   - `src/lib/translations.ts`: `LANGUAGE_OPTIONS`, `getTranslation`, `translations`.
@@ -737,7 +724,7 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | Route | Auth | Scheduled in vercel.json |
 |---|---|---|
 | /api/cron/biometric-retention | CRON_SECRET | yes, "30 20 * * *" (UTC) |
-| /api/cron/daily-rollover | CRON_SECRET or MANAGE session; GET and POST | no; triggered from the client at store/sync.ts L749 |
+| /api/cron/daily-rollover | CRON_SECRET or MANAGE session; GET and POST | no (the legacy client trigger was deleted with the store) |
 | /api/cron/reconcile-attendance | CRON_SECRET; calls merges POST through an internal NextRequest that forwards the authorization header (L15-24) | no |
 | /api/cron/reconcile-payments | CRON_SECRET | no |
 
@@ -770,14 +757,14 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | src/components/common/BusLoadingScreen.tsx:31 | animation | none |
 | src/app/portal/qr/show/page.tsx:72 | 1 s | clock for pass rotation |
 | src/app/verify/student/page.tsx:49 | 1 s | clock |
-| src/lib/store/sync.ts:155 | removed | was syncStudentStatus every 30 s |
+| src/lib/client-store/index.ts | on focus, if > 60 s old | re-loads /api/client-state (replaced the legacy store's /api/students/me sync) |
 
 ## 21. Environment variables
 - **Middleware:** NEXT_PUBLIC_APP_URL, NODE_ENV, TELEMATICS_DEVICE_KEY.
 - **jwt.ts:** JWT_SECRET.
 - **student-pass.ts:** STUDENT_PASS_SECRET, JWT_SECRET.
 - **rolling-bus-crypto.ts:** BUS_ROLLING_SECRET_KEY.
-- **Supabase:** NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (supabaseClient.ts, db proxy, payroll-crypto).
+- **Supabase:** NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (supabaseClient.ts, payroll-crypto; the anon key is no longer read by app code).
 - **Redis:** KV_REST_API_URL, KV_REST_API_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, REDIS_URL, REDIS_TOKEN (redis.ts).
 - **MongoDB:** MONGODB_URI, MONGODB_DB_NAME (mongodb.ts).
 - **Blob:** BLOB_READ_WRITE_TOKEN (maintenance/upload, delete-account); EVIDENCE_READ_WRITE_TOKEN (gate/evidence.ts).

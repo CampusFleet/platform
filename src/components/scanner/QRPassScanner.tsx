@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Booking, Student, Trip } from "@/lib/types";
 import {
   QrCode,

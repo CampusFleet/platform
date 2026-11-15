@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { authService } from "@/lib/auth-service";
 import { UserRole } from "@/lib/types";
 import { ShieldCheck, Mail, CheckCircle2, Lock, ArrowRight, X, Sparkles, AlertCircle } from "lucide-react";

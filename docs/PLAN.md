@@ -95,6 +95,7 @@ Steps:
 
 ## Phase 5 — Remove legacy ⬜
 - Delete `src/lib/store/*`, `/api/db` proxy, `/api/sync/state`, MongoDB, Leaflet.
+- ✅ Deleted `src/lib/store/*`, the `/api/db` proxy (`rest/v1/[table]`, `batch`, `db-proxy-policy.ts`), `/api/sync/state` and the browser `supabase` client. Replaced by `src/lib/client-store` (in-memory, no localStorage/cross-tab/realtime) fed by one route, `GET /api/client-state` (MANAGE: admin data set; others: master data + own row, no trips/trip codes). MongoDB and Leaflet removal still open.
 - Playwright screenshot checks at 360/375/390 px (no horizontal scroll) for student, conductor, driver routes.
 
 ## Phase 4 progress

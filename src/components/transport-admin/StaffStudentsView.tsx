@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import { store } from "@/lib/store";
+import { store } from "@/lib/client-store";
 import { Student } from "@/lib/types";
 import {
   GraduationCap,

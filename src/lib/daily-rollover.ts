@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabaseClient";
 import { getTodayIST } from "./time-manager";
 import { createTripId } from "./id";
-import { categorizeShifts } from "./duty-blocks";
+import { planTrips, type PlanShift } from "./trip-planner";
 
 export interface DailyRolloverResult {
   success: boolean;
@@ -11,6 +11,8 @@ export interface DailyRolloverResult {
   archivedBookingsCount: number;
   newTripsCount: number;
   resetBusesCount: number;
+  /** Trips created without a bus because every bus on the route was busy. */
+  needsBusCount?: number;
   message: string;
 }
 
@@ -18,7 +20,8 @@ export interface DailyRolloverResult {
  * Executes the daily operational rollover:
  * 1. Archives yesterday's incomplete trips to COMPLETED.
  * 2. Marks unboarded CONFIRMED bookings on past trips as NO_SHOW (preserving historical records).
- * 3. Generates today's operational trips across active routes and morning/evening daily shifts.
+ * 3. Creates one trip per (route, shift) the students' class timetables need today (lib/trip-planner.ts).
+ *    With force, only missing (route, shift) trips are added; existing trips are never duplicated.
  * 4. Resets bus occupancy to 0.
  * 5. Records an immutable audit log entry.
  */
@@ -32,7 +35,7 @@ export async function executeDailyRollover(
     // 1. Check if trips already exist for targetDate
     const { data: existingTrips, error: checkErr } = await supabaseAdmin
       .from("trips")
-      .select("id, trip_code, status")
+      .select("id, status, route_id, shift_id")
       .eq("trip_date", targetDate);
 
     if (checkErr) {
@@ -98,135 +101,85 @@ export async function executeDailyRollover(
       }
     }
 
-    // 3. Pull Master Templates: Routes, Shifts, Buses, Staff
-    const { data: routes } = await supabaseAdmin
-      .from("routes")
-      .select("id, code, name, is_active")
-      .eq("is_active", true);
+    // 3. Master data
+    const [{ data: routes }, { data: shifts }, { data: buses }, { data: staffList }] = await Promise.all([
+      supabaseAdmin.from("routes").select("id, code, is_active").eq("is_active", true),
+      supabaseAdmin.from("shifts").select("id, type, direction, start_time, end_time, is_special, is_active").eq("is_active", true),
+      supabaseAdmin.from("buses").select("id, bus_number, current_route_id, status").eq("status", "ACTIVE"),
+      supabaseAdmin.from("staff").select("id, employee_code, role, is_active"),
+    ]);
 
-    const { data: shifts } = await supabaseAdmin
-      .from("shifts")
-      .select("*")
-      .eq("is_active", true);
+    // Direction from the shift row; old rows without a direction fall back to the shift type.
+    const planShifts: PlanShift[] = (shifts || [])
+      .filter((s: any) => !s.is_special)
+      .map((s: any) => ({
+        id: s.id,
+        direction: s.direction || (s.type === "MORNING" ? "HOME_TO_CAMPUS" : s.type === "AFTERNOON" || s.type === "EVENING" ? "CAMPUS_TO_HOME" : null),
+        start: s.start_time,
+        end: s.end_time,
+      }));
 
-    const { data: buses } = await supabaseAdmin
-      .from("buses")
-      .select("id, bus_number, current_route_id, status, capacity")
-      .neq("status", "MAINTENANCE");
-
-    const { data: staffList } = await supabaseAdmin
-      .from("staff")
-      .select("id, employee_code, full_name, role, is_active");
-
-    const drivers = (staffList || []).filter((s: any) => s.role === "driver" || s.role === "transport_staff");
-    const conductors = (staffList || []).filter((s: any) => s.role === "conductor" || s.role === "transport_staff");
-
-    // 4. Dynamically categorize active shifts into Inbound (Home -> Campus) and Outbound (Campus -> Home)
-    const { incomingShifts, outgoingShifts } = categorizeShifts(
-      (shifts || []).map((s: any) => ({
-        ...s,
-        shiftType: s.type,
-      }))
-    );
-
-    const inboundShift = incomingShifts[0];
-
-    // 5. Only active operational buses (exclude vehicles in workshop / maintenance)
-    const operationalBuses = (buses || []).filter((b) => b.status === "ACTIVE");
-    const activeRoutes = (routes || []).filter((r) => r.is_active !== false);
-    const newTripsToInsert: any[] = [];
-
-    // Date parity for cyclic rotation: ensures buses rotate between outgoing shifts daily
-    const dayNumber = parseInt(targetDate.replace(/[^0-9]/g, "").slice(-2), 10) || 1;
-
-    // 6. Generate scheduled trips strictly via 1-Inbound + 1-Outbound Vehicle Duty Block protocol
-    activeRoutes.forEach((route) => {
-      // Find bus mapped to this corridor via database foreign key
-      const assignedBus = operationalBuses.find((b) => b.current_route_id === route.id);
-
-      if (!assignedBus) {
-        console.warn(`[DailyRollover] Route ${route.code || route.id} has no ACTIVE vehicle assigned. Skipping.`);
-        return;
-      }
-
-      const busIdx = operationalBuses.findIndex((b) => b.id === assignedBus.id);
-
-      // Resolve primary crew assigned to this vehicle
-      const busNum = Number(assignedBus.bus_number);
-      const busNumPad = String(busNum).padStart(2, "0");
-      const busNumRaw = String(busNum);
-
-      const driver = drivers.find((d) => 
-        d.employee_code === `DRV-${busNumPad}` || 
-        d.employee_code === `DRV-${busNumRaw}` ||
-        d.id === `staff-drv-${busNumPad}` ||
-        (busNum === 51 && (d.employee_code?.includes("TMP") || d.id?.includes("tempo")))
-      ) || null;
-
-      const conductor = conductors.find((c) => 
-        c.employee_code === `CND-${busNumPad}` || 
-        c.employee_code === `CND-${busNumRaw}` ||
-        c.id === `staff-cnd-${busNumPad}` ||
-        (busNum === 51 && (c.employee_code?.includes("TMP") || c.id?.includes("tempo")))
-      ) || null;
-
-      const routeClean = (route.code || route.id).toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
-      const dateClean = targetDate.replace(/[^0-9]/g, "");
-
-      // 1. Inbound Morning Run (07:15, Home -> Campus)
-      if (inboundShift) {
-        const rawTime = (inboundShift as any).start_time || inboundShift.startTime || "";
-        const timeCode = rawTime ? rawTime.substring(0, 5).replace(":", "") : "0715";
-        const inboundTripId = createTripId();
-        const inboundTripCode = `TRIP-${routeClean}-${timeCode}-${dateClean}`;
-
-        newTripsToInsert.push({
-          id: inboundTripId,
-          trip_code: inboundTripCode,
-          route_id: route.id,
-          bus_id: assignedBus.id,
-          shift_id: inboundShift.id,
-          driver_id: driver?.id || null,
-          conductor_id: conductor?.id || null,
-          trip_date: targetDate,
-          status: "SCHEDULED",
-          delay_minutes: 0,
-          manifest_locked: false,
-          current_stop_index: 0,
-        });
-      }
-
-      // 2. Outbound Run (Campus -> Home): Dynamic Rotation across active outgoing shifts
-      const assignedOutshift =
-        outgoingShifts.length > 0
-          ? outgoingShifts[(busIdx + dayNumber) % outgoingShifts.length]
-          : null;
-
-      if (assignedOutshift) {
-        const timeCode = (assignedOutshift as any).start_time
-          ? (assignedOutshift as any).start_time.substring(0, 5).replace(":", "")
-          : assignedOutshift.startTime
-          ? assignedOutshift.startTime.substring(0, 5).replace(":", "")
-          : "1645";
-        const outboundTripId = createTripId();
-        const outboundTripCode = `TRIP-${routeClean}-${timeCode}-${dateClean}`;
-
-        newTripsToInsert.push({
-          id: outboundTripId,
-          trip_code: outboundTripCode,
-          route_id: route.id,
-          bus_id: assignedBus.id,
-          shift_id: assignedOutshift.id,
-          driver_id: driver?.id || null,
-          conductor_id: conductor?.id || null,
-          trip_date: targetDate,
-          status: "SCHEDULED",
-          delay_minutes: 0,
-          manifest_locked: false,
-          current_stop_index: 0,
-        });
-      }
+    // 4. Which shifts each route needs today, from the students' class timetables.
+    const demand = await loadRouteShiftDemand(targetDate);
+    const existingPairs = new Set((existingTrips || []).map((t: any) => `${t.route_id}|${t.shift_id}`));
+    const plan = planTrips({
+      routes: (routes || []).map((r: any) => ({ id: r.id })),
+      buses: (buses || []).map((b: any) => ({ id: b.id, routeId: b.current_route_id })),
+      shifts: planShifts,
+      demand,
+      existing: existingPairs,
     });
+
+    // 5. Crew: the bus's crew from its most recent trip (set by the transport manager), else the
+    //    DRV-/CND-<bus number> employee-code convention.
+    const busIds = (buses || []).map((b: any) => b.id);
+    const { data: recentTrips } = busIds.length
+      ? await supabaseAdmin
+          .from("trips")
+          .select("bus_id, driver_id, conductor_id, trip_date")
+          .in("bus_id", busIds)
+          .lt("trip_date", targetDate)
+          .order("trip_date", { ascending: false })
+          .limit(500)
+      : { data: [] as any[] };
+    const lastCrew = new Map<number, { driver: string | null; conductor: string | null }>();
+    for (const t of recentTrips || []) {
+      const cur = lastCrew.get(t.bus_id) || { driver: null, conductor: null };
+      lastCrew.set(t.bus_id, { driver: cur.driver || t.driver_id, conductor: cur.conductor || t.conductor_id });
+    }
+    const staff = (staffList || []).filter((s: any) => s.is_active !== false);
+    const byCode = (prefix: string, busNumber: string) => {
+      const n = String(Number(busNumber));
+      return staff.find((s: any) => s.employee_code === `${prefix}-${n.padStart(2, "0")}` || s.employee_code === `${prefix}-${n}`)?.id ?? null;
+    };
+    const busById = new Map((buses || []).map((b: any) => [b.id, b]));
+    const routeById = new Map((routes || []).map((r: any) => [r.id, r]));
+    const shiftById = new Map((shifts || []).map((s: any) => [s.id, s]));
+    const dateClean = targetDate.replace(/[^0-9]/g, "");
+
+    const newTripsToInsert: any[] = plan.map((p) => {
+      const bus = p.busId != null ? busById.get(p.busId) : null;
+      const crew = p.busId != null ? lastCrew.get(p.busId) : undefined;
+      const route = routeById.get(p.routeId);
+      const time = String(shiftById.get(p.shiftId)?.start_time || "").slice(0, 5).replace(":", "");
+      return {
+        id: createTripId(),
+        // Internal only (never shown to students).
+        trip_code: `TRIP-${String(route?.code || p.routeId).toUpperCase().replace(/[^A-Z0-9]/g, "")}-${time}-${dateClean}`,
+        route_id: p.routeId,
+        bus_id: p.busId,
+        shift_id: p.shiftId,
+        driver_id: bus ? crew?.driver || byCode("DRV", bus.bus_number) : null,
+        conductor_id: bus ? crew?.conductor || byCode("CND", bus.bus_number) : null,
+        trip_date: targetDate,
+        status: "SCHEDULED",
+        delay_minutes: 0,
+        manifest_locked: false,
+        current_stop_index: 0,
+      };
+    });
+    const needsBus = plan.filter((p) => p.busId == null).length;
+    const operationalBuses = buses || [];
 
     // Deduplicate by trip id
     const uniqueTripsToInsert = Array.from(new Map(newTripsToInsert.map((t) => [t.id, t])).values());
@@ -247,13 +200,13 @@ export async function executeDailyRollover(
 
     // 5. Reset Bus Occupancy to 0
     let resetBusesCount = 0;
-    const { error: resetBusErr } = await supabaseAdmin
-      .from("buses")
-      .update({ occupancy: 0 })
-      .neq("status", "MAINTENANCE");
-
-    if (!resetBusErr) {
-      resetBusesCount = operationalBuses.length;
+    // Only on a fresh day: a forced re-run mid-day just fills in missing trips.
+    if (!existingTrips || existingTrips.length === 0) {
+      const { error: resetBusErr } = await supabaseAdmin
+        .from("buses")
+        .update({ occupancy: 0 })
+        .neq("status", "MAINTENANCE");
+      if (!resetBusErr) resetBusesCount = operationalBuses.length;
     }
 
     // 6. Expire past dynamic bus merge suggestions
@@ -280,6 +233,7 @@ export async function executeDailyRollover(
         archivedBookingsCount,
         newTripsCount,
         resetBusesCount,
+        needsBusCount: needsBus,
       },
       created_at: new Date().toISOString(),
     });
@@ -292,7 +246,8 @@ export async function executeDailyRollover(
       archivedBookingsCount,
       newTripsCount,
       resetBusesCount,
-      message: `Successfully rolled over to ${targetDate}! Created ${newTripsCount} fresh operational trips. Bus capacity 100% available for booking.`,
+      needsBusCount: needsBus,
+      message: `Created ${newTripsCount} trips for ${targetDate}${needsBus ? `; ${needsBus} need a bus (no free bus on the route at that time)` : ""}.`,
     };
   } catch (error: any) {
     console.error("[DailyRollover] Fatal error during daily rollover:", error);
@@ -306,4 +261,47 @@ export async function executeDailyRollover(
       message: `Failed to complete daily rollover: ${error.message || error}`,
     };
   }
+}
+
+/**
+ * Shift ids each route needs on `date`: for every class with transport that day (timetable, else
+ * shift demand), the incoming and outgoing shift, on the routes its paying students ride.
+ * Returns null when no class has a timetable row for that weekday (rollover then uses defaults).
+ */
+async function loadRouteShiftDemand(date: string): Promise<Map<string, Set<string>> | null> {
+  const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+  const dow = days[new Date(`${date}T12:00:00+05:30`).getUTCDay()];
+  const cols = "class_id, incoming_shift_id, outgoing_shift_id, is_today_off";
+  const [{ data: css }, { data: demandRows }] = await Promise.all([
+    supabaseAdmin.from("class_shift_schedules").select(cols).eq("day_of_week", dow),
+    supabaseAdmin.from("shift_demands").select(cols).eq("day_of_week", dow),
+  ]);
+  const byClass = new Map<string, { incoming_shift_id: string | null; outgoing_shift_id: string | null; is_today_off: boolean | null }>();
+  for (const r of demandRows || []) if (r.class_id) byClass.set(r.class_id, r);
+  for (const r of css || []) if (r.class_id) byClass.set(r.class_id, r); // the timetable wins over demand
+  if (byClass.size === 0) return null;
+
+  const { data: students } = await supabaseAdmin
+    .from("students_full")
+    .select("class_id, primary_route_id, primary_stop_id, auto_assigned_stop_id, has_active_subscription, payment_status, transport_access_suspended")
+    .not("class_id", "is", null);
+  const { data: rs } = await supabaseAdmin.from("route_stops").select("route_id, stop_id");
+  const routeOfStop = new Map<string, string>();
+  for (const r of rs || []) if (r.stop_id && r.route_id && !routeOfStop.has(r.stop_id)) routeOfStop.set(r.stop_id, r.route_id);
+
+  const demand = new Map<string, Set<string>>();
+  for (const s of students || []) {
+    if (s.transport_access_suspended) continue;
+    if (!(s.has_active_subscription || s.payment_status === "APPROVED" || s.payment_status === "COMPLETED")) continue;
+    const sched = byClass.get(s.class_id as string);
+    if (!sched || sched.is_today_off) continue;
+    const stop = s.auto_assigned_stop_id || s.primary_stop_id;
+    const route = s.primary_route_id || (stop ? routeOfStop.get(stop) : undefined);
+    if (!route) continue;
+    const set = demand.get(route) || new Set<string>();
+    if (sched.incoming_shift_id) set.add(sched.incoming_shift_id);
+    if (sched.outgoing_shift_id) set.add(sched.outgoing_shift_id);
+    demand.set(route, set);
+  }
+  return demand;
 }

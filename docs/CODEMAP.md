@@ -249,6 +249,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/portrait.ts`: `savePortrait`, `portraitKeyFromUrl`, `isPortraitLocked`, `PortraitLockedError`. Deletes the previous portrait blob.
 - `src/lib/onboarding-cache.ts`: `getOnboardingDraftKey`, `saveOnboardingDraft`, `loadOnboardingDraft`, `clearOnboardingDraft` (client draft storage).
 - `src/components/portal/CommuteHome.tsx` (My Commute), `StudentCrewSheet.tsx` (header contact sheet).
+- `src/lib/trip-planner.ts`: `planTrips` (pure; used by `daily-rollover.ts`).
 - `src/lib/students/ride.ts`: `getDayOff` (Redis `schedule:class:{classId}:{DAY}`), `getRideInternal` (Redis `ride:v2:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
 - `src/lib/dispatch/halt.ts`: `haltKey`, `getHaltRequest`, `createHaltRequest` (Redis `halt_request:{tripId}:{studentId}`, 15 min).
 - `src/lib/students/home.ts`: `getHomeSettings`, `updateHome`, `HomeUpdateError`.

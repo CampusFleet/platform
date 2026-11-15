@@ -59,6 +59,7 @@ Steps:
 - ✅ Header "Contact crew" opens `StudentCrewSheet` (own bus and its assigned conductor, plus 112) instead of `ContactCrewModal`, which guessed the bus from any in-progress trip, picked any conductor and showed hard-coded desk numbers.
 - ⬜ Teachers still use `SmartTransitCockpit` + the old `commute/*` stages + `ContactCrewModal` (Phase 4: give teachers the same ride model).
 - ⬜ The hidden seat-selection flow (AttendanceLockCard, seat grid, cancel/switch, seat partner) is not reachable from any student screen; decide whether students pick seats or the chart assigns them, then rebuild or delete.
+- ✅ Rollover creates one trip per (route, shift) that students' class timetables need (`lib/trip-planner.ts`), instead of one incoming + one rotating outgoing shift per bus. Overlapping shifts use another bus on the route, else the trip is created with no bus and counted as `needsBusCount`. Crew carried over from the bus's last trip. A forced re-run only adds missing trips and no longer resets occupancy.
 - ⬜ Push instead of polling for the radar (Supabase Realtime needs Supabase-signed tokens; our auth is custom). Revisit if polling load matters.
 - ⬜ `/api/telematics/live` POST accepts unsigned location updates (open DEVICE_PATH). Require a crew session or a device signature once all GPS hardware signs requests.
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.

@@ -8,7 +8,8 @@ import type { Bus } from "@/lib/types";
  *
  * Every reservation on the chart gets a seat (bus_reservations.chosen_seat) chosen with the
  * student's saved preferences (row, window/aisle, seat partner). The first buses.teacher_seats_count
- * seats (front) are for teachers: students are put there only when every other seat is taken.
+ * seats (front) are for teachers: teachers on the trip (teacher_reservations) are seated there first,
+ * and students are put there only when every other seat is taken.
  * The seat is final: students do not pick or change it; the conductor can move a student on the
  * seat map. Students see the number only after check-in.
  *
@@ -29,7 +30,15 @@ export async function assignTripSeats(tripId: string, busId: number | null): Pro
     .not("status", "in", "(CANCELLED,SWITCHED)");
   const all = rows || [];
   const unseated = all.filter((r) => !r.chosen_seat && r.student_id);
-  if (unseated.length === 0) return 0;
+  // Teachers on this trip (migration 20261114; missing table = no teachers).
+  const { data: tRows, error: tErr } = await (db as any)
+    .from("teacher_reservations")
+    .select("id, user_id, chosen_seat, status")
+    .eq("trip_id", tripId)
+    .neq("status", "CANCELLED");
+  const teachers: { id: string; user_id: string; chosen_seat: string | null }[] = tErr ? [] : tRows || [];
+  const unseatedTeachers = teachers.filter((t) => !t.chosen_seat);
+  if (unseated.length === 0 && unseatedTeachers.length === 0) return 0;
 
   const { data: bus } = await db.from("buses").select("id, capacity, seat_layout, total_rows, teacher_seats_count").eq("id", busId).maybeSingle();
   if (!bus) return 0;
@@ -50,9 +59,29 @@ export async function assignTripSeats(tripId: string, busId: number | null): Pro
     .in("id", ids);
   const prefById = new Map((prefs || []).map((p) => [p.id, p]));
 
-  const occupied = new Set(all.map((r) => r.chosen_seat).filter(Boolean) as string[]);
+  const occupied = new Set([...all.map((r) => r.chosen_seat), ...teachers.map((t) => t.chosen_seat)].filter(Boolean) as string[]);
   const tripRes = all.map((r) => ({ student_id: r.student_id as string, chosen_seat: r.chosen_seat, status: r.status ?? undefined }));
   let assigned = 0;
+
+  // 1. Teachers first: front teacher seats, then any free seat.
+  const front = seats.slice(0, Math.max(0, Number(busModel.teacherSeatsCount) || 0));
+  for (const t of unseatedTeachers) {
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const seat = front.find((x) => !occupied.has(x)) || seats.find((x) => !occupied.has(x));
+      if (!seat) break;
+      const { data, error } = await (db as any)
+        .from("teacher_reservations")
+        .update({ chosen_seat: seat })
+        .eq("id", t.id)
+        .is("chosen_seat", null)
+        .select("id")
+        .maybeSingle();
+      occupied.add(seat);
+      if (error?.code === "23505") continue;
+      if (data) assigned++;
+      break;
+    }
+  }
 
   // Students whose partner is already seated go first, so they can sit next to them.
   unseated.sort((a, b) => {

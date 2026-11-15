@@ -1,73 +1,28 @@
-import { getSession } from "@/lib/jwt";
 import { redirect } from "next/navigation";
-import { supabaseAdmin } from "@/lib/supabaseClient";
-import TeacherCommuteView from "@/components/teacher/TeacherCommuteView";
-import { Metadata } from "next";
+import type { Metadata } from "next";
+import { getSession } from "@/lib/jwt";
+import { getTeacherRide, getTeacherRideLive } from "@/lib/teachers/ride";
+import CommuteHome from "@/components/portal/CommuteHome";
+import { Card, EmptyState } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "My Commute | CampusFleet" };
 
-export const metadata: Metadata = {
-  title: "My Faculty Commute | CampusFleet",
-};
-
+/** Teacher commute: the teacher's own ride today (lib/teachers/ride.ts), same screen as students. */
 export default async function TeacherCommutePage() {
   const session = await getSession();
-
-  if (!session) {
-    redirect("/login?redirect=/teacher/commute");
+  if (!session) redirect("/login?redirect=/teacher/commute");
+  if (!["teacher", "faculty"].includes(session.role)) {
+    return (
+      <Card className="max-w-md mx-auto mt-6">
+        <EmptyState title="This page is for teachers" />
+      </Card>
+    );
   }
-
-  const teacherUserId = session.userId || (session as any).id;
-  const isTeacherOrAdmin =
-    session.role === "teacher" ||
-    session.role === "faculty" ||
-    session.role === "admin" ||
-    session.role === "transport_manager";
-
-  if (!isTeacherOrAdmin) {
-    redirect("/portal");
-  }
-
-  // Fetch teacher profile
-  const { data: dbUser } = await supabaseAdmin
-    .from("users")
-    .select("*")
-    .eq("id", teacherUserId)
-    .single();
-
-  const user = dbUser || {
-    id: teacherUserId,
-    name: session.fullName || (session as any).name || "Faculty",
-    email: session.email,
-    role: session.role,
-  };
-
-  // Fetch transit fleet data in parallel
-  const [
-    { data: buses },
-    { data: stops },
-    { data: shifts },
-    { data: trips },
-    { data: bookings },
-    { data: routes },
-  ] = await Promise.all([
-    supabaseAdmin.from("buses").select("*").order("bus_number"),
-    supabaseAdmin.from("stops").select("*").order("name"),
-    supabaseAdmin.from("shifts").select("*").eq("is_active", true).order("start_time"),
-    supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false }).limit(20),
-    supabaseAdmin.from("bus_reservations_full").select("*").or(`student_id.eq.${teacherUserId},student_id.eq.stud-${teacherUserId}`).order("created_at", { ascending: false }).limit(10),
-    supabaseAdmin.from("routes").select("*").eq("is_active", true).order("name"),
-  ]);
-
+  const [ride, live] = await Promise.all([getTeacherRide(session.userId), getTeacherRideLive(session.userId)]);
   return (
-    <TeacherCommuteView
-      user={user}
-      buses={buses || []}
-      stops={stops || []}
-      shifts={shifts || []}
-      trips={trips || []}
-      bookings={bookings || []}
-      routes={routes || []}
-    />
+    <div className="w-full max-w-3xl mx-auto px-3 sm:px-0 py-2">
+      <CommuteHome ride={ride} live={live} dayOff={false} dayName="" audience="teacher" />
+    </div>
   );
 }

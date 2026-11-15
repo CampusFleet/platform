@@ -42,7 +42,7 @@ export interface PublicRide {
   conductor: { name: string | null; phone: string | null } | null;
 }
 
-interface RideInternal extends PublicRide {
+export interface RideInternal extends PublicRide {
   studentId: string | null;
   tripId: string | null;
 }
@@ -69,9 +69,9 @@ const nowIstMinutes = () => {
   const d = new Date(Date.now() + 5.5 * 3600_000);
   return d.getUTCHours() * 60 + d.getUTCMinutes();
 };
-const toMin = (t: string | null) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : 0);
+const toMin = (t: string | null | undefined) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : 0);
 
-const EMPTY: RideInternal = {
+export const EMPTY_RIDE: RideInternal = {
   hasRide: false, studentId: null, tripId: null, busId: null, busNumber: null, busModel: null, registrationNo: null, capacity: null,
   shiftName: null, departureTime: null, arrivalTime: null, direction: null, routeName: null, routeColor: null, stops: [],
   myStopId: null, myStopLandmark: null, home: null, campus: null, conductor: null,
@@ -83,10 +83,10 @@ async function buildRide(userId: string): Promise<RideInternal> {
     .select("id, campus_id, primary_stop_id, home_latitude, home_longitude")
     .eq("user_id", userId)
     .maybeSingle();
-  if (!s) return EMPTY;
+  if (!s) return EMPTY_RIDE;
 
   const base: RideInternal = {
-    ...EMPTY,
+    ...EMPTY_RIDE,
     studentId: s.id,
     myStopId: s.primary_stop_id,
     home: s.home_latitude != null && s.home_longitude != null ? { latitude: Number(s.home_latitude), longitude: Number(s.home_longitude) } : null,
@@ -101,6 +101,19 @@ async function buildRide(userId: string): Promise<RideInternal> {
   const list = ((reservations || []) as any[]).filter((r) => r.trip_id);
   if (list.length === 0) return base;
 
+  return rideFromReservations(base, list, s.campus_id ?? null, s.primary_stop_id ?? null);
+}
+
+export interface RideReservation {
+  trip_id: string;
+  bus_id: number | null;
+  boarding_stop_id: string | null;
+  shift: { name: string | null; start_time: string | null; end_time: string | null; direction: string | null } | null;
+}
+
+/** Shared by students and teachers: today's reservations → the ride that matters now, with details. */
+export async function rideFromReservations(base: RideInternal, list: RideReservation[], campusId: string | null, defaultStopId: string | null): Promise<RideInternal> {
+  if (list.length === 0) return base;
   // The ride that matters now: one in progress, else the next one, else the last one today.
   const tripIds = list.map((r) => r.trip_id);
   const { data: trips } = await db.from("trips").select("id, bus_id, route_id, status, conductor_id").in("id", tripIds);
@@ -123,7 +136,7 @@ async function buildRide(userId: string): Promise<RideInternal> {
       ? db.from("route_stops").select("stop_id, stop_order, arrival_offset_minutes, stop:stops(id, name, landmark, latitude, longitude)").eq("route_id", trip.route_id).order("stop_order")
       : Promise.resolve({ data: [] as any[] }),
     trip.conductor_id ? db.from("staff").select("full_name, phone").eq("id", trip.conductor_id).maybeSingle() : Promise.resolve({ data: null }),
-    s.campus_id ? db.from("campuses").select("name, latitude, longitude").eq("id", s.campus_id).maybeSingle() : Promise.resolve({ data: null }),
+    campusId ? db.from("campuses").select("name, latitude, longitude").eq("id", campusId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   const start = hhmm(pick.shift?.start_time);
@@ -141,7 +154,7 @@ async function buildRide(userId: string): Promise<RideInternal> {
   const conductor = conductorRes.data as { full_name: string | null; phone: string | null } | null;
 
   const bus = busRes.data as { bus_number: string | null; model: string | null; registration_no: string | null; capacity: number | null } | null;
-  const myStopId = pick.boarding_stop_id || s.primary_stop_id;
+  const myStopId = pick.boarding_stop_id || defaultStopId;
   const myStopRow = ((rsRes.data || []) as any[]).find((r) => r.stop?.id === myStopId)?.stop;
   return {
     ...base,

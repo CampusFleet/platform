@@ -52,6 +52,8 @@ export interface DutyPassenger {
   unlockedBy: string | null;
   roamingStatus: string | null;
   needsConfirmation: boolean;
+  /** TEACHER rows come from teacher_reservations (shown and seated; boarding is not marked here). */
+  kind: "STUDENT" | "TEACHER";
 }
 
 export interface DutyAttendance {
@@ -216,8 +218,41 @@ export async function loadManifest(trip: DutyTrip): Promise<{ manifest: DutyPass
       unlockedBy: r.unlocked_by,
       roamingStatus: r.roaming_status,
       needsConfirmation: Boolean(r.needs_confirmation),
+      kind: "STUDENT" as const,
     };
   });
+  // Teachers on this trip (migration 20261114; a missing table just means no teachers).
+  const { data: tRes, error: tErr } = await (supabaseAdmin as any)
+    .from("teacher_reservations")
+    .select("id, user_id, boarding_stop_id, chosen_seat, status, boarded_at")
+    .eq("trip_id", trip.id)
+    .neq("status", "CANCELLED");
+  if (!tErr && tRes?.length) {
+    const { data: tUsers } = await supabaseAdmin.from("users").select("id, full_name, phone, photo_url").in("id", tRes.map((t: any) => t.user_id));
+    const uById = new Map((tUsers || []).map((u: any) => [u.id, u]));
+    for (const t of tRes as any[]) {
+      const u: any = uById.get(t.user_id) || {};
+      manifest.push({
+        reservationId: t.id,
+        studentId: t.user_id,
+        fullName: u.full_name || "Teacher",
+        studentIdCode: "",
+        photoUrl: u.photo_url || "",
+        phone: u.phone || null,
+        className: "Teacher",
+        boardingStopId: t.boarding_stop_id || "",
+        boardingStopName: stopName.get(t.boarding_stop_id) || "",
+        seat: t.chosen_seat || null,
+        status: t.status,
+        assignedBy: "TEACHER_CHART",
+        boardedAt: t.boarded_at,
+        unlockedBy: null,
+        roamingStatus: null,
+        needsConfirmation: false,
+        kind: "TEACHER",
+      });
+    }
+  }
   const order = new Map((trip.route?.stops || []).map((s) => [s.stopId, s.order]));
   manifest.sort((a, b) => (order.get(a.boardingStopId) ?? 999) - (order.get(b.boardingStopId) ?? 999) || a.fullName.localeCompare(b.fullName));
 

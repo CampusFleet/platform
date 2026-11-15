@@ -252,6 +252,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/seating.ts`: `assignTripSeats(tripId, busId)` gives chart passengers a final seat (`chosen_seat`) using row/position/partner preferences, front `teacher_seats_count` seats used for students only when the rest is full; called from `loadManifest` (conductor poll) and the student ride build. Unique index `uq_bus_reservations_trip_seat` prevents double seats.
 - `src/components/portal/SeatPreferencesSettings.tsx`: Settings row/window/aisle + mutual seat partner by university ID.
 - Crash reporting: `src/app/error.tsx`, `src/app/global-error.tsx` and `components/maps/MapBoundary.tsx` call `lib/client/report-error.ts` → `POST /api/client-errors`, which only logs `[client-error] {...}` to the server log (read with `vercel logs`).
+- `src/lib/teachers/ride.ts`: `getTeacherRideSettings`, `saveTeacherRideSettings`, `getTeacherRide`, `getTeacherRideLive` (Redis `teacher-ride:{userId}`, 20 s). Tables `teacher_rides`, `teacher_reservations`; function `teacher_chart_tick()`; trigger `check_trip_seat_unique` (one seat per trip across `bus_reservations` and `teacher_reservations`).
+- Routes: `/api/teacher/ride-settings` (GET, PUT), `/api/teacher/ride`, `/api/teacher/ride/live`. Page `src/app/teacher/commute/page.tsx` renders `CommuteHome audience="teacher"`.
 - `src/lib/trip-planner.ts`: `planTrips` (pure; used by `daily-rollover.ts`).
 - `src/lib/students/ride.ts`: `getDayOff` (Redis `schedule:class:{classId}:{DAY}`), `getRideInternal` (Redis `ride:v2:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
 - `src/lib/dispatch/halt.ts`: `haltKey`, `getHaltRequest`, `createHaltRequest` (Redis `halt_request:{tripId}:{studentId}`, 15 min).

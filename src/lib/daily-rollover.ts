@@ -279,7 +279,13 @@ async function loadRouteShiftDemand(date: string): Promise<Map<string, Set<strin
   const byClass = new Map<string, { incoming_shift_id: string | null; outgoing_shift_id: string | null; is_today_off: boolean | null }>();
   for (const r of demandRows || []) if (r.class_id) byClass.set(r.class_id, r);
   for (const r of css || []) if (r.class_id) byClass.set(r.class_id, r); // the timetable wins over demand
-  if (byClass.size === 0) return null;
+  // Teachers who ride that day also need a trip on their route + shifts (migration 20261114).
+  const { data: teacherRides, error: trErr } = await (supabaseAdmin as any)
+    .from("teacher_rides")
+    .select("route_id, incoming_shift_id, outgoing_shift_id, days, is_active")
+    .eq("is_active", true);
+  const riding = (trErr ? [] : teacherRides || []).filter((t: any) => t.route_id && (t.days || []).includes(dow));
+  if (byClass.size === 0 && riding.length === 0) return null;
 
   const { data: students } = await supabaseAdmin
     .from("students_full")
@@ -302,6 +308,12 @@ async function loadRouteShiftDemand(date: string): Promise<Map<string, Set<strin
     if (sched.incoming_shift_id) set.add(sched.incoming_shift_id);
     if (sched.outgoing_shift_id) set.add(sched.outgoing_shift_id);
     demand.set(route, set);
+  }
+  for (const t of riding) {
+    const set = demand.get(t.route_id) || new Set<string>();
+    if (t.incoming_shift_id) set.add(t.incoming_shift_id);
+    if (t.outgoing_shift_id) set.add(t.outgoing_shift_id);
+    demand.set(t.route_id, set);
   }
   return demand;
 }

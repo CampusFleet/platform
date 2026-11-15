@@ -26,12 +26,17 @@ export default function CommuteHome({
   live: initialLive,
   dayOff,
   dayName,
+  audience = "student",
 }: {
   ride: PublicRide;
   live: RideLive;
   dayOff: boolean;
   dayName: string;
+  /** teacher: /api/teacher/ride*, no student-only links (live map, QR pass), seat shown once assigned. */
+  audience?: "student" | "teacher";
 }) {
+  const api = audience === "teacher" ? "/api/teacher/ride" : "/api/students/ride";
+  const teacher = audience === "teacher";
   const [ride, setRide] = useState(initialRide);
   const [live, setLive] = useState(initialLive);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,7 +44,7 @@ export default function CommuteHome({
 
   const refreshLive = useCallback(async () => {
     try {
-      const r = await fetch("/api/students/ride/live", { cache: "no-store" });
+      const r = await fetch(`${api}/live`, { cache: "no-store" });
       const d = await r.json();
       if (d.success) setLive(d.live);
     } catch {
@@ -50,7 +55,7 @@ export default function CommuteHome({
   const refreshAll = async () => {
     setRefreshing(true);
     try {
-      const r = await fetch("/api/students/ride", { cache: "no-store" });
+      const r = await fetch(api, { cache: "no-store" });
       const d = await r.json();
       if (d.success) setRide(d.ride);
       await refreshLive();
@@ -93,13 +98,15 @@ export default function CommuteHome({
               <Button size="sm" variant="secondary" onClick={refreshAll} loading={refreshing}>
                 <RefreshCw className="w-4 h-4" /> Check again
               </Button>
-              <Link href="/portal/settings" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600">
-                <Settings className="w-4 h-4" /> Check my pickup stop
+              <Link href={teacher ? "/teacher/settings" : "/portal/settings"} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600">
+                <Settings className="w-4 h-4" /> {teacher ? "Set my bus" : "Check my pickup stop"}
               </Link>
             </div>
           }
         >
-          Seats are assigned from the boarding chart before each shift. Your bus shows here once it is ready.
+          {teacher
+            ? "Choose your route, stop and shifts in Settings. Your bus shows here once the boarding chart adds you."
+            : "Seats are assigned from the boarding chart before each shift. Your bus shows here once it is ready."}
         </EmptyState>
       </Card>
     );
@@ -134,12 +141,12 @@ export default function CommuteHome({
           <Info
             icon={<Armchair className="w-4 h-4 text-emerald-600" />}
             label="Seat"
-            value={live.boarded ? (live.seat ? `Seat ${live.seat}` : "On board") : "Shown after check-in"}
+            value={live.seat && (live.boarded || teacher) ? `Seat ${live.seat}` : live.boarded ? "On board" : teacher ? "Being assigned" : "Shown after check-in"}
             sub={ride.routeName || undefined}
           />
         </div>
 
-        {!live.boarded && !done && !cancelled && (
+        {!teacher && !live.boarded && !done && !cancelled && (
           <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
             {ways.length ? `When you board, ${joinWays(ways)}.` : "The conductor checks you in when you board."}
           </p>
@@ -147,7 +154,8 @@ export default function CommuteHome({
         {cancelled && <p className="mt-3 text-xs font-semibold text-rose-600">This trip was cancelled. Contact the transport office if you still need to travel.</p>}
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className={teacher ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-3 gap-3"}>
+        {!teacher && (
         <Link href="/portal/radar" className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white min-w-0">
           <span className="flex items-center gap-2 min-w-0">
             <Navigation className="w-5 h-5 shrink-0" />
@@ -155,6 +163,8 @@ export default function CommuteHome({
           </span>
           <ArrowRight className="w-4 h-4 shrink-0" />
         </Link>
+        )}
+        {!teacher && (
         <Link href={locks.dynamicQr ? "/portal/qr/show" : "/portal/qr"} className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 min-w-0">
           <span className="flex items-center gap-2 min-w-0">
             <QrCode className="w-5 h-5 shrink-0 text-blue-600" />
@@ -162,6 +172,7 @@ export default function CommuteHome({
           </span>
           <ArrowRight className="w-4 h-4 shrink-0 text-gray-400" />
         </Link>
+        )}
         {ride.conductor?.phone ? (
           <a href={`tel:${ride.conductor.phone}`} className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 min-w-0">
             <span className="flex items-center gap-2 min-w-0">

@@ -23,6 +23,7 @@ import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
 import { HomeStopSettings } from "@/components/portal/HomeStopSettings";
 import { SeatPreferencesSettings } from "@/components/portal/SeatPreferencesSettings";
+import { TeacherBusSettings } from "@/components/teacher/TeacherBusSettings";
 import { BiometricPrivacyCard } from "@/components/common/BiometricPrivacyCard";
 
 export function SettingsView() {
@@ -402,6 +403,7 @@ export function SettingsView() {
   const [selectedSpecializationId, setSelectedSpecializationId] = useState("");
 
   const isStudent = (currentUser as any)?.role === "student" || (currentUser as any)?.role === "portal" || !currentUser?.role;
+  const isTeacherRole = (currentUser as any)?.role === "teacher" || (currentUser as any)?.role === "faculty";
   const isCommuter = isStudent || (currentUser as any)?.role === "teacher" || (currentUser as any)?.role === "faculty" || (currentUser as any)?.role === "staff";
 
   // Bus Switch / Transfer Request State
@@ -1033,6 +1035,7 @@ export function SettingsView() {
 
             {isStudent && <BiometricPrivacyCard />}
             {isStudent && <SeatPreferencesSettings />}
+            {isTeacherRole && <TeacherBusSettings />}
           </>
         )}
         

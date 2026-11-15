@@ -191,7 +191,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
 
-    return NextResponse.next();
+    return withNoStore(NextResponse.next());
   }
 
   // Check if the route is protected
@@ -258,9 +258,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL(correctPortal, req.url));
   }
 
-  return NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  return withNoStore(
+    NextResponse.next({
+      request: { headers: requestHeaders },
+    })
+  );
+}
+
+/**
+ * Keep auth-dependent pages out of the browser's back/forward cache, so Back
+ * re-requests them and the session checks above run again (login page after
+ * sign-in, portal pages after sign-out).
+ */
+function withNoStore(res: NextResponse): NextResponse {
+  res.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+  return res;
 }
 
 export const config = {

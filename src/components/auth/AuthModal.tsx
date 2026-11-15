@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import { store } from "@/lib/client-store";
+import { replaceLocation } from "@/lib/client/auth-navigation";
 import { authService } from "@/lib/auth-service";
 import { UserRole } from "@/lib/types";
 import { ShieldCheck, Mail, CheckCircle2, Lock, ArrowRight, X, Sparkles, AlertCircle } from "lucide-react";
@@ -14,7 +14,6 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose, initialRole = "student" }: AuthModalProps) {
-  const router = useRouter();
   const [role, setRole] = useState<UserRole>(initialRole);
   const [authStep, setAuthStep] = useState<"SELECT" | "EMAIL_OTP" | "SUCCESS">("SELECT");
   const [email, setEmail] = useState("");
@@ -82,8 +81,7 @@ export function AuthModal({ isOpen, onClose, initialRole = "student" }: AuthModa
         setTimeout(() => {
           onClose();
           setAuthStep("SELECT");
-          const target = authService.getTargetRouteForRole(user.role);
-          router.push(target);
+          replaceLocation(authService.getTargetRouteForRole(user.role));
         }, 700);
       } else {
         setErrorMessage(res.message);

@@ -243,7 +243,7 @@ export function SettingsView() {
       
       // Short delay to let the user see the success feedback before redirecting
       setTimeout(() => {
-        window.location.href = "/account-deleted";
+        window.location.replace("/account-deleted");
       }, 500);
     } catch (err: any) {
       console.error(err);

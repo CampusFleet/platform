@@ -2,8 +2,8 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { store } from "@/lib/client-store";
+import { redirectIfSignedIn, replaceLocation } from "@/lib/client/auth-navigation";
 
 import { UserRole, Stop, Campus } from "@/lib/types";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
@@ -33,7 +33,6 @@ import { authService } from "@/lib/auth-service";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [authStep, setAuthStep] = useState<"LOGIN_FORM" | "EMAIL_OTP" | "ONBOARDING" | "SUCCESS">("LOGIN_FORM");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
@@ -52,13 +51,21 @@ export default function LoginPage() {
   const [pendingAuthUser, setPendingAuthUser] = useState<any>(null);
 
   // If already authenticated, redirect straight to assigned console
+  // Also re-checked when the browser restores this page from the back/forward
+  // cache, where neither middleware nor this mount effect would run again.
   React.useEffect(() => {
     const user = store.getCurrentUser();
     if (user) {
-      const target = authService.getTargetRouteForRole(user.role);
-      router.replace(target);
+      replaceLocation(authService.getTargetRouteForRole(user.role));
+      return;
     }
-  }, [router]);
+    void redirectIfSignedIn();
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) void redirectIfSignedIn();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
 
   React.useEffect(() => {
     const initialStops = store.getStops();
@@ -216,7 +223,7 @@ export default function LoginPage() {
 
         if (authUser.role === "admin") {
           setAuthStep("SUCCESS");
-          setTimeout(() => router.push("/admin"), 700);
+          setTimeout(() => replaceLocation("/admin"), 700);
         } else if (
           authUser.role === "driver" ||
           authUser.role === "conductor" ||
@@ -225,7 +232,7 @@ export default function LoginPage() {
           authUser.role === "teacher"
         ) {
           setAuthStep("SUCCESS");
-          setTimeout(() => router.push(authService.getTargetRouteForRole(authUser.role)), 700);
+          setTimeout(() => replaceLocation(authService.getTargetRouteForRole(authUser.role)), 700);
         } else {
           // Student role
           if (
@@ -233,7 +240,7 @@ export default function LoginPage() {
             (authUser.campus && authUser.fullName && authUser.fullName !== "Student Commuter")
           ) {
             setAuthStep("SUCCESS");
-            setTimeout(() => router.push("/portal"), 700);
+            setTimeout(() => replaceLocation("/portal"), 700);
           } else {
             // First time student commuter onboarding
             setPendingAuthUser(authUser);
@@ -299,7 +306,7 @@ export default function LoginPage() {
 
       setAuthStep("SUCCESS");
       setTimeout(() => {
-        router.push("/portal");
+        replaceLocation("/portal");
       }, 700);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to complete onboarding.");

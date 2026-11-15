@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { replaceLocation } from "@/lib/client/auth-navigation";
 import { store } from "@/lib/client-store";
 import { UserRole } from "@/lib/types";
 import { useTheme } from "./ThemeProvider";
@@ -309,7 +310,8 @@ export function UnifiedAppHeader({
     setIsProfileOpen(false);
     setIsAppsOpen(false);
     setIsDrawerOpen(false);
-    router.push("/");
+    // replace(): Back after sign-out must not show the cached portal page.
+    replaceLocation("/login");
   };
 
   const currentPortalConfig =

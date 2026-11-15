@@ -82,7 +82,7 @@ absent on the morning bus → evening seat kept only if the student confirms it 
    - **device:** passes if the request has `x-cf-device` plus `x-cf-signature`, or if `x-device-key` matches `TELEMATICS_DEVICE_KEY` (at least 32 chars, compared with `safeEqual`). Otherwise a session is needed: any role for GET/HEAD, STAFF only for writes.
    - **session:** returns 401 without a session and 403 if `roles` is set and doesn't include `session.role`.
    - All /api calls get an `x-request-id`.
-7. **L181-195:** `/` and `/login` redirect a signed-in user to their portal (`getTargetRouteForRole`). Signed-out `/` goes to `/login`.
+7. **L181-195:** `/` and `/login` redirect a signed-in user to their portal (`getTargetRouteForRole`). Signed-out `/` goes to `/login`. The `/login` page and every protected page response get `Cache-Control: private, no-store` (`withNoStore`) so the browser's back/forward cache can't show them without these checks.
 8. **L198-212:** protected page prefixes (`/portal`, `/admin`, `/transport-admin`, `/transport-manager`, `/driver`, `/conductor`, `/teacher`) redirect to `/login?redirect=` and delete an invalid cookie.
 9. **L215-219:** sets headers `x-user-id`, `x-user-email`, `x-user-role` and `x-request-id`.
 10. **L231-259:** cross-portal guard (`allowedPortalsForRole`):
@@ -173,8 +173,10 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/email.ts`: `sendOtpEmail` (GMAIL_USER, GMAIL_APP_PASSWORD, SMTP_PASS).
 - `src/lib/auth-service.ts`: `authService`, the client singleton; `src/lib/client-store` takes the current user from it.
 - `src/lib/clear-user-data.ts`: `clearClientUserData`.
+- `src/lib/client/auth-navigation.ts`: `homeForRole`, `replaceLocation` (`location.replace`), `redirectIfSignedIn` (GET /api/auth/session → role home). Sign-in (OTP, Google start, AuthModal) and sign-out (header → `/login`, account deletion) all use `location.replace`, so the page being left is not in history. The login page also calls `redirectIfSignedIn` on mount and on `pageshow` with `persisted`.
 
 **Gotchas:**
+- Never `router.push` into or out of an auth state: Back would return to `/login` (after sign-in) or a cached portal page (after sign-out). Use `replaceLocation`.
 - Middleware skips /api/auth completely, so these routes get no x-request-id and no CSRF check (middleware.ts L120).
 - `student-pass.ts` and `payroll-crypto.ts` fall back to JWT_SECRET for key material (env grep).
 

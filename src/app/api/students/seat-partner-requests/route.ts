@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveActingStudentId } from "@/lib/security/actor";
+import { isSafeId } from "@/lib/security/safe-id";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { allocateAdjacentPairForPartners } from "@/lib/seat-allocation-engine";
@@ -20,8 +22,10 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
     const searchParams = req.nextUrl.searchParams;
-    const studentId = searchParams.get("studentId") || session?.userId;
+    // Identity from the session only; staff may name a student.
+    const studentId = (await resolveActingStudentId(session, searchParams.get("studentId"))).studentId || session.userId;
     const busId = searchParams.get("busId");
     const shiftId = searchParams.get("shiftId");
 
@@ -188,8 +192,22 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, message: "Authentication required." }, { status: 401 });
     const body = await req.json();
     const { action } = body;
+    const acting = await resolveActingStudentId(session, body.senderId || body.studentId || body.respondingStudentId);
+    const me = acting.studentId;
+    if (!me) return NextResponse.json({ success: false, message: "No student profile for this account." }, { status: 404 });
+    // Request-id actions: the caller must be the right side of the request (staff may act on any).
+    const requestFor = async (requestId: unknown, side: "sender" | "receiver" | "either") => {
+      if (!isSafeId(requestId)) return null;
+      const { data } = await supabaseAdmin.from("seat_partner_requests").select("sender_id, receiver_id").eq("id", requestId as string).maybeSingle();
+      if (!data) return null;
+      if (acting.isStaff) return data;
+      const ok = side === "sender" ? data.sender_id === me : side === "receiver" ? data.receiver_id === me : data.sender_id === me || data.receiver_id === me;
+      return ok ? data : null;
+    };
+    const notYours = () => NextResponse.json({ success: false, message: "This request is not yours." }, { status: 403 });
 
     const today = new Date().toISOString().split("T")[0];
 
@@ -197,7 +215,8 @@ export async function POST(req: NextRequest) {
     // ACTION 1: SEND_REQUEST
     // ══════════════════════════════════════════════════════════════════
     if (action === "SEND_REQUEST") {
-      const { senderId, receiverId, receiverStudentIdCode, busId, shiftId, tripId, preferredRowZone = "NO_PREFERENCE" } = body;
+      const { receiverId, receiverStudentIdCode, busId, shiftId, tripId, preferredRowZone = "NO_PREFERENCE" } = body;
+      const senderId = me;
 
       if (!senderId || (!receiverId && !receiverStudentIdCode)) {
         return NextResponse.json(
@@ -365,8 +384,9 @@ export async function POST(req: NextRequest) {
     // ACTION 2: ACCEPT_REQUEST
     // ══════════════════════════════════════════════════════════════════
     if (action === "ACCEPT_REQUEST") {
-      const { requestId, respondingStudentId } = body;
-      return await executeAcceptance(requestId, respondingStudentId);
+      const { requestId } = body;
+      if (!(await requestFor(requestId, "receiver"))) return notYours();
+      return await executeAcceptance(requestId, me);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -374,6 +394,7 @@ export async function POST(req: NextRequest) {
     // ══════════════════════════════════════════════════════════════════
     if (action === "DECLINE_REQUEST") {
       const { requestId } = body;
+      if (!(await requestFor(requestId, "receiver"))) return notYours();
       await supabaseAdmin
         .from("seat_partner_requests")
         .update({ status: "DECLINED", responded_at: new Date().toISOString() })
@@ -390,6 +411,7 @@ export async function POST(req: NextRequest) {
     // ══════════════════════════════════════════════════════════════════
     if (action === "CANCEL_REQUEST") {
       const { requestId } = body;
+      if (!(await requestFor(requestId, "sender"))) return notYours();
       await supabaseAdmin
         .from("seat_partner_requests")
         .update({ status: "CANCELLED", responded_at: new Date().toISOString() })
@@ -405,8 +427,8 @@ export async function POST(req: NextRequest) {
     // ACTION 5: UNLINK_PARTNER
     // ══════════════════════════════════════════════════════════════════
     if (action === "UNLINK_PARTNER") {
-      const { requestId, studentId } = body;
-
+      const { requestId } = body;
+      if (!(await requestFor(requestId, "either"))) return notYours();
       const { data: reqRow } = await supabaseAdmin
         .from("seat_partner_requests")
         .select("*")

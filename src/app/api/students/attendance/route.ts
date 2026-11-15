@@ -7,6 +7,26 @@ import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
 import { getLiveLocationFromMongo } from "@/lib/mongodb";
 import { createTripId, createBookingId, createAttendanceId } from "@/lib/id";
 
+import { getOwnStudentId, isStaffRole } from "@/lib/security/actor";
+import { isSafeId } from "@/lib/security/safe-id";
+
+/**
+ * The student this request acts on, from the session only (AGENTS.md rule). Staff may name a student;
+ * students and teachers always act on themselves (their students row id, else their user id).
+ */
+async function actingStudentRef(session: { userId: string; role: string }, requested: unknown): Promise<string> {
+  if (isStaffRole(session.role) && isSafeId(requested)) return requested as string;
+  return (await getOwnStudentId(session.userId)) || session.userId;
+}
+
+async function ownsReservation(session: { role: string }, reservationId: unknown, ids: string[]): Promise<boolean> {
+  if (isStaffRole(session.role)) return true;
+  if (!isSafeId(reservationId)) return false;
+  const { data } = await supabaseAdmin.from("bus_reservations").select("student_id").eq("id", reservationId as string).maybeSingle();
+  return Boolean(data && ids.includes(data.student_id as string));
+}
+
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -23,7 +43,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const rawStudentId = searchParams.get("studentId") || (session as any).studentId || session.userId;
+    const rawStudentId = await actingStudentRef(session, searchParams.get("studentId"));
 
     // Resolve date in IST & UTC
     const now = new Date();
@@ -603,7 +623,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Seat number is required." }, { status: 400 });
     }
 
-    const rawStudentId = studentId || (session as any).studentId || session.userId;
+    const rawStudentId = await actingStudentRef(session, studentId);
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istDate = new Date(now.getTime() + istOffset);
@@ -634,6 +654,9 @@ export async function POST(req: NextRequest) {
 
     if (findErr || !targetRes) {
       return NextResponse.json({ success: false, message: "No active bus reservation found for today." }, { status: 404 });
+    }
+    if (!isStaffRole(session.role) && ![resolvedStudentId, session.userId].includes(targetRes.student_id)) {
+      return NextResponse.json({ success: false, message: "This is not your reservation." }, { status: 403 });
     }
 
     // Verify N starting seats restriction for teachers on this bus
@@ -910,7 +933,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Reservation ID is required." }, { status: 400 });
     }
 
-    const rawStudentId = studentId || (session as any).studentId || session.userId;
+    const rawStudentId = await actingStudentRef(session, studentId);
 
     // Resolve student
     const { data: student } = await supabaseAdmin
@@ -931,6 +954,9 @@ export async function DELETE(req: NextRequest) {
     // ATOMIC CANCEL: Rollback reservation + delete attendance + reset bookings
     // Conductor lock: blocked if trip.status = 'IN_PROGRESS'
     // ══════════════════════════════════════════════════════════════════════
+    if (!(await ownsReservation(session, reservationId, [resolvedStudentId, session.userId]))) {
+      return NextResponse.json({ success: false, message: "This is not your reservation." }, { status: 403 });
+    }
     const { data: txnResult, error: txnError } = await supabaseAdmin.rpc("cancel_seat_transaction", {
       p_reservation_id: reservationId,
       p_student_id: resolvedStudentId,
@@ -984,7 +1010,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Reservation ID and new seat number are required." }, { status: 400 });
     }
 
-    const rawStudentId = studentId || (session as any).studentId || session.userId;
+    const rawStudentId = await actingStudentRef(session, studentId);
 
     // Resolve student
     const { data: student } = await supabaseAdmin
@@ -1039,6 +1065,9 @@ export async function PATCH(req: NextRequest) {
     // ATOMIC SWITCH: Old seat freed → new seat claimed → attendance updated
     // All in a single Postgres transaction with FOR UPDATE row locking.
     // ══════════════════════════════════════════════════════════════════════
+    if (!(await ownsReservation(session, reservationId, [resolvedStudentId, session.userId]))) {
+      return NextResponse.json({ success: false, message: "This is not your reservation." }, { status: 403 });
+    }
     const { data: txnResult, error: txnError } = await supabaseAdmin.rpc("switch_seat_transaction", {
       p_reservation_id: reservationId,
       p_student_id: resolvedStudentId,

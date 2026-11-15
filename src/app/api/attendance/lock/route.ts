@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStaffRole } from "@/lib/security/actor";
+import { isSafeId } from "@/lib/security/safe-id";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { calculateDistanceKm, calculateExactDistanceMeters, calculateProximityToBus } from "@/lib/utils";
@@ -89,7 +91,9 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const targetStudentId = searchParams.get("studentId") || session.userId;
+    // Identity from the session only: students see their own lock; staff may name a student.
+    const requested = searchParams.get("studentId");
+    const targetStudentId = isStaffRole(session.role) && isSafeId(requested) ? requested : session.userId;
     const queryBusId = searchParams.get("busId") || null;
     const queryBusNumber = searchParams.get("busNumber") || null;
     const queryGpsDeviceId = searchParams.get("gpsDeviceId") || null;

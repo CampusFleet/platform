@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveActingStudentId } from "@/lib/security/actor";
 import { getSession } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { evaluateSwitchRequest } from "@/lib/switch-evaluator";
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const studentId = searchParams.get("studentId") || (session as any).studentId || session.userId;
+    const studentId = (await resolveActingStudentId(session, searchParams.get("studentId"))).studentId || session.userId;
 
     const { data: requests, error } = await supabaseAdmin
       .from("bus_switch_requests")
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
       effectiveUntil,
     } = body;
 
-    const studentId = reqStudentId || (session as any).studentId || session.userId;
+    const studentId = (await resolveActingStudentId(session, reqStudentId)).studentId || session.userId;
 
     if (!currentBusId || !currentStopId) {
       return NextResponse.json({

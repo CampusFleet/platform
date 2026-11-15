@@ -349,6 +349,19 @@ export async function POST(req: NextRequest) {
       classShiftRows.map((r: any) => cacheDel(`schedule:class:${r.class_id}:${r.day_of_week}`).catch(() => false))
     );
     let todayTrips: { created: number; message: string } | null = null;
+    let seatsReleased = 0;
+    if (touched.includes(todayName)) {
+      // Seats the chart made today on a shift the class no longer uses today (day off, or a
+      // different shift) are released, and the students told (migration 20261121).
+      const todayClassIds = classShiftRows.filter((r: any) => r.day_of_week === todayName).map((r: any) => String(r.class_id));
+      const { data: released, error: relErr } = await supabaseAdmin.rpc("release_off_timetable_seats" as never, {
+        p_class_ids: todayClassIds,
+        p_actor: session.userId,
+        p_actor_role: session.role,
+      } as never);
+      if (relErr && relErr.code !== "PGRST202") console.error("[schedule-shift] release seats:", relErr.message);
+      seatsReleased = Number(released) || 0;
+    }
     if (touched.includes(todayName) && classShiftRows.some((r: any) => r.day_of_week === todayName && !r.is_today_off)) {
       const roll = await executeDailyRollover(undefined, { force: true, triggeredBy: "TIMETABLE_CHANGE" });
       todayTrips = { created: roll.success ? roll.newTripsCount : 0, message: roll.message };
@@ -358,6 +371,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       todayTrips,
+      seatsReleased,
       message: `Shift schedule successfully updated for ${classIds.length} academic ${
         classIds.length === 1 ? "class" : "classes"
       }.`,

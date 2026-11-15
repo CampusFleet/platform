@@ -4,6 +4,7 @@ import { getSession } from "@/lib/jwt";
 import type { Shift, ShiftType } from "@/lib/types";
 
 import { cacheGet, cacheSet, cacheDel } from "@/lib/redis";
+import { applyShiftChangeEffects, checkShiftChange, deleteOrRetireShift, type ShiftRow } from "@/lib/shifts/changes";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +183,16 @@ export async function PUT(req: NextRequest) {
     if (isSpecial !== undefined) updates.is_special = Boolean(isSpecial);
     if (isActive !== undefined) updates.is_active = Boolean(isActive);
 
+    // Same-day effects: some changes are refused while today's runs are under way.
+    const { data: old } = await supabaseAdmin
+      .from("shifts")
+      .select("id, name, start_time, end_time, booking_cutoff_minutes, direction, is_active")
+      .eq("id", id)
+      .maybeSingle();
+    if (!old) return NextResponse.json({ success: false, error: "Shift not found." }, { status: 404 });
+    const blocked = await checkShiftChange(old as ShiftRow, updates);
+    if (blocked) return NextResponse.json({ success: false, error: blocked }, { status: 409 });
+
     const { data, error } = await supabaseAdmin
       .from("shifts")
       .update(updates)
@@ -195,6 +206,10 @@ export async function PUT(req: NextRequest) {
 
     // Invalidate cache
     await cacheDel("api:shifts:all");
+    const effects = await applyShiftChangeEffects(old as ShiftRow, data as ShiftRow, { userId: session.userId, role: session.role }).catch((e) => {
+      console.error("[shifts] same-day effects:", e?.message);
+      return null;
+    });
 
     return NextResponse.json({
       success: true,
@@ -207,6 +222,10 @@ export async function PUT(req: NextRequest) {
         bookingCutoffMins: data.booking_cutoff_minutes,
         isSpecial: data.is_special,
       },
+      effects,
+      ...(effects?.overlappingBuses.length
+        ? { warning: `Bus ${effects.overlappingBuses.join(", ")} now has overlapping runs today. Re-assign on the dispatch board.` }
+        : {}),
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -234,15 +253,20 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Shift ID is required." }, { status: 400 });
     }
 
-    const { error } = await supabaseAdmin.from("shifts").delete().eq("id", id);
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    // A shift used by past trips is retired, never deleted (that would blank it on their history).
+    const result = await deleteOrRetireShift(id);
+    if ("error" in result) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 409 });
     }
 
     // Invalidate cache
     await cacheDel("api:shifts:all");
 
-    return NextResponse.json({ success: true, message: `Shift ${id} deleted.` });
+    return NextResponse.json({
+      success: true,
+      ...result,
+      message: result.retired ? "This shift has past trips, so it was switched off instead of deleted." : "Shift deleted.",
+    });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

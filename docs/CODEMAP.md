@@ -678,6 +678,11 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Teacher list:** `src/lib/teachers/gate-passes.ts` (`listGatePasses`, `reviewGatePass`), used by the page and the API. A PENDING request from an earlier day shows as Expired.
 - **Types:** `review_early_departure` and `booked_trip_id` are not in `database.types.ts` until it is regenerated after the migration (rpc call is cast).
 
+- **Shift and timetable changes** (`src/lib/shifts/changes.ts`, used by `PUT/DELETE /api/shifts`; migration `20261121_timetable_release.sql`, apply in SQL Editor):
+  - Shift time / cutoff: refused (409) once a run of that shift left or its final chart is locked today; otherwise booked riders and teachers get `SHIFT_CHANGED`, and buses whose runs now overlap come back as `warning` (fix on the dispatch board). Trips read the shift's time, so nothing else moves.
+  - Direction: refused while the shift has runs today or later. Switching off: refused while today's runs are not finished (cancel them on the dispatch board, which moves/tells riders). Switching on: `executeDailyRollover(force)` adds today's missing runs.
+  - Delete: a shift used by any trip is retired (`is_active = false`), never deleted (FKs are ON DELETE SET NULL and would blank history).
+  - Class timetable for today switched off or its shift changed: rpc `release_off_timetable_seats(class_ids)` cancels the chart's (`AI_AUTO`) unboarded seats on shifts the class no longer uses today, before the final chart (`cancel_reason TIMETABLE_CHANGED`, notification); switching back revives them. Leave-early and manager bookings are never touched.
 - **Timetable change on the same day:** `POST /api/teacher/schedule-shift` clears `schedule:class:{id}:{DAY}` and, when today's weekday was switched on, runs `executeDailyRollover(today, { force: true })`, which only adds missing (route, shift) trips. Before this, trips planned at 00:05 IST never picked up a day switched on later (e.g. Sunday), so students showed "no bus".
 ## 16. Geo / maps
 

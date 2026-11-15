@@ -20,7 +20,9 @@ interface Options {
   outgoingShifts: { id: string; name: string; startTime: string | null }[];
 }
 
-export function TeacherBusSettings() {
+export function TeacherBusSettings({ userId }: { userId?: string } = {}) {
+  // Managers edit a teacher through /api/transport-manager/teacher-rides; teachers edit themselves.
+  const endpoint = userId ? `/api/transport-manager/teacher-rides?userId=${encodeURIComponent(userId)}` : "/api/teacher/ride-settings";
   const [opt, setOpt] = useState<Options | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [routeId, setRouteId] = useState("");
@@ -33,7 +35,7 @@ export function TeacherBusSettings() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    fetch("/api/teacher/ride-settings", { cache: "no-store" })
+    fetch(endpoint, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (!d.success) throw new Error(d.error);
@@ -49,7 +51,7 @@ export function TeacherBusSettings() {
         }
       })
       .catch((e) => setError(e.message || "Could not load bus settings."));
-  }, []);
+  }, [endpoint]);
 
   const stops = useMemo(() => opt?.routes.find((r) => r.id === routeId)?.stops || [], [opt, routeId]);
 
@@ -57,10 +59,10 @@ export function TeacherBusSettings() {
     setSaving(true);
     setMsg(null);
     try {
-      const r = await fetch("/api/teacher/ride-settings", {
+      const r = await fetch(userId ? "/api/transport-manager/teacher-rides" : "/api/teacher/ride-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ routeId, stopId, incomingShiftId: inId || null, outgoingShiftId: outId || null, days, isActive: active }),
+        body: JSON.stringify({ ...(userId ? { userId } : {}), routeId, stopId, incomingShiftId: inId || null, outgoingShiftId: outId || null, days, isActive: active }),
       });
       const d = await r.json().catch(() => ({}));
       setMsg({ ok: Boolean(d.success), text: d.message || d.error || (d.success ? "Saved." : "Could not save.") });

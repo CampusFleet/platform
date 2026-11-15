@@ -99,3 +99,4 @@ Steps:
 
 ## Phase 4 progress
 - ✅ Manager live fleet (`/transport-manager/live`) rebuilt on `GET /api/transport-manager/fleet-live` (`lib/manager/fleet-live.ts`): every run today with bus, route, shift, crew, rider counts and GPS, refreshed every 10 s; tap a bus or run → `CrewLiveMap`. No store download; `ConductorLiveRadarView` (1,100 lines) deleted.
+- ✅ Managers see and edit teachers' bus settings (`/transport-manager/teachers`, `/api/transport-manager/teacher-rides`; changes audit-logged).

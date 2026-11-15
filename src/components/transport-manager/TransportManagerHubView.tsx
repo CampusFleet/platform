@@ -67,6 +67,13 @@ export default function TransportManagerHubView() {
       href: "/transport-manager/drivers",
     });
 
+    list.push({
+      title: "Teachers on the Bus",
+      description: "See which bus each teacher rides and change a teacher's route, stop or shifts.",
+      icon: Users,
+      href: "/transport-manager/teachers",
+    });
+
     // RFID Smart Cards only when RFID is primary or hybrid
     if (rules.isRfidIssuancePrimary) {
       list.push({

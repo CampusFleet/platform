@@ -53,6 +53,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
       items: [
         { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
         { href: "/transport-manager/drivers", label: "Crew Assignment", shortLabel: "Drivers", icon: Users },
+        { href: "/transport-manager/teachers", label: "Teachers on the Bus", shortLabel: "Teachers", icon: Users },
       ],
     },
     demand: {
@@ -100,7 +101,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
     currentNavLinks = subPortals.trips.items;
     currentTitle = subPortals.trips.title;
     currentSubtitle = subPortals.trips.subtitle;
-  } else if (pathname.startsWith("/transport-manager/drivers")) {
+  } else if (pathname.startsWith("/transport-manager/drivers") || pathname.startsWith("/transport-manager/teachers")) {
     currentNavLinks = subPortals.drivers.items;
     currentTitle = subPortals.drivers.title;
     currentSubtitle = subPortals.drivers.subtitle;

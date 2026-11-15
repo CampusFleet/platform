@@ -332,10 +332,12 @@ export function LiveFaceCapture({
       return;
     }
     try {
-      const [stream, lm, challenge] = await Promise.all([
-        streamRef.current
-          ? Promise.resolve(streamRef.current)
-          : navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false }),
+      // Keep the stream before anything else can fail, so stop() always turns the camera off.
+      const stream =
+        streamRef.current ||
+        (await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false }));
+      streamRef.current = stream;
+      const [lm, challenge] = await Promise.all([
         getFaceLandmarker(),
         mode === "faceid"
           ? fetch("/api/biometrics/challenge", { cache: "no-store" }).then(async (r) => {
@@ -345,7 +347,6 @@ export function LiveFaceCapture({
             })
           : Promise.resolve(null),
       ]);
-      streamRef.current = stream;
       if (!lm) {
         fail("The face check could not load. Check your internet connection and try again.");
         return;

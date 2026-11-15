@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 1. Template every frame server-side
-  const results: { index: number; accepted: boolean; reasons: string[]; template?: number[]; quality?: number; pad?: number; model?: string; yaw?: number | null }[] = [];
+  const results: { index: number; accepted: boolean; reasons: string[]; template?: number[]; quality?: number; pad?: number; model?: string; yaw?: number | null; yawSigned?: number | null; qualityPassed?: boolean }[] = [];
   try {
     for (let i = 0; i < frames.length; i++) {
       let buf: Buffer;
@@ -68,7 +69,8 @@ export async function POST(req: NextRequest) {
         results.push({ index: i, accepted: false, reasons: [e.message] });
         continue;
       }
-      const r = await createFaceTemplate(buf, { requestId: `enroll-${student.id}-${i}` });
+      // Random request id: the face service logs it, and it must not identify the student.
+      const r = await createFaceTemplate(buf, { requestId: crypto.randomUUID() });
       if (r.faces_detected > 1) {
         results.push({ index: i, accepted: false, reasons: ["MULTIPLE_FACES"] });
         continue;
@@ -82,6 +84,8 @@ export async function POST(req: NextRequest) {
         pad: r.pad?.real_score,
         model: r.model_version,
         yaw: r.faces_detected === 1 ? r.quality?.yaw_ratio ?? null : null,
+        yawSigned: r.faces_detected === 1 ? r.quality?.yaw_signed ?? null : null,
+        qualityPassed: Boolean(r.quality?.passed),
       });
     }
   } catch (err: any) {
@@ -91,7 +95,9 @@ export async function POST(req: NextRequest) {
 
   const accepted = results.filter((r) => r.accepted && r.template);
   const report = results.map(({ index, accepted: a, reasons }) => ({ index, accepted: a, reasons }));
-  if (results.some((r) => r.reasons.includes("PRESENTATION_ATTACK_SUSPECTED"))) {
+  // Spoof only counts on frames that passed quality, like the gate: a blurry or turned frame often
+  // gets a low anti-spoof score from a real face, which must not fail an honest enrollment.
+  if (results.some((r) => r.qualityPassed && r.reasons.includes("PRESENTATION_ATTACK_SUSPECTED"))) {
     await supabaseAdmin.from("biometric_access_log").insert({
       actor_user_id: session.userId, actor_role: session.role, action: "ENROLL_SPOOF_REJECTED", subject_student_id: student.id, details: { frames: report },
     });
@@ -102,25 +108,38 @@ export async function POST(req: NextRequest) {
   }
   // Head movement: one frame looking straight and one turned. A still photo held to the camera has neither.
   if (process.env.FACE_ENROLL_POSE_CHECK !== "off") {
-    const pose = checkEnrollmentPoses(results.map((r) => r.yaw), {
-      frontalMax: Number(process.env.FACE_ENROLL_FRONTAL_MAX) || SERVER_POSE.FRONTAL_MAX,
-      turnMin: Number(process.env.FACE_ENROLL_TURN_MIN) || SERVER_POSE.TURN_MIN,
-    });
+    const pose = checkEnrollmentPoses(
+      results.map((r) => r.yaw),
+      {
+        frontalMax: Number(process.env.FACE_ENROLL_FRONTAL_MAX) || SERVER_POSE.FRONTAL_MAX,
+        turnMin: Number(process.env.FACE_ENROLL_TURN_MIN) || SERVER_POSE.TURN_MIN,
+      },
+      { side: challenge.turn, signed: results.map((r) => r.yawSigned) }
+    );
     if (!pose.ok) {
       await supabaseAdmin.from("biometric_access_log").insert({
         actor_user_id: session.userId, actor_role: session.role, action: "ENROLL_POSE_REJECTED", subject_student_id: student.id,
         details: { code: pose.code, yaw: results.map((r) => r.yaw ?? null) },
       });
-      const message = pose.code === "NO_TURNED_FRAME"
-        ? "We did not see your head turn. Follow the prompt and turn your head slowly."
-        : "We did not get a clear straight-on photo. Look directly at the camera and try again.";
+      const message =
+        pose.code === "NO_TURNED_FRAME"
+          ? "We did not see your head turn. Follow the prompt and turn your head slowly."
+          : pose.code === "WRONG_TURN_DIRECTION"
+            ? `Turn your head to your ${challenge.turn === "LEFT" ? "left" : "right"}, as the prompt says, and try again.`
+            : "We did not get a clear straight-on photo. Look directly at the camera and try again.";
       return NextResponse.json({ success: false, code: pose.code, message, frames: report }, { status: 422 });
     }
   }
 
   // 2. Consistency: all accepted frames must be the same person
   const model = accepted[0].model!;
-  const threshold = await getMatchThreshold(model);
+  let threshold: number;
+  try {
+    threshold = await getMatchThreshold(model);
+  } catch (e) {
+    console.error("[enroll-v2] match threshold:", (e as Error).message);
+    return NextResponse.json({ success: false, message: "Face ID is not set up on the server yet (no match threshold). Ask the transport office." }, { status: 503 });
+  }
   for (let a = 0; a < accepted.length; a++) {
     for (let b = a + 1; b < accepted.length; b++) {
       if (cosineDistance(accepted[a].template!, accepted[b].template!) > threshold) {
@@ -129,39 +148,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3. Consent record (versioned) → revoke old templates → store new
-  const { data: consent, error: cErr } = await supabaseAdmin
-    .from("biometric_consents")
-    .insert({
-      student_id: student.id,
-      consent_version: CONSENT_VERSION,
-      purpose: CONSENT_PURPOSE,
-      granted_by_user_id: session.userId,
-      client_ip: req.headers.get("x-forwarded-for")?.split(",")[0] || null,
-      user_agent: (req.headers.get("user-agent") || "").slice(0, 200),
-    })
-    .select("id")
-    .single();
-  if (cErr || !consent) return NextResponse.json({ success: false, message: "Could not record consent." }, { status: 500 });
-
-  await supabaseAdmin
-    .from("face_templates")
-    .update({ revoked_at: new Date().toISOString(), revoked_reason: "RE_ENROLLED" })
-    .eq("student_id", student.id)
-    .is("revoked_at", null);
-
-  const { error: tErr } = await supabaseAdmin.from("face_templates").insert(
-    accepted.map((r) => ({
-      student_id: student.id,
-      consent_id: consent.id,
-      embedding: toVectorLiteral(r.template!),
-      model_version: model,
-      quality_score: Math.max(0, Math.min(1, r.quality ?? 0)),
-      pad_score: Math.max(0, Math.min(1, r.pad ?? 0)),
-      source: "ENROLLMENT",
-    }))
-  );
-  if (tErr) return NextResponse.json({ success: false, message: "Could not save face templates." }, { status: 500 });
+  // 3. Consent record + revoke old templates + store new, in one transaction (migration 20261120).
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0] || null;
+  const userAgent = (req.headers.get("user-agent") || "").slice(0, 200);
+  const { error: eErr } = await supabaseAdmin.rpc("enroll_face_templates" as never, {
+    p_student_id: student.id,
+    p_user_id: session.userId,
+    p_consent_version: CONSENT_VERSION,
+    p_purpose: CONSENT_PURPOSE,
+    p_client_ip: clientIp,
+    p_user_agent: userAgent,
+    p_model_version: model,
+    p_templates: accepted.map((r) => ({ embedding: r.template, quality: r.quality ?? 0, pad: r.pad ?? 0 })),
+  } as never);
+  if (eErr?.code === "PGRST202") {
+    // Migration not applied yet: older step-by-step path.
+    const saved = await saveStepByStep({ studentId: student.id, userId: session.userId, clientIp, userAgent, model, accepted });
+    if (!saved.ok) return NextResponse.json({ success: false, message: saved.message }, { status: 500 });
+  } else if (eErr) {
+    console.error("[enroll-v2] save:", eErr.message);
+    return NextResponse.json({ success: false, message: "Could not save Face ID. Nothing was changed; please try again." }, { status: 500 });
+  }
 
   // 4. Portrait → private storage; users.photo_url points at the access-controlled route
   let photoUrl: string | null = null;
@@ -179,4 +186,40 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ success: true, templates: accepted.length, modelVersion: model, consentVersion: CONSENT_VERSION, photoUrl, frames: report });
+}
+
+/** Pre-20261120 save path (three writes). Kept only until the migration is applied everywhere. */
+async function saveStepByStep(a: {
+  studentId: string;
+  userId: string;
+  clientIp: string | null;
+  userAgent: string;
+  model: string;
+  accepted: { template?: number[]; quality?: number; pad?: number }[];
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data: consent, error: cErr } = await supabaseAdmin
+    .from("biometric_consents")
+    .insert({ student_id: a.studentId, consent_version: CONSENT_VERSION, purpose: CONSENT_PURPOSE, granted_by_user_id: a.userId, client_ip: a.clientIp, user_agent: a.userAgent })
+    .select("id")
+    .single();
+  if (cErr || !consent) return { ok: false, message: "Could not record consent." };
+  const { error: rErr } = await supabaseAdmin
+    .from("face_templates")
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: "RE_ENROLLED" })
+    .eq("student_id", a.studentId)
+    .is("revoked_at", null);
+  if (rErr) return { ok: false, message: "Could not replace your old Face ID." };
+  const { error: tErr } = await supabaseAdmin.from("face_templates").insert(
+    a.accepted.map((r) => ({
+      student_id: a.studentId,
+      consent_id: consent.id,
+      embedding: toVectorLiteral(r.template!),
+      model_version: a.model,
+      quality_score: Math.max(0, Math.min(1, r.quality ?? 0)),
+      pad_score: Math.max(0, Math.min(1, r.pad ?? 0)),
+      source: "ENROLLMENT",
+    }))
+  );
+  if (tErr) return { ok: false, message: "Could not save face templates." };
+  return { ok: true };
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateDevice, touchDevice } from "@/lib/gate/device-auth";
 import { publishOpsEvent } from "@/lib/gate/ops-events";
-import { supabaseAdmin } from "@/lib/supabaseClient";
+import { waitUntil } from "@vercel/functions";
+import { isBoardingMethodOn } from "@/lib/attendance/server-policy";
+import { processPending } from "@/lib/gate/processor";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +38,13 @@ export async function POST(req: NextRequest) {
   });
   await publishOpsEvent({ type: "DEVICE", busId: auth.device.bus_id, deviceId: auth.device.id, status: "HEARTBEAT" });
 
-  const { data: settings } = await supabaseAdmin.from("transport_settings").select("attendance_mode").limit(1).maybeSingle();
-  const faceEnabled = !settings || ["FACE_ID", "ALL"].includes(settings.attendance_mode);
+  // Same switch the capture endpoint enforces (transport_settings.validation_locks.faceId).
+  const faceEnabled = await isBoardingMethodOn("faceId");
+  // Retry sweep: captures that failed (face service down, cold start) are retried within a minute
+  // instead of waiting for the next capture on this bus or the daily cron.
+  if (faceEnabled && auth.device.bus_id) {
+    waitUntil(processPending({ busId: auth.device.bus_id, limit: 5 }).catch((e) => console.warn("[gate] heartbeat sweep:", e?.message)));
+  }
   return NextResponse.json({
     busId: auth.device.bus_id,
     door: auth.device.door,
@@ -48,7 +55,8 @@ export async function POST(req: NextRequest) {
       uploadBatchSize: 5,
       heartbeatIntervalS: 60,
       jpegQuality: 88,
-      cropSizePx: 320,
+      // MiniFASNet anti-spoof needs ~4x the face box of context; the agent crops 4.2x and scales to this.
+      cropSizePx: 480,
     },
     serverTime: new Date().toISOString(),
   });

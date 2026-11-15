@@ -71,6 +71,23 @@ export default function StudentOnboardingPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [verify, setVerify] = useState<VerifyState>("IDLE");
 
+  // Face ID status survives reloads: an enrolled student sees "Set up", not a fresh setup that
+  // would revoke their templates.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/biometrics/consent", { credentials: "include", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.enrolled && !d.needsReconsent) {
+          setFaceIdDone(true);
+          setConsent(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // ── Payment return from Razorpay ────────────────────────────────────────
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);

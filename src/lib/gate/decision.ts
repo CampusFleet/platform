@@ -11,7 +11,7 @@
  *   unknown face otherwise                       → UNKNOWN_LEFT_AT_START (logged only)
  * OUT camera elsewhere
  *   matched rider, bus inside a stop geofence    → ALIGHTED
- *   matched rider, bus outside every geofence    → ALIGHTED + UNEXPECTED_EXIT alert (HIGH)
+ *   matched rider, bus outside every geofence    → ALIGHTED + UNEXPECTED_EXIT alert (HIGH; not when GPS is missing)
  *   unknown face matching an open intruder       → INTRUDER_LEFT    (resolve) — plus UNEXPECTED_EXIT if off-stop
  *   unknown face otherwise                       → UNKNOWN_DEBOARDER (incident MEDIUM, evidence)
  * Any door: same student + same door within DUPLICATE_WINDOW_S of a decided capture → DUPLICATE (no side effects).
@@ -41,6 +41,8 @@ export interface DecisionInput {
   atStartStop: boolean;
   /** Stop whose geofence contains the capture position, or null. */
   stopIdAtPosition: string | null;
+  /** False when the capture had no GPS fix: position is unknown, so no off-stop alerts. Default true. */
+  gpsKnown?: boolean;
   /** Open intruder incident on this bus whose stored face matches this capture. */
   matchingOpenIncidentId: string | null;
   /** Seconds since the last decided capture of the same student at the same door on this bus. */
@@ -84,7 +86,8 @@ export function decide(i: DecisionInput): Decision {
     return base("DUPLICATE");
   }
 
-  const offStop = !i.atStartStop && i.stopIdAtPosition === null;
+  // Without a GPS fix the position is unknown: never call it an off-stop exit.
+  const offStop = i.gpsKnown !== false && !i.atStartStop && i.stopIdAtPosition === null;
   const unexpectedExit: IncidentAction = { type: "UNEXPECTED_EXIT", severity: "HIGH", withEvidence: true, storeFaceForExitMatching: false };
 
   if (i.door === "IN") {

@@ -30,8 +30,9 @@ interface DriverGateCameraConsoleProps {
   tripId?: string | null;
   capacity?: number;
   currentStopName?: string;
-  latitude: number;
-  longitude: number;
+  /** null when the phone has no GPS fix (never a made-up position). */
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface GateStreamEvent {
@@ -163,6 +164,16 @@ export function DriverGateCameraConsole({
     } catch (err) {
       console.warn("Driver gate camera access error:", err);
       setIsCameraActive(false);
+      const name = (err as { name?: string })?.name;
+      setLastError(
+        typeof window !== "undefined" && !window.isSecureContext
+          ? "The camera needs a secure (https) connection."
+          : name === "NotAllowedError"
+            ? "Camera permission is blocked. Allow the camera for this site in your browser settings, then tap Start camera again."
+            : name === "NotFoundError" || name === "OverconstrainedError"
+              ? "No usable camera was found on this phone."
+              : "The camera could not start. Close other apps using it and try again."
+      );
     }
   }, [facingMode, stopCamera]);
 
@@ -277,7 +288,7 @@ export function DriverGateCameraConsole({
       setLastError(null);
       const gate = activeGate;
       try {
-        const res = await fetch("/api/gate/captures", {
+        const res = await fetch(`/api/gate/captures${tripId ? `?tripId=${encodeURIComponent(tripId)}` : ""}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -308,7 +319,7 @@ export function DriverGateCameraConsole({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeGate, latitude, longitude, currentStopName, capacity]
+    [activeGate, latitude, longitude, currentStopName, capacity, tripId]
   );
 
   // Automatic scanning: detect a steady, large-enough face, then capture once per person (cooldown).
@@ -318,6 +329,9 @@ export function DriverGateCameraConsole({
     let timer: ReturnType<typeof setTimeout>;
     (async () => {
       landmarkerRef.current = landmarkerRef.current || (await getFaceLandmarker());
+      if (!landmarkerRef.current && !stopped) {
+        setLastError("Automatic face detection could not load on this phone. Use the manual scan button for each passenger.");
+      }
     })();
     const tick = () => {
       if (stopped) return;

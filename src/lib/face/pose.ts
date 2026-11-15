@@ -86,7 +86,7 @@ export function isTurned(ratio: number, side: TurnSide): boolean {
   return v >= CLIENT_POSE.TURN_MIN && v <= CLIENT_POSE.TURN_MAX;
 }
 
-export type PoseCheck = { ok: true } | { ok: false; code: "NO_FRONTAL_FRAME" | "NO_TURNED_FRAME" };
+export type PoseCheck = { ok: true } | { ok: false; code: "NO_FRONTAL_FRAME" | "NO_TURNED_FRAME" | "WRONG_TURN_DIRECTION" };
 
 /**
  * Server check on the unsigned yaw ratios the face service reported for each frame (null when no
@@ -95,10 +95,21 @@ export type PoseCheck = { ok: true } | { ok: false; code: "NO_FRONTAL_FRAME" | "
  */
 export function checkEnrollmentPoses(
   ratios: (number | null | undefined)[],
-  gates: { frontalMax: number; turnMin: number } = { frontalMax: SERVER_POSE.FRONTAL_MAX, turnMin: SERVER_POSE.TURN_MIN }
+  gates: { frontalMax: number; turnMin: number } = { frontalMax: SERVER_POSE.FRONTAL_MAX, turnMin: SERVER_POSE.TURN_MIN },
+  direction?: { side: TurnSide; signed: (number | null | undefined)[] }
 ): PoseCheck {
   const seen = ratios.filter((r): r is number => typeof r === "number" && Number.isFinite(r)).map(Math.abs);
   if (!seen.some((r) => r <= gates.frontalMax)) return { ok: false, code: "NO_FRONTAL_FRAME" };
   if (!seen.some((r) => r >= gates.turnMin)) return { ok: false, code: "NO_TURNED_FRAME" };
+  // Challenge side: needs the face service's signed yaw (quality.yaw_signed, same sign as
+  // signedYawRatio: positive = subject's LEFT). Older face-service builds do not send it; then
+  // only the unsigned check above applies.
+  if (direction) {
+    const turned = direction.signed.filter((r): r is number => typeof r === "number" && Number.isFinite(r) && Math.abs(r) >= gates.turnMin);
+    if (turned.length > 0) {
+      const want = direction.side === "LEFT" ? 1 : -1;
+      if (!turned.some((r) => Math.sign(r) === want)) return { ok: false, code: "WRONG_TURN_DIRECTION" };
+    }
+  }
   return { ok: true };
 }

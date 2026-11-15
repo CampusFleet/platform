@@ -194,7 +194,7 @@ export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
   // 3. Bus roster for that day, then campus-wide fallback
   const { data: roster } = await supabaseAdmin
     .from("bus_reservations")
-    .select("id, student_id, status, trip_id")
+    .select("id, student_id, status, trip_id, shift_id")
     .eq("bus_id", c.bus_id)
     .eq("reservation_date", date)
     .not("status", "in", "(CANCELLED,ABSENT,SWITCHED)");
@@ -217,7 +217,9 @@ export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
     if (data?.[0]) { matched = data[0]; scope = "CAMPUS"; }
   }
 
-  const reservation = matched ? (roster || []).find((r) => r.student_id === matched!.student_id) || null : null;
+  // A student can hold one reservation per shift on the same bus and day (morning + evening).
+  // Use the one for THIS trip; never touch another trip's reservation.
+  const reservation = matched ? pickReservation(roster || [], matched.student_id, trip) : null;
 
   // 4. Context for the door rules
   const { data: routeStops } = trip?.route_id
@@ -274,6 +276,7 @@ export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
     reservedOnThisBus: Boolean(reservation),
     atStartStop,
     stopIdAtPosition: stopId,
+    gpsKnown: c.latitude !== null && c.longitude !== null,
     matchingOpenIncidentId,
     secondsSinceSameStudentSameDoor: secondsSince,
   });
@@ -324,35 +327,22 @@ async function applyDecision(args: {
   const studentId = matched?.student_id || null;
   const tripId = trip?.id || reservation?.trip_id || null;
 
-  // Legacy event log (feeds existing conductor views)
-  await supabaseAdmin.from("bus_gate_events").insert({
-    bus_id: c.bus_id,
-    trip_id: tripId,
-    gate_type: c.door === "IN" ? "GATE_IN" : "GATE_OUT",
-    student_id: studentId,
-    matched_distance: matched?.distance ?? null,
-    confidence_score: matched ? Math.max(0, Math.min(100, Math.round((1 - matched.distance) * 1000) / 10)) : 0,
-    is_authorized: Boolean(studentId) && decision.outcome !== "WRONG_BUS",
-    latitude: c.latitude ?? 0,
-    longitude: c.longitude ?? 0,
-    stop_name: null,
-    created_at: at,
-    metadata: { capture_id: c.id, outcome: decision.outcome, gps_missing: c.latitude === null, pipeline: "v2" },
-  });
-
   if (faceIdOn && decision.attendance && studentId) {
-    const { data: existing } = await supabaseAdmin
+    // One Face ID attendance row per student per trip (a bus can run several trips a day).
+    let dup = supabaseAdmin
       .from("attendance_records")
       .select("id")
       .eq("student_id", studentId)
       .eq("bus_id", c.bus_id)
       .eq("method", "BIOMETRIC_FACE_ID")
-      .gte("timestamp", `${istDate(at)}T00:00:00+05:30`)
-      .limit(1)
-      .maybeSingle();
+      .gte("timestamp", `${istDate(at)}T00:00:00+05:30`);
+    if (tripId) dup = dup.eq("trip_id", tripId);
+    const { data: existing, error: dupErr } = await dup.limit(1).maybeSingle();
+    must(dupErr, "attendance lookup");
     if (!existing) {
       const unlocked = decision.attendance === "BOARDED";
-      await supabaseAdmin.from("attendance_records").insert({
+      // Deterministic id: a retry after a later failure cannot insert a second row.
+      const { error: attErr } = await supabaseAdmin.from("attendance_records").upsert({
         id: `att-face-${c.id}`,
         student_id: studentId,
         bus_id: c.bus_id,
@@ -366,23 +356,46 @@ async function applyDecision(args: {
         lock_status: unlocked ? "UNLOCKED" : "LOCKED",
         unlocked_by: unlocked ? "FACE_ID" : null,
         unlock_timestamp: unlocked ? at : null,
-      });
+      }, { onConflict: "id", ignoreDuplicates: true });
+      must(attErr, "attendance insert");
     }
   }
 
   if (reservation && faceIdOn) {
     if (decision.reservationStatus === "BOARDED") {
-      await supabaseAdmin
+      // Only fill a missing trip_id; never move a reservation to another trip.
+      const { error } = await supabaseAdmin
         .from("bus_reservations")
-        .update({ status: "BOARDED", boarded_at: at, lock_status: "UNLOCKED", unlocked_by: "FACE_ID", unlock_timestamp: at, roaming_status: null, ...(tripId ? { trip_id: tripId } : {}) })
+        .update({ status: "BOARDED", boarded_at: at, lock_status: "UNLOCKED", unlocked_by: "FACE_ID", unlock_timestamp: at, roaming_status: null, ...(tripId && !reservation.trip_id ? { trip_id: tripId } : {}) })
         .eq("id", reservation.id);
+      must(error, "reservation boarded");
     } else if (decision.reservationStatus === "ALIGHTED") {
-      await supabaseAdmin.from("bus_reservations").update({ status: "ALIGHTED", alighted_at: at, alighted_stop_id: stopId, roaming_status: null }).eq("id", reservation.id);
+      const { error } = await supabaseAdmin.from("bus_reservations").update({ status: "ALIGHTED", alighted_at: at, alighted_stop_id: stopId, roaming_status: null }).eq("id", reservation.id);
+      must(error, "reservation alighted");
     }
     if (decision.roaming) {
-      await supabaseAdmin.from("bus_reservations").update({ roaming_status: "ROAMING" }).eq("id", reservation.id);
+      const { error } = await supabaseAdmin.from("bus_reservations").update({ roaming_status: "ROAMING" }).eq("id", reservation.id);
+      must(error, "reservation roaming");
     }
   }
+
+  // Event log (feeds conductor views). Written after attendance so a retry cannot duplicate it
+  // before the important writes succeed.
+  const { error: evErr } = await supabaseAdmin.from("bus_gate_events").insert({
+    bus_id: c.bus_id,
+    trip_id: tripId,
+    gate_type: c.door === "IN" ? "GATE_IN" : "GATE_OUT",
+    student_id: studentId,
+    matched_distance: matched?.distance ?? null,
+    confidence_score: matched ? Math.max(0, Math.min(100, Math.round((1 - matched.distance) * 1000) / 10)) : 0,
+    is_authorized: Boolean(studentId) && decision.outcome !== "WRONG_BUS",
+    latitude: c.latitude ?? 0, // column is NOT NULL; gps_missing in metadata says when this is not real
+    longitude: c.longitude ?? 0,
+    stop_name: null,
+    created_at: at,
+    metadata: { capture_id: c.id, outcome: decision.outcome, gps_missing: c.latitude === null, pipeline: "v2" },
+  });
+  if (evErr) console.error("[gate] gate event log:", evErr.message);
 
   // Conductor + student notifications (bus number only — never trip ids, per AGENTS.md)
   if (decision.notifyConductor) {
@@ -463,4 +476,23 @@ export async function processPending(opts: { busId?: number; captureId?: string;
     }
   }
   return results;
+}
+
+/** Throw on a failed write so processPending marks the capture FAILED and retries it. */
+function must(error: { message: string } | null, what: string): void {
+  if (error) throw new Error(`${what}: ${error.message}`);
+}
+
+type RosterRow = { id: string; student_id: string; status: string; trip_id: string | null; shift_id: string | null };
+
+/** The matched student's reservation for this trip: same trip, else same shift without a trip, else none. */
+export function pickReservation(roster: RosterRow[], studentId: string, trip: { id: string; shift_id: string | null } | null): RosterRow | null {
+  const mine = roster.filter((r) => r.student_id === studentId);
+  if (mine.length === 0) return null;
+  if (!trip) return mine.length === 1 ? mine[0] : null;
+  return (
+    mine.find((r) => r.trip_id === trip.id) ||
+    mine.find((r) => !r.trip_id && r.shift_id != null && r.shift_id === trip.shift_id) ||
+    null
+  );
 }

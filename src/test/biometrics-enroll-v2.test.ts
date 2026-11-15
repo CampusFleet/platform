@@ -16,8 +16,10 @@ vi.mock("@/lib/face/client", async () => ({
   ...(await vi.importActual<any>("@/lib/face/client")),
   createFaceTemplate: vi.fn(async () => faceResults.shift()),
 }));
+const rpcMock = vi.fn(async (..._args: any[]): Promise<{ data: any; error: any }> => ({ data: null, error: { code: "PGRST202", message: "not found" } }));
 vi.mock("@/lib/supabaseClient", () => ({
   supabaseAdmin: {
+    rpc: (...args: any[]) => rpcMock(...args),
     from: vi.fn((table: string) => {
       const c = chain({ data: table === "students" ? { id: "stu-1", user_id: "user-1" } : { id: `${table}-id` } });
       const orig = c.insert;
@@ -117,5 +119,16 @@ describe("POST /api/biometrics/enroll-v2", () => {
     expect(rows).toHaveLength(3);
     // Client-supplied scores are ignored; stored scores come from the face service
     expect(rows[0]).toMatchObject({ student_id: "stu-1", quality_score: 0.9, pad_score: 0.99, model_version: "m1" });
+  });
+  it("saves consent and templates in one database call when the migration is applied", async () => {
+    rpcMock.mockResolvedValueOnce({ data: { templates: 3 }, error: null });
+    faceResults.push(ok(unit(0)), ok(near(0, 1), 0.22), ok(unit(0)));
+    const r = await POST(req(valid));
+    expect(r.status).toBe(200);
+    const [fn, args] = rpcMock.mock.calls.at(-1)!;
+    expect(fn).toBe("enroll_face_templates");
+    expect(args).toMatchObject({ p_student_id: "stu-1", p_consent_version: CONSENT_VERSION, p_model_version: "m1" });
+    expect(args.p_templates).toHaveLength(3);
+    expect(inserted.face_templates).toBeUndefined();
   });
 });

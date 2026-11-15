@@ -9,10 +9,21 @@ export const INACTIVE_STUDENT_DAYS = 180; // no reservation or attendance → tr
 export const INTRUDER_FACE_RETENTION_HOURS = 24; // stored only to match the person leaving
 
 /** Withdraw consent and erase the student's face templates and door-camera crops. */
-export async function withdrawAndErase(studentId: string, actor: { userId: string; role: string }, reason = "STUDENT_WITHDREW") {
+/**
+ * Consent and templates must be gone before this returns (it throws otherwise, so the caller can
+ * report a failure). Evidence deletion problems are logged and do not undo the erasure.
+ * `actor.userId` is null for automated jobs (biometric_access_log.actor_user_id references users).
+ */
+export async function withdrawAndErase(studentId: string, actor: { userId: string | null; role: string }, reason = "STUDENT_WITHDREW") {
   const now = new Date().toISOString();
-  await supabaseAdmin.from("biometric_consents").update({ withdrawn_at: now, withdrawal_reason: reason }).eq("student_id", studentId).is("withdrawn_at", null);
-  const { count: templates } = await supabaseAdmin.from("face_templates").delete({ count: "exact" }).eq("student_id", studentId);
+  const { error: consentErr } = await supabaseAdmin
+    .from("biometric_consents")
+    .update({ withdrawn_at: now, withdrawal_reason: reason })
+    .eq("student_id", studentId)
+    .is("withdrawn_at", null);
+  if (consentErr) throw new Error(`withdraw consent: ${consentErr.message}`);
+  const { count: templates, error: tplErr } = await supabaseAdmin.from("face_templates").delete({ count: "exact" }).eq("student_id", studentId);
+  if (tplErr) throw new Error(`delete templates: ${tplErr.message}`);
 
   const { data: caps } = await supabaseAdmin
     .from("gate_captures")
@@ -20,21 +31,29 @@ export async function withdrawAndErase(studentId: string, actor: { userId: strin
     .eq("matched_student_id", studentId)
     .is("evidence_purged_at", null);
   const keys = (caps || []).map((c) => c.evidence_blob_key);
-  for (let i = 0; i < keys.length; i += 100) await deleteEvidence(keys.slice(i, i + 100));
-  if (caps?.length) {
+  let evidenceError: string | null = null;
+  try {
+    for (let i = 0; i < keys.length; i += 100) await deleteEvidence(keys.slice(i, i + 100));
+  } catch (e) {
+    // Leave evidence_purged_at unset so the daily retention job deletes these crops later.
+    evidenceError = (e as Error).message;
+    console.error("[biometrics] evidence delete failed:", evidenceError);
+  }
+  if (caps?.length && !evidenceError) {
     await supabaseAdmin.from("gate_captures").update({ evidence_purged_at: now }).in("id", caps.map((c) => c.id));
     await supabaseAdmin.from("bus_security_incidents").update({ evidence_blob_key: null, face_embedding: null }).in("capture_id", caps.map((c) => c.id));
   }
   // Legacy v1 profile (non-commercial model) is removed too.
   await supabaseAdmin.from("student_face_profiles").delete().eq("student_id", studentId);
 
-  await supabaseAdmin.from("biometric_access_log").insert({
+  const { error: logErr } = await supabaseAdmin.from("biometric_access_log").insert({
     actor_user_id: actor.userId,
     actor_role: actor.role,
     action: "CONSENT_WITHDRAWN_DATA_ERASED",
     subject_student_id: studentId,
-    details: { templates: templates || 0, evidence: keys.length, reason },
+    details: { templates: templates || 0, evidence: keys.length, reason, ...(evidenceError ? { evidence_error: evidenceError } : {}) },
   });
+  if (logErr) console.error("[biometrics] erase audit log:", logErr.message);
   return { templatesDeleted: templates || 0, evidenceDeleted: keys.length };
 }
 
@@ -79,8 +98,12 @@ export async function runBiometricRetention(now = new Date()) {
       .eq("student_id", sid)
       .gte("reservation_date", inactiveCutoff);
     if ((recent || 0) === 0) {
-      await withdrawAndErase(sid, { userId: "", role: "system_retention" }, "INACTIVE_LEFT_OR_GRADUATED");
-      summary.studentsErased++;
+      try {
+        await withdrawAndErase(sid, { userId: null, role: "system_retention" }, "INACTIVE_LEFT_OR_GRADUATED");
+        summary.studentsErased++;
+      } catch (e) {
+        console.error("[biometrics] retention erase failed for one student:", (e as Error).message);
+      }
     }
   }
 

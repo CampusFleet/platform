@@ -1,3 +1,4 @@
+import { crewsBusToday } from "@/lib/gate/ingest";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
@@ -26,13 +27,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   let { data: cap } = await load();
   if (!cap) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  if (["driver", "conductor"].includes(session.role)) {
-    const { data: staff } = await supabaseAdmin.from("staff").select("id").eq("user_id", session.userId).maybeSingle();
-    const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
-    const { data: trip } = staff
-      ? await supabaseAdmin.from("trips").select("id").eq("bus_id", cap.bus_id).eq("trip_date", today).or(`driver_id.eq.${staff.id},conductor_id.eq.${staff.id}`).limit(1).maybeSingle()
-      : { data: null };
-    if (!trip) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  if (["driver", "conductor"].includes(session.role) && !(await crewsBusToday(session.userId, cap.bus_id))) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
   if (cap.status === "PENDING" || cap.status === "FAILED") {

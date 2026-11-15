@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     if (!CREW_ROLES.includes(session.role)) return NextResponse.json({ error: "Only bus crew can submit gate captures." }, { status: 403 });
-    const phone = await resolvePhoneDevice(session.userId);
+    // The console sends the run it shows; resolvePhoneDevice accepts it only if it is this crew member's.
+    const phone = await resolvePhoneDevice(session.userId, req.nextUrl.searchParams.get("tripId"));
     if ("error" in phone) return NextResponse.json({ error: phone.error }, { status: 409 });
     device = phone.device;
     tripId = phone.tripId;

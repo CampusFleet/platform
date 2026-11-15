@@ -317,8 +317,8 @@ export default function DriverConsole({ initialUser, initialDuty }: { initialUse
                 tripId={trip.id}
                 capacity={trip.bus.capacity}
                 currentStopName={nextStop?.name || ""}
-                latitude={fix?.latitude ?? stops[0]?.latitude ?? 0}
-                longitude={fix?.longitude ?? stops[0]?.longitude ?? 0}
+                latitude={fix?.latitude ?? null}
+                longitude={fix?.longitude ?? null}
               />
             )}
 

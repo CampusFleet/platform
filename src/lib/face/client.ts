@@ -10,7 +10,8 @@ export interface FaceTemplateResult {
   accepted: boolean;
   rejection_reasons: string[];
   template: number[] | null;
-  quality: { score: number; face_px: number; sharpness: number; yaw_ratio: number; det_score: number; passed: boolean } | null;
+  /** yaw_ratio is unsigned; yaw_signed (newer face-service) is positive when the subject turns to their LEFT. */
+  quality: { score: number; face_px: number; sharpness: number; yaw_ratio: number; yaw_signed?: number | null; det_score: number; passed: boolean } | null;
   pad: { real_score: number; passed: boolean } | null;
   bbox: number[] | null;
   elapsed_ms: number;
@@ -26,7 +27,8 @@ function config() {
   const url = (process.env.FACE_SERVICE_URL || "").replace(/\/$/, "");
   const key = process.env.FACE_SERVICE_KEY || "";
   if (!url || key.length < 32) {
-    throw new FaceServiceError("FACE_SERVICE_URL / FACE_SERVICE_KEY are not configured.", false);
+    // Retryable: a configuration fix must not permanently reject queued gate captures.
+    throw new FaceServiceError("FACE_SERVICE_URL / FACE_SERVICE_KEY are not configured.", true);
   }
   return { url, key };
 }
@@ -61,7 +63,9 @@ export async function createFaceTemplate(
     throw new FaceServiceError(`Face service unreachable: ${err?.name || err}`, true);
   }
   if (res.status === 400) throw new FaceServiceError("Image could not be decoded.", false);
-  if (!res.ok) throw new FaceServiceError(`Face service HTTP ${res.status}`, res.status >= 500 || res.status === 429);
+  if (res.status === 413) throw new FaceServiceError("Image too large for the face service.", false);
+  // 401/403/404 mean key, deployment protection or URL problems: fixable, so retry later.
+  if (!res.ok) throw new FaceServiceError(`Face service HTTP ${res.status}`, true);
   return (await res.json()) as FaceTemplateResult;
 }
 

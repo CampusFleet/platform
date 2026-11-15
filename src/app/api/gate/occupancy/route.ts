@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { crewsBusToday } from "@/lib/gate/ingest";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,10 @@ export async function GET(req: NextRequest) {
   if (!session || !STAFF.includes(session.role)) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   const busId = Number(new URL(req.url).searchParams.get("busId"));
   if (!Number.isFinite(busId) || busId <= 0) return NextResponse.json({ error: "busId required" }, { status: 400 });
+  // Crew see only the bus they crew today; managers see any bus.
+  if (["driver", "conductor"].includes(session.role) && !(await crewsBusToday(session.userId, busId))) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
 
   const dayStart = new Date(`${new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10)}T00:00:00+05:30`).toISOString();
   const { data, error } = await supabaseAdmin

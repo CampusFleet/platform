@@ -42,6 +42,12 @@ export async function DELETE(req: NextRequest) {
   const { session, student } = await ownStudent(req);
   if (!session) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   if (!student) return NextResponse.json({ error: "Students only." }, { status: 403 });
-  const result = await withdrawAndErase(student.id, { userId: session.userId, role: session.role });
+  let result;
+  try {
+    result = await withdrawAndErase(student.id, { userId: session.userId, role: session.role });
+  } catch (e) {
+    console.error("[biometrics] withdraw:", (e as Error).message);
+    return NextResponse.json({ error: "Could not erase your Face ID. Please try again." }, { status: 500 });
+  }
   return NextResponse.json({ success: true, ...result });
 }

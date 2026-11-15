@@ -118,18 +118,27 @@ export async function ingestCaptures(device: GateDevice, captures: unknown[], tr
   return out;
 }
 
-/** Driver/conductor phone fallback: bus comes from the crew member's trip today, never from the request. */
-export async function resolvePhoneDevice(userId: string): Promise<{ device: GateDevice; tripId: string } | { error: string }> {
+/**
+ * Driver/conductor phone fallback: bus comes from the crew member's trip today, never from the request.
+ * `preferredTripId` (the run the console shows) is used only if it is one of this crew member's
+ * open trips today; otherwise the running trip, else the next one by shift start time.
+ */
+export async function resolvePhoneDevice(userId: string, preferredTripId?: string | null): Promise<{ device: GateDevice; tripId: string } | { error: string }> {
   const { data: staff } = await supabaseAdmin.from("staff").select("id").eq("user_id", userId).maybeSingle();
   if (!staff) return { error: "No staff record for this account." };
   const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
   const { data: trips } = await supabaseAdmin
     .from("trips")
-    .select("id, bus_id, status, started_at")
+    .select("id, bus_id, status, started_at, shift:shifts(start_time)")
     .eq("trip_date", today)
     .or(`driver_id.eq.${staff.id},conductor_id.eq.${staff.id}`)
     .not("status", "in", "(CANCELLED,COMPLETED)");
-  const trip = (trips || []).sort((a, b) => Number(b.status === "IN_PROGRESS") - Number(a.status === "IN_PROGRESS"))[0];
+  const open = (trips || []) as unknown as { id: string; bus_id: number | null; status: string | null; shift: { start_time: string | null } | null }[];
+  const startOf = (t: (typeof open)[number]) => t.shift?.start_time || "99:99";
+  const trip =
+    (preferredTripId ? open.find((t) => t.id === preferredTripId) : undefined) ||
+    open.find((t) => t.status === "IN_PROGRESS") ||
+    [...open].sort((a, b) => startOf(a).localeCompare(startOf(b)))[0];
   if (!trip?.bus_id) return { error: "You have no active trip assigned today." };
 
   const mac = `PHONE:BUS-${trip.bus_id}`;
@@ -140,4 +149,20 @@ export async function resolvePhoneDevice(userId: string): Promise<{ device: Gate
     .single();
   if (!dev || dev.revoked_at) return { error: "Phone gate is disabled for this bus." };
   return { device: dev as GateDevice, tripId: trip.id };
+}
+
+/** True when this staff user drives or conducts a trip on this bus today (crew may only see their own bus). */
+export async function crewsBusToday(userId: string, busId: number): Promise<boolean> {
+  const { data: staff } = await supabaseAdmin.from("staff").select("id").eq("user_id", userId).maybeSingle();
+  if (!staff) return false;
+  const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+  const { data: trip } = await supabaseAdmin
+    .from("trips")
+    .select("id")
+    .eq("bus_id", busId)
+    .eq("trip_date", today)
+    .or(`driver_id.eq.${staff.id},conductor_id.eq.${staff.id}`)
+    .limit(1)
+    .maybeSingle();
+  return Boolean(trip);
 }

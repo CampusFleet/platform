@@ -526,7 +526,22 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/gate/phone-capture.ts`: `boxFromLandmarks`, `cropFaceJpeg`, `SteadyFaceTrigger`.
 - `src/lib/face-landmarker-loader.ts`: `getFaceLandmarker` (MediaPipe on the client).
 
-**DB:** face_templates, biometric_consents, biometric_access_log, bus_security_incidents, gate_captures, gate_devices. Migrations: `20261109_biometric_face_id_and_gate_telematics.sql`, `20261111_face_id_v2_schema.sql`.
+**DB:** face_templates, biometric_consents, biometric_access_log, bus_security_incidents, gate_captures, gate_devices. Migrations: `20261109_biometric_face_id_and_gate_telematics.sql`, `20261111_face_id_v2_schema.sql`, `20261120_face_enroll_atomic.sql` (rpc `enroll_face_templates`: consent + revoke + insert in one transaction; enroll-v2 falls back to the old three writes until it is applied).
+
+**Rules fixed in the end-to-end audit (gate + enrollment):**
+- Gate reservation is the one for the capture's trip (`pickReservation`: same trip, else same shift without a trip). A bus with a morning and an evening run no longer marks the wrong reservation, and the reservation's `trip_id` is never moved.
+- One Face ID attendance row per student per trip (was per bus per day). Attendance and reservation writes throw on error, so the capture is retried (`FAILED`) instead of showing BOARDED with nothing saved; the event log and alerts are written after them.
+- No GPS fix → `latitude/longitude` null from the driver phone (was the first stop) and `decide({ gpsKnown: false })` raises no off-stop alerts.
+- Crew phone sends `?tripId=` (the run on screen); `resolvePhoneDevice` uses it only if it is that crew member's open trip today, else the running trip, else the next by shift start.
+- Heartbeat: `captureEnabled` follows `validation_locks.faceId` (was `attendance_mode`), `cropSizePx` 480 (agent crops 4.2x the face for MiniFASNet), and it retries up to 5 pending/failed captures of that bus (`waitUntil`).
+- Face service 401/403/404/408 and missing config are retryable (only 400/413 are final), so a misconfiguration no longer rejects captures for good.
+- `/api/gate/occupancy`: crew only for the bus they crew today (`crewsBusToday`, shared with `captures/[id]`).
+- Enrollment: anti-spoof counts only on frames that passed quality; the challenge turn side is checked when the face service sends `quality.yaw_signed` (`checkEnrollmentPoses(…, { side, signed })`, code `WRONG_TURN_DIRECTION`); `x-request-id` is a random UUID (was the student id); a missing match threshold returns 503 JSON.
+- Withdrawal: consent update and template delete must succeed (else 500); evidence delete errors are logged and left for the retention job; automated erasure logs `actor_user_id = null`.
+- Onboarding loads `GET /api/biometrics/consent` so an enrolled student sees "Set up" after a reload; the capture screen stores the camera stream before other calls so it is always stopped.
+- Driver gate console shows camera permission / https / no-detector errors to the driver.
+- Not fixed here: face-service `pad` query is outside the signature; `bus_gate_events` / incidents still write 0,0 when GPS is missing (NOT NULL columns, `gps_missing` in metadata).
+
 
 **Gotchas:**
 - `ROLE_RULES` lists `/api/biometrics/calibration` and `/api/biometrics/verify-gate`, but neither route exists (dead rules, api-access.ts L55 and L71).

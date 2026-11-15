@@ -1,4 +1,5 @@
 import { db as supabaseAdmin } from "@/lib/supabaseClient";
+import { assignTripSeats } from "@/lib/students/seating";
 import type { SessionPayload } from "@/lib/jwt";
 import { isManageRole } from "@/lib/security/actor";
 import { getTodayIST, getCurrentMinutesIST, timeStringToMinutes } from "@/lib/time-manager";
@@ -173,6 +174,8 @@ export function pickCurrentTrip(trips: DutyTrip[], nowMinutes = getCurrentMinute
 }
 
 export async function loadManifest(trip: DutyTrip): Promise<{ manifest: DutyPassenger[]; attendance: DutyAttendance[] }> {
+  // Give chart passengers their seat before the list is read (lib/students/seating.ts).
+  await assignTripSeats(trip.id, trip.bus?.id ?? null).catch((e) => console.warn("[duty] seat assignment:", e?.message));
   const [{ data: res }, { data: att }] = await Promise.all([
     supabaseAdmin
       .from("bus_reservations")

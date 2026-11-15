@@ -1,6 +1,7 @@
 import { db } from "@/lib/supabaseClient";
 import { cacheGet, getOrFetchWithCache } from "@/lib/redis";
 import { getHaltRequest } from "@/lib/dispatch/halt";
+import { assignTripSeats } from "./seating";
 
 /**
  * The signed-in student's ride today, for the live radar. Server-only.
@@ -114,6 +115,7 @@ async function buildRide(userId: string): Promise<RideInternal> {
   if (!trip) return base;
 
   const busId = trip.bus_id ?? pick.bus_id ?? null;
+  await assignTripSeats(trip.id, busId != null ? Number(busId) : null).catch(() => 0);
   const [busRes, routeRes, rsRes, conductorRes, campusRes] = await Promise.all([
     busId != null ? db.from("buses").select("bus_number, model, registration_no, capacity").eq("id", busId).maybeSingle() : Promise.resolve({ data: null }),
     trip.route_id ? db.from("routes").select("name, color").eq("id", trip.route_id).maybeSingle() : Promise.resolve({ data: null }),

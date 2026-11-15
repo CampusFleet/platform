@@ -5,19 +5,14 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 import { telematicsService } from "@/lib/telematicsService";
 import { ContactCrewModal } from "./ContactCrewModal";
-import { SeatPartnerModal } from "./SeatPartnerModal";
 import type { Student, Bus, Stop, Shift, Trip, Booking, Route, Staff } from "@/lib/types";
 import { CommuteTransitEngine } from "@/lib/commute/CommuteTransitEngine";
 import { getCampusStopFromDatabase } from "@/components/maps/CampusFleetMap";
-import type { SeatPartnerState } from "@/lib/commute/types";
 import {
   CommuteLiveRadarBanner,
-  CommuteWalkingStage,
-  CommuteSeatSelectionStage,
   CommuteConfirmedStage,
   CommuteScheduleOffStage,
   CommuteNoBusStage,
-  CancelSeatModal,
   CommuteLoadingSkeleton,
 } from "./commute";
 
@@ -65,12 +60,7 @@ export default function SmartTransitCockpit({
     initialReservation === undefined && initialSchedule === undefined
   );
 
-  // Seat attendance interaction state
-  const [isSavingSeat, setIsSavingSeat] = useState(false);
   const [tentativeSeat, setTentativeSeat] = useState<string | null>(() => initialReservation?.chosen_seat || null);
-  const [isChangingSeat, setIsChangingSeat] = useState(false);
-  const [isCancellingSeat, setIsCancellingSeat] = useState(false);
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isContactCrewOpen, setIsContactCrewOpen] = useState(false);
 
   // Anti-proxy Attendance Lock (Distance / RFID) State
@@ -82,21 +72,6 @@ export default function SmartTransitCockpit({
   const [telematicsLocation, setTelematicsLocation] = useState<any>(null);
   const [isTelematicsLive, setIsTelematicsLive] = useState(false);
   const [userGeoCoords, setUserGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [hasArrivedAtStopManually, setHasArrivedAtStopManually] = useState(false);
-  const [showSeatGridWhileWalking, setShowSeatGridWhileWalking] = useState(false);
-
-  // Seat Preferences & Companion Partner State
-  const [isSeatPartnerModalOpen, setIsSeatPartnerModalOpen] = useState(false);
-  const [seatPartnerData, setSeatPartnerData] = useState<SeatPartnerState>({
-    activePartnership: null,
-    incomingRequests: [],
-    outgoingRequests: [],
-    rowPreference: "NO_PREFERENCE",
-    positionPreference: "NO_PREFERENCE",
-    partnerSeat: null,
-    partnerName: null,
-  });
-
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "warning" } | null>(null);
   const showToast = useCallback((text: string, type: "success" | "error" | "warning" = "error") => {
@@ -147,38 +122,6 @@ export default function SmartTransitCockpit({
       console.warn("Could not fetch smart transit reservation", e);
     } finally {
       setIsLoadingReservation(false);
-    }
-  }, [studentId]);
-
-  const fetchSeatPartnerData = useCallback(async (bId?: string | number, sId?: string) => {
-    if (!studentId) return;
-    try {
-      const busParam = bId ? `&busId=${encodeURIComponent(bId)}` : "";
-      const shiftParam = sId ? `&shiftId=${encodeURIComponent(sId)}` : "";
-      const res = await fetch(`/api/students/seat-partner-requests?studentId=${encodeURIComponent(studentId)}${busParam}${shiftParam}`);
-      const data = await res.json();
-      if (data.success) {
-        const active = data.activePartnership;
-        let pSeat: string | null = null;
-        let pName: string | null = null;
-        if (active) {
-          const isSender = active.sender_id === studentId;
-          pName = isSender ? active.receiver_name : active.sender_name;
-          if (active.allocated_pair) {
-            pSeat = isSender ? active.allocated_pair.receiverSeat : active.allocated_pair.senderSeat;
-          }
-        }
-        setSeatPartnerData(prev => ({
-          ...prev,
-          activePartnership: active,
-          incomingRequests: data.incomingRequests || [],
-          outgoingRequests: data.outgoingRequests || [],
-          partnerSeat: pSeat,
-          partnerName: pName,
-        }));
-      }
-    } catch {
-      // silent
     }
   }, [studentId]);
 
@@ -258,10 +201,9 @@ export default function SmartTransitCockpit({
   }, [reservation, activeBooking]);
 
   const isAttendanceMarked = useMemo(() => {
-    if (isChangingSeat) return false;
     if (!confirmedSeatNumber) return false;
     return true;
-  }, [isChangingSeat, confirmedSeatNumber]);
+  }, [confirmedSeatNumber]);
 
   const isLockCleared = useMemo(
     () => CommuteTransitEngine.isLockCleared(attendanceLockStatus, isRfidVerified, reservation),
@@ -324,13 +266,6 @@ export default function SmartTransitCockpit({
       { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
     );
   }, []);
-
-  // Fetch companion partner details when bus or reservation is available
-  useEffect(() => {
-    if (assignedBus?.id || reservation?.bus_id) {
-      fetchSeatPartnerData(assignedBus?.id || reservation?.bus_id, assignedShift?.id || reservation?.shift_id);
-    }
-  }, [assignedBus?.id, reservation?.bus_id, assignedShift?.id, reservation?.shift_id, fetchSeatPartnerData]);
 
   // ─── 5. Google Maps Routes API Road Distance Fetcher ──────────────
   const isCoordInTransitRegion = (lat?: number | null, lng?: number | null) => {
@@ -451,150 +386,6 @@ export default function SmartTransitCockpit({
     [effectiveUserLat, effectiveUserLng]
   );
 
-  const isAtPickupStop = useMemo(() => {
-    if (hasArrivedAtStopManually) return true;
-    if (firstMileMetrics.userToStopDistMeters !== null && firstMileMetrics.userToStopDistMeters <= 70) return true;
-    return false;
-  }, [hasArrivedAtStopManually, firstMileMetrics.userToStopDistMeters]);
-
-  // ─── 6. Action Handlers (Seat Confirmation, Switch, Cancel) ───────
-  const handleConfirmSeat = async (seatNumber: string) => {
-    if (!seatNumber) return;
-    if (!isLockCleared) {
-      showToast("Check in at the bus first, then choose your seat.", "warning");
-      return;
-    }
-
-    const teacherProtection = CommuteTransitEngine.validateTeacherSeatProtection(seatNumber, assignedBus, isTeacher);
-    if (!teacherProtection.allowed) {
-      showToast(teacherProtection.reason || "This seat is reserved for Faculty and Teachers.", "warning");
-      return;
-    }
-
-    setIsSavingSeat(true);
-    try {
-      let lat: number | undefined;
-      let lng: number | undefined;
-      if (!isRfidVerified && typeof window !== "undefined" && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 3000,
-              maximumAge: 10000,
-            });
-          });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-        } catch {}
-      }
-
-      const res = await fetch("/api/students/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          reservationId: reservation?.id,
-          seatNumber,
-          latitude: lat,
-          longitude: lng,
-          verifyGps: !isRfidVerified,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setReservation(data.reservation);
-        setTentativeSeat(seatNumber);
-        setIsChangingSeat(false);
-        showToast(data.message || `✓ Seat ${seatNumber} confirmed and attendance recorded!`, "success");
-      } else {
-        showToast(data.message || "Could not confirm seat & mark attendance.", "error");
-      }
-    } catch (e: any) {
-      showToast("Error marking attendance: " + e.message, "error");
-    } finally {
-      setIsSavingSeat(false);
-    }
-  };
-
-  const executeCancelSeat = async () => {
-    if (!reservation?.id) return;
-    setShowCancelConfirm(false);
-    setIsCancellingSeat(true);
-    try {
-      const res = await fetch("/api/students/attendance", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reservationId: reservation.id,
-          studentId,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setReservation((prev: any) => ({
-          ...prev,
-          chosen_seat: null,
-          seat_chosen_at: null,
-          status: "ASSIGNED",
-          boarded_at: null,
-          lock_status: "LOCKED",
-          unlocked_by: null,
-          unlock_timestamp: null,
-        }));
-        setTentativeSeat(null);
-        setIsChangingSeat(false);
-        setAttendanceLockStatus("LOCKED");
-        setIsRfidVerified(false);
-        showToast("Seat cancelled and attendance rolled back.", "success");
-        setTimeout(() => fetchReservation(), 600);
-      } else {
-        showToast(data.message || "Could not cancel seat.", "error");
-      }
-    } catch (e: any) {
-      showToast("Error cancelling seat: " + e.message, "error");
-    } finally {
-      setIsCancellingSeat(false);
-    }
-  };
-
-  const handleSwitchSeat = async (newSeatNumber: string) => {
-    if (!reservation?.id || !newSeatNumber) return;
-    if (newSeatNumber === reservation?.chosen_seat) {
-      setIsChangingSeat(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/students/attendance", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reservationId: reservation.id,
-          studentId,
-          newSeatNumber,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setReservation((prev: any) => ({
-          ...prev,
-          chosen_seat: newSeatNumber,
-          seat_chosen_at: new Date().toISOString(),
-        }));
-        setTentativeSeat(newSeatNumber);
-        setIsChangingSeat(false);
-        fetchReservation();
-        showToast(`✓ Switched to Seat ${newSeatNumber}`, "success");
-      } else {
-        showToast(data.message || "Could not switch seat.", "error");
-      }
-    } catch (e: any) {
-      showToast("Error switching seat: " + e.message, "error");
-    }
-  };
-
   // ─── 7. Evaluate Commute Stage via OOP State Machine ───────────────
   const activeStage = CommuteTransitEngine.evaluateStage({
     isLoading: isLoadingReservation,
@@ -602,9 +393,9 @@ export default function SmartTransitCockpit({
     isAllShiftsOver,
     assignedBus,
     isAttendanceMarked,
-    isAtPickupStop,
-    hasArrivedAtStopManually,
-    showSeatGridWhileWalking,
+    isAtPickupStop: false,
+    hasArrivedAtStopManually: false,
+    showSeatGridWhileWalking: false,
     hasStopCoordinates: Boolean(assignedStop?.latitude && assignedStop?.longitude),
   });
 
@@ -661,59 +452,6 @@ export default function SmartTransitCockpit({
         />
       )}
 
-      {/* ─── STAGE 4: FIRST-MILE WALKING GUIDANCE ─── */}
-      {activeStage === "WALKING_TO_STOP" && (
-        <CommuteWalkingStage
-          assignedStop={assignedStop}
-          assignedRoute={assignedRoute}
-          stops={stops}
-          metrics={firstMileMetrics}
-          telematicsLocation={telematicsLocation}
-          assignedBusNumber={assignedBus?.busNumber ? String(assignedBus.busNumber) : "Assigned"}
-          assignedBusId={assignedBus?.id}
-          userCoords={{ latitude: effectiveUserLat, longitude: effectiveUserLng }}
-          deviceGpsCoords={deviceGpsCoords}
-          userAddress={(student as any)?.home_address || (student as any)?.homeAddress || "Your Origin"}
-          onArrivedAtStop={() => setHasArrivedAtStopManually(true)}
-          onSelectSeatAheadOfTime={() => setShowSeatGridWhileWalking(true)}
-        />
-      )}
-
-      {/* ─── STAGE 5: SEAT SELECTION & ATTENDANCE ─── */}
-      {activeStage === "SEAT_SELECTION" && assignedBus && (
-        <CommuteSeatSelectionStage
-          assignedBus={assignedBus}
-          assignedStop={assignedStop}
-          assignedShiftName={assignedShiftName}
-          assignedShiftStartTime={assignedShiftStartTime}
-          studentId={studentId}
-          activeBookings={bookings}
-          selectedSeat={tentativeSeat}
-          occupiedSeats={occupiedSeats}
-          isLockCleared={isLockCleared}
-          isSavingSeat={isSavingSeat}
-          isChangingSeat={isChangingSeat}
-          isTeacher={isTeacher}
-          userRole={user?.role}
-          seatPartnerData={seatPartnerData}
-          onSelectSeat={seat => {
-            if (isChangingSeat) {
-              handleSwitchSeat(seat);
-            } else {
-              setTentativeSeat(seat);
-            }
-          }}
-          onConfirmSeat={handleConfirmSeat}
-          onOpenSeatPartnerModal={() => setIsSeatPartnerModalOpen(true)}
-          onCancelSeatChange={isChangingSeat ? () => setIsChangingSeat(false) : undefined}
-          onAttendanceUnlocked={() => {
-            setAttendanceLockStatus("UNLOCKED");
-            fetchReservation(true);
-          }}
-          formatShiftTime={CommuteTransitEngine.formatShiftTime}
-        />
-      )}
-
       {/* ─── STAGE 6: CONFIRMED RIDE COCKPIT ─── */}
       {activeStage === "RIDE_CONFIRMED" && assignedBus && (
         <CommuteConfirmedStage
@@ -745,15 +483,6 @@ export default function SmartTransitCockpit({
         />
       )}
 
-      {/* ─── MODAL: CANCEL SEAT CONFIRMATION ─── */}
-      <CancelSeatModal
-        isOpen={showCancelConfirm}
-        seatNumber={displaySeatNumber}
-        isCancelling={isCancellingSeat}
-        onClose={() => setShowCancelConfirm(false)}
-        onConfirmCancel={executeCancelSeat}
-      />
-
       {/* ─── MODAL: CONTACT CREW & HELPLINE ─── */}
       <ContactCrewModal
         isOpen={isContactCrewOpen}
@@ -765,24 +494,6 @@ export default function SmartTransitCockpit({
         transportManager={transportManager}
         stopName={assignedStop?.name}
       />
-
-      {/* ─── MODAL: SEAT PARTNER & PREFERENCES ─── */}
-      {assignedBus && (
-        <SeatPartnerModal
-          isOpen={isSeatPartnerModalOpen}
-          onClose={() => setIsSeatPartnerModalOpen(false)}
-          studentId={studentId}
-          busId={String(assignedBus.id)}
-          busNumber={String(assignedBus.busNumber)}
-          shiftId={assignedShift?.id}
-          currentSeat={tentativeSeat || reservation?.chosen_seat}
-          onPairUpdated={() => {
-            fetchSeatPartnerData(assignedBus.id, assignedShift?.id);
-            fetchReservation(true);
-          }}
-          showToast={showToast}
-        />
-      )}
 
       {/* ─── TOAST NOTIFICATION ─── */}
       {toastMessage && (

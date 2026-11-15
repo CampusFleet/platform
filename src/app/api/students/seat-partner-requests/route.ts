@@ -3,8 +3,6 @@ import { resolveActingStudentId } from "@/lib/security/actor";
 import { isSafeId } from "@/lib/security/safe-id";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSessionFromRequest } from "@/lib/jwt";
-import { allocateAdjacentPairForPartners } from "@/lib/seat-allocation-engine";
-import type { Bus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -109,69 +107,8 @@ export async function GET(req: NextRequest) {
       busInfo = bData;
     }
 
-    // 6. Fetch Fellow Commuters on the Same Bus (Potential Seat Partners)
-    let busPeers: any[] = [];
-    if (resolvedBusId) {
-      const numBusId = Number(resolvedBusId);
-      const resQuery = supabaseAdmin
-        .from("bus_reservations")
-        .select("student_id, chosen_seat, status")
-        .eq("bus_id", numBusId)
-        .neq("status", "CANCELLED")
-        .limit(80);
-
-      if (resolvedShiftId) resQuery.eq("shift_id", resolvedShiftId);
-
-      const { data: reservations } = await resQuery;
-      const reservationStudentIds = (reservations || [])
-        .map((r: any) => r.student_id)
-        .filter((sid: string) => !studentAliases.includes(sid));
-
-      const reservationSeatMap = new Map((reservations || []).map((r: any) => [r.student_id, r.chosen_seat]));
-
-      // Also fetch students who have this route assigned as their primary route
-      let routeStudentIds: string[] = [];
-      const routeIdToUse = busInfo?.current_route_id || currentStudent?.primary_route_id;
-      if (routeIdToUse) {
-        const { data: routeStudents } = await supabaseAdmin
-          .from("students")
-          .select("id")
-          .eq("primary_route_id", routeIdToUse)
-          .limit(50);
-        if (routeStudents) {
-          routeStudentIds = routeStudents
-            .map(s => s.id)
-            .filter((sid: string) => !studentAliases.includes(sid));
-        }
-      }
-
-      const allPeerIds = Array.from(new Set([...reservationStudentIds, ...routeStudentIds])).filter(Boolean);
-
-      if (allPeerIds.length > 0) {
-        const { data: peerStudents } = await supabaseAdmin
-          .from("students_full")
-          .select("id, user_id, full_name, student_id_code, department, class_name, primary_stop_name")
-          .in("id", allPeerIds);
-
-        // Filter out staff, drivers, conductors
-        busPeers = (peerStudents || [])
-          .filter((p: any) => {
-            const code = (p.student_id_code || "").toLowerCase();
-            const id = (p.id || "").toLowerCase();
-            return !code.startsWith("drv-") && !code.startsWith("cnd-") && !id.includes("drv") && !id.includes("cnd") && !id.includes("teacher");
-          })
-          .map((p: any) => ({
-            studentId: p.id,
-            fullName: p.full_name,
-            studentIdCode: p.student_id_code || "",
-            department: p.department || "",
-            className: p.class_name || "",
-            stopName: p.primary_stop_name || "",
-            currentSeat: reservationSeatMap.get(p.id) || reservationSeatMap.get(p.user_id) || null,
-          }));
-      }
-    }
-
+    // Other students on the bus are not listed (privacy); partners are invited by university ID.
+    const busPeers: never[] = [];
     return NextResponse.json({
       success: true,
       incomingRequests: incoming || [],
@@ -239,6 +176,9 @@ export async function POST(req: NextRequest) {
         .from("students_full")
         .select("id, user_id, full_name, primary_route_id, student_id_code");
 
+      if (receiverId && !isSafeId(receiverId)) {
+        return NextResponse.json({ success: false, message: "Invalid student." }, { status: 400 });
+      }
       if (receiverId) {
         receiverQuery = receiverQuery.or(`id.eq.${receiverId},user_id.eq.${receiverId},student_id_code.ilike.${receiverId}`);
       } else if (receiverStudentIdCode) {
@@ -365,7 +305,7 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.from("notifications").insert({
           user_id: receiverStudent.user_id || resolvedReceiverId,
           title: "👥 Seat Partner Invitation",
-          message: `${senderName} wants to sit together on Bus ${numBusId}! Review and accept in Seat Preferences to pair adjacent seats.`,
+          message: `${senderName} wants to sit next to you on the bus. Accept in Settings → Seat preferences.`,
           type: "COMPANION_INVITE",
           // notifications has no metadata column; request details live in seat_partner_requests
         });
@@ -471,124 +411,27 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Executes the acceptance handshake and allocates adjacent seats for the two partners
+ * Accepts a partner request: both students store each other as seat partner. The boarding chart
+ * then seats them side by side when it assigns seats (lib/students/seating.ts). Seats already
+ * assigned on today's chart are not moved here.
  */
-async function executeAcceptance(requestId: string, respondingStudentId?: string) {
-  const { data: partnerReq } = await supabaseAdmin
-    .from("seat_partner_requests")
-    .select("*")
-    .eq("id", requestId)
-    .maybeSingle();
-
-  if (!partnerReq) {
-    return NextResponse.json({ success: false, message: "Seat partner request not found." }, { status: 404 });
-  }
-
-  const { sender_id, receiver_id, bus_id, preferred_row_zone } = partnerReq;
-
-  // 1. Fetch Bus and occupied seats
-  const [busRes, occRes, senderRes, receiverRes] = await Promise.all([
-    supabaseAdmin.from("buses").select("*").eq("id", bus_id).single(),
-    supabaseAdmin.from("bus_reservations").select("chosen_seat, student_id").eq("bus_id", bus_id).neq("status", "CANCELLED"),
-    supabaseAdmin.from("bus_reservations").select("*").eq("student_id", sender_id).eq("bus_id", bus_id).neq("status", "CANCELLED").maybeSingle(),
-    supabaseAdmin.from("bus_reservations").select("*").eq("student_id", receiver_id).eq("bus_id", bus_id).neq("status", "CANCELLED").maybeSingle(),
-  ]);
-
-  if (!busRes.data) {
-    return NextResponse.json({ success: false, message: "Bus chassis configuration not found." }, { status: 404 });
-  }
-
-  const bus: Bus = busRes.data;
-  const occupiedSeats = (occRes.data || [])
-    .map((r: any) => r.chosen_seat)
-    .filter(Boolean);
-
-  // 2. Fetch student preferences
-  const [sStud, rStud] = await Promise.all([
-    supabaseAdmin.from("students").select("id, seat_row_preference, seat_position_preference").eq("id", sender_id).maybeSingle(),
-    supabaseAdmin.from("students").select("id, seat_row_preference, seat_position_preference").eq("id", receiver_id).maybeSingle(),
-  ]);
-
-  const studentA = {
-    id: sender_id,
-    seatRowPreference: sStud.data?.seat_row_preference || preferred_row_zone || "MIDDLE",
-    seatPositionPreference: sStud.data?.seat_position_preference || "NO_PREFERENCE",
-    currentSeat: senderRes.data?.chosen_seat || null,
-  };
-
-  const studentB = {
-    id: receiver_id,
-    seatRowPreference: rStud.data?.seat_row_preference || preferred_row_zone || "MIDDLE",
-    seatPositionPreference: rStud.data?.seat_position_preference || "NO_PREFERENCE",
-    currentSeat: receiverRes.data?.chosen_seat || null,
-  };
-
-  // 3. Run algorithmic adjacent pair allocation
-  const pairResult = allocateAdjacentPairForPartners(bus, studentA, studentB, occupiedSeats);
-
-  const nowIso = new Date().toISOString();
-
-  // 4. Update both students' reservations with the adjacent pair
-  if (senderRes.data?.id) {
-    await supabaseAdmin
-      .from("bus_reservations")
-      .update({
-        chosen_seat: pairResult.seatA,
-        auto_assigned_seat: pairResult.seatA,
-        seat_partner_matched: true,
-        seat_preference_applied: true,
-      })
-      .eq("id", senderRes.data.id);
-  }
-
-  if (receiverRes.data?.id) {
-    await supabaseAdmin
-      .from("bus_reservations")
-      .update({
-        chosen_seat: pairResult.seatB,
-        auto_assigned_seat: pairResult.seatB,
-        seat_partner_matched: true,
-        seat_preference_applied: true,
-      })
-      .eq("id", receiverRes.data.id);
-  }
-
-  // 5. Update partner references in students table
+async function executeAcceptance(requestId: string, _respondingStudentId?: string) {
+  const { data: partnerReq } = await supabaseAdmin.from("seat_partner_requests").select("*").eq("id", requestId).maybeSingle();
+  if (!partnerReq) return NextResponse.json({ success: false, message: "Seat partner request not found." }, { status: 404 });
+  const { sender_id, receiver_id } = partnerReq;
   await Promise.all([
-    supabaseAdmin
-      .from("students")
-      .update({ preferred_partner_student_id: receiver_id, preferred_partner_name: partnerReq.receiver_name })
-      .eq("id", sender_id),
-    supabaseAdmin
-      .from("students")
-      .update({ preferred_partner_student_id: sender_id, preferred_partner_name: partnerReq.sender_name })
-      .eq("id", receiver_id),
+    supabaseAdmin.from("students").update({ preferred_partner_student_id: receiver_id, preferred_partner_name: partnerReq.receiver_name }).eq("id", sender_id),
+    supabaseAdmin.from("students").update({ preferred_partner_student_id: sender_id, preferred_partner_name: partnerReq.sender_name }).eq("id", receiver_id),
   ]);
-
-  // 6. Update Request Status to ACCEPTED
-  const allocatedPayload = {
-    senderSeat: pairResult.seatA,
-    receiverSeat: pairResult.seatB,
-    relation: pairResult.relation,
-    isAdjacent: pairResult.isAdjacent,
-  };
-
   const { data: updatedReq } = await supabaseAdmin
     .from("seat_partner_requests")
-    .update({
-      status: "ACCEPTED",
-      allocated_pair: allocatedPayload,
-      responded_at: nowIso,
-    })
+    .update({ status: "ACCEPTED", responded_at: new Date().toISOString() })
     .eq("id", requestId)
     .select("*")
     .single();
-
   return NextResponse.json({
     success: true,
-    message: `🎉 Seat Partner Confirmed! You and ${partnerReq.sender_name} are seated together in Seats ${pairResult.seatA} & ${pairResult.seatB} (${pairResult.relation.replace("_", " ")}).`,
+    message: "Seat partner confirmed. You will be seated together from the next boarding chart.",
     request: updatedReq,
-    allocatedPair: allocatedPayload,
   });
 }
-

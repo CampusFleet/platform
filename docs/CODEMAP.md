@@ -249,6 +249,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 - `src/lib/students/portrait.ts`: `savePortrait`, `portraitKeyFromUrl`, `isPortraitLocked`, `PortraitLockedError`. Deletes the previous portrait blob.
 - `src/lib/onboarding-cache.ts`: `getOnboardingDraftKey`, `saveOnboardingDraft`, `loadOnboardingDraft`, `clearOnboardingDraft` (client draft storage).
 - `src/components/portal/CommuteHome.tsx` (My Commute), `StudentCrewSheet.tsx` (header contact sheet).
+- `src/lib/students/seating.ts`: `assignTripSeats(tripId, busId)` gives chart passengers a final seat (`chosen_seat`) using row/position/partner preferences, skipping teacher seats; called from `loadManifest` (conductor poll) and the student ride build. Unique index `uq_bus_reservations_trip_seat` prevents double seats.
+- `src/components/portal/SeatPreferencesSettings.tsx`: Settings row/window/aisle + mutual seat partner by university ID.
 - `src/lib/trip-planner.ts`: `planTrips` (pure; used by `daily-rollover.ts`).
 - `src/lib/students/ride.ts`: `getDayOff` (Redis `schedule:class:{classId}:{DAY}`), `getRideInternal` (Redis `ride:v2:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
 - `src/lib/dispatch/halt.ts`: `haltKey`, `getHaltRequest`, `createHaltRequest` (Redis `halt_request:{tripId}:{studentId}`, 15 min).
@@ -430,7 +432,6 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/boarding/rolling-token | GET | Bus rolling-QR payload for the conductor screen | MW STAFF | buses |
 | /api/students/board-self-service | POST | Student scans the bus rolling QR (or static seat QR) | H | attendance_records, bus_reservations, buses, students, trips |
 | /api/boarding/roaming | GET, POST | Roaming and departure alerts (polled every 5 s by the portal) | H | attendance_records, bus_departure_alerts, bus_reservations, students, trips, notifications, audit_logs |
-| /api/attendance/lock | GET, POST | Validation-lock status (GPS proximity, RFID); caches lock and RFID state | H | attendance_records, bus_reservations, buses, students_full, trips |
 | /api/conductor/sync | GET | Conductor live state; also reads halt keys | MW STAFF | bus_reservations_full, attendance_records, bus_departure_alerts |
 | /api/dispatch/halt-requests | GET, POST, PATCH | Halt requests stored only in Redis `halt_request:{trip}:{student}` | MW write STAFF+student+teacher | students_full |
 | /api/students/early-departure | POST, GET | Student early-departure request | H | early_departure_requests, students_full |
@@ -690,11 +691,11 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 | `onboarding:pickup-catalog:v1` | lib/students/pickup `loadPickupCatalog` | pickup-options, students/onboarding | TTL 120 s |
 | `faceid:challenge:{nonce}` | lib/face/challenge `consumeFaceChallenge` (SET NX) | enroll-v2 | TTL 5 min (single use) |
 | `campusfleet:state:{routes,stops,shifts,trips,stop_routes,buses,transit_zones,campuses,subscription_plans}` | sync/state | sync/state | Supabase webhook (partial, see §7) |
-| `telematics:bus:{alias}` (many aliases) | telematics/live POST (120 s), GET warm (60 s), attendance/lock L70 | telematics/live GET | TTL |
+| `telematics:bus:{alias}` (many aliases) | telematics/live POST (120 s), GET warm (60 s) | telematics/live GET | TTL |
 | `telematics:rfid:latest:{busId}` | RFID ingest (route not re-read) | telematics/live L110 | TTL |
 | `telematics:device_bus_map:{dev}`, `telematics:device_bus_number:{dev}`, `telematics:device_status:{dev}` | telematics/devices, rfid/latest-tap (300 s) | device ingest | devices and latest-tap DELETE |
 | `telematics:unmapped_device_list`, `telematics:latest_esp32_status` | devices, latest-tap | devices GET, latest-tap | same |
-| `attendance:lock:{id}:{date}`, `attendance:rfid:{id}:{date}` | attendance/lock L474 (7200 s), L542-543 (86400 s) | attendance/lock | TTL |
+| `attendance:lock:{id}:{date}`, `attendance:rfid:{id}:{date}` | telematics/rfid, students/board-self-service | students/attendance GET (teacher view) | TTL |
 | `halt_request:{trip}:{student}` | dispatch/halt-requests (keyFor L12) | halt-requests L34, conductor/sync L46 | route PATCH and TTL |
 | `replay:bus_qr:{bus}:{block}:{student}` | rolling-bus-crypto L215 (NX, 120 s) | same | TTL |
 | `gate:nonce:{device}:{nonce}` | device-auth L107 (NX) | same | TTL |
@@ -745,7 +746,6 @@ All three use GOOGLE_MAPS_API_KEY, falling back to NEXT_PUBLIC_GOOGLE_MAPS_API_K
 |---|---|---|
 | src/components/portal/FullScreenLiveRadarView.tsx:452 | see file (period not captured) | GET /api/dispatch/halt-requests?tripId&studentId |
 | src/components/portal/FullScreenLiveRadarView.tsx:471 | UI timer | none |
-| src/components/portal/AttendanceLockCard.tsx:100 | 10 s | fetchLockStatus, likely /api/attendance/lock |
 | src/components/portal/BusDepartureAlertModal.tsx:62 | 1 s | countdown only |
 | src/components/chat/ChatPortalView.tsx:205 | 4 s | loadMessages(activeConvId), likely /api/chat/messages |
 | src/components/conductor/ConductorContext.tsx:272 | 4 s, visible tab only | refreshLiveState, likely /api/conductor/sync |

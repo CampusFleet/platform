@@ -22,7 +22,7 @@ import { UserRole } from "@/lib/types";
 import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { StaffPayoutCredentialsCard } from "@/components/common/StaffPayoutCredentialsCard";
 import { HomeStopSettings } from "@/components/portal/HomeStopSettings";
-import { CommuterSeatPreferencesCard } from "@/components/common/CommuterSeatPreferencesCard";
+import { SeatPreferencesSettings } from "@/components/portal/SeatPreferencesSettings";
 import { BiometricPrivacyCard } from "@/components/common/BiometricPrivacyCard";
 
 export function SettingsView() {
@@ -415,7 +415,6 @@ export function SettingsView() {
   const [switchRequests, setSwitchRequests] = useState<any[]>([]);
   const [availableBuses, setAvailableBuses] = useState<any[]>([]);
   const [availableStops, setAvailableStops] = useState<any[]>([]);
-  const [activeReservation, setActiveReservation] = useState<any>(null);
 
   useEffect(() => {
     const initializeForm = () => {
@@ -514,14 +513,6 @@ export function SettingsView() {
     setAvailableBuses(store.getBuses() || []);
     setAvailableStops(store.getStops() || []);
 
-    fetch(`/api/students/attendance?studentId=${studentId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.reservation) {
-          setActiveReservation(data.reservation);
-        }
-      })
-      .catch(() => {});
 
     fetch(`/api/students/switch-requests?studentId=${studentId}`)
       .then(res => res.json())
@@ -1041,31 +1032,7 @@ export function SettingsView() {
             {isStudent && <HomeStopSettings />}
 
             {isStudent && <BiometricPrivacyCard />}
-            <CommuterSeatPreferencesCard
-              studentId={
-                store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                store.getStaff().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                currentUser?.id ||
-                ""
-              }
-              activeReservation={activeReservation}
-              onPreferencesUpdated={() => {
-                const sId =
-                  store.getStudents().find(s => s.userId === currentUser?.id || s.id === currentUser?.id)?.id ||
-                  currentUser?.id;
-                if (sId) {
-                  fetch(`/api/students/attendance?studentId=${sId}`)
-                    .then(r => r.json())
-                    .then(resData => {
-                      if (resData.success && resData.reservation) {
-                        setActiveReservation(resData.reservation);
-                      }
-                    })
-                    .catch(() => {});
-                }
-              }}
-              showToast={showToast}
-            />
+            {isStudent && <SeatPreferencesSettings />}
           </>
         )}
         

@@ -286,7 +286,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/classes/teachers | GET | List teacher users | session | users |
 | /api/teacher/schedule-shift | GET, POST | Teacher sets class shift schedule and demand | MW TEACHING+TA+TM | class_shift_schedules, class_teachers, shift_demands, shifts, students, v_classes_expanded |
 | /api/teacher/today-arrivals | GET | Arrivals for the teacher's classes | same | attendance_records, buses, class_teachers, students_full, trips |
-| /api/teacher/early-departures | GET, PATCH | Approve early departures | same | early_departure_requests, class_teachers |
+| /api/teacher/early-departures | GET, PATCH | Leave-early requests of the teacher's own classes (managers: all); PATCH `{requestId, status, remarks}` → rpc `review_early_departure`. See "Leave early" | same | early_departure_requests, class_teachers, rpc review_early_departure |
 
 **Gotchas:**
 - `/api/academic/cascade` POST has no role rule and the grep found no session check in the handler. Check whether POST writes.
@@ -438,7 +438,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 | /api/boarding/roaming | GET, POST | Roaming and departure alerts (polled every 5 s by the portal) | H | attendance_records, bus_departure_alerts, bus_reservations, students, trips, notifications, audit_logs |
 | /api/conductor/sync | GET | Conductor live state; also reads halt keys | MW STAFF | bus_reservations_full, attendance_records, bus_departure_alerts |
 | /api/dispatch/halt-requests | GET, POST, PATCH | Halt requests stored only in Redis `halt_request:{trip}:{student}` | MW write STAFF+student+teacher | students_full |
-| /api/students/early-departure | POST, GET | Student early-departure request | H | early_departure_requests, students_full |
+| /api/students/early-departure | GET, POST, DELETE | Leave early (student, session only): GET options + today's requests, POST `{shiftId, reason}`, DELETE `{requestId}` withdraws. See "Leave early" | H (student) | early_departure_requests, students, shifts, trips, buses, class_shift_schedules, notifications |
 | /api/telematics/rfid | POST | ESP32 RFID tap recorded as attendance | device | attendance_records, bus_reservations, buses, students, students_full, trips |
 | /api/telematics/rfid/map | POST | Map an RFID UID to a student | MW MANAGE | students, students_full, audit_logs |
 | /api/telematics/rfid/latest-tap | GET, DELETE | Latest unmapped tap and hardware status (Redis) | MW STAFF | buses, students_full |
@@ -653,6 +653,15 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Not yet:** push to a closed app (the service worker has a `push` handler but nothing subscribes; needs VAPID keys + a sender).
 - **Preferences:** `/api/users/notifications` (users table; migration `20260924_add_notification_prefs.sql`).
 - **Departure alerts:** `bus_departure_alerts`, through `/api/boarding/roaming` and `BusDepartureAlertModal`.
+
+### Leave early (teacher gate pass)
+- **Flow:** student opens `/portal/leave-early` (link "Need to leave early?" on My Commute), picks an earlier ride home and writes a reason → class teachers are notified (managers if the class has no teacher) → teacher decides on `/teacher/gate-passes` → student is notified.
+- **Options** (`src/lib/students/leave-early.ts`, `getLeaveEarly`): active CAMPUS_TO_HOME shifts leaving after now and before the class's usual outgoing shift today (`class_shift_schedules`), with a SCHEDULED/DELAYED run that has a bus on the student's route. Students see shift name, time and bus numbers; never trip ids. One open request per student per day (`uq_early_dep_open_per_day`).
+- **Decision** (migration `20261119_leave_early.sql`, rpc `review_early_departure`, one transaction): only managers or a teacher of the student's class (`class_teachers`); only today's PENDING requests. Approve → books the run of that shift on the student's route with the most free seats (`assigned_by = MANUAL`, pick-up at the campus stop like the chart), cancels the usual ride home (`cancel_reason = LEFT_EARLY`), stores `booked_trip_id`, audit log + notification. Reject → notification, usual ride unchanged.
+- **Chart:** trigger `trg_skip_outgoing_after_leave_early` stops `boarding_chart_tick` from re-adding the usual ride home that day.
+- **Boarding:** `/api/boarding/scan` lets a student leave before their class's outgoing shift only with a booking on that exact run (was: any approved request created "today" in UTC).
+- **Teacher list:** `src/lib/teachers/gate-passes.ts` (`listGatePasses`, `reviewGatePass`), used by the page and the API. A PENDING request from an earlier day shows as Expired.
+- **Types:** `review_early_departure` and `booked_trip_id` are not in `database.types.ts` until it is regenerated after the migration (rpc call is cast).
 
 ## 16. Geo / maps
 

@@ -121,7 +121,8 @@ export default async function TeacherRootPage() {
       .from("early_departure_requests")
       .select("id", { count: "exact", head: true })
       .in("class_id", classIds)
-      .eq("status", "PENDING");
+      .eq("status", "PENDING")
+      .eq("request_date", new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10));
 
     pendingGatePasses = passCount || 0;
   }

@@ -229,16 +229,18 @@ export async function POST(req: NextRequest) {
         const shiftStart = schedule.outgoing_shift.start_time;
 
         if (currentTimeStr < shiftStart) {
-          // Check if an approved early departure request exists
-          const { data: approvedEarlyDeparture } = await supabaseAdmin
-            .from("early_departure_requests")
+          // Leaving before the class's ride home is allowed only with a booking on THIS run.
+          // An approved leave-early request creates that booking (review_early_departure);
+          // a request for another bus or another day does not count.
+          const { data: bookingOnThisRun } = await supabaseAdmin
+            .from("bus_reservations")
             .select("id")
             .eq("student_id", student.id)
-            .eq("status", "APPROVED")
-            .gte("created_at", new Date().toISOString().split("T")[0])
+            .eq("trip_id", tripId)
+            .in("status", ["ASSIGNED", "SEAT_SELECTED", "BOARDED"])
             .limit(1);
 
-          if (!approvedEarlyDeparture || approvedEarlyDeparture.length === 0) {
+          if (!bookingOnThisRun || bookingOnThisRun.length === 0) {
             // Audit log
             try {
               await supabaseAdmin.from("audit_logs").insert({
@@ -248,7 +250,7 @@ export async function POST(req: NextRequest) {
                 action: "BOARDING_DENIED_SCHEDULED_CLASS",
                 entity: "BoardingScan",
                 entity_id: tripId,
-                reason: `Departure before scheduled outgoing shift (${shiftStart.substring(0, 5)}) without approved early departure pass.`,
+                reason: `Departure before scheduled outgoing shift (${shiftStart.substring(0, 5)}) without a booking on this run.`,
                 previous_value: { status: "PENDING" },
                 new_value: { status: "DENIED", class: student.class_name },
               });
@@ -256,10 +258,10 @@ export async function POST(req: NextRequest) {
               console.error("[AUDIT_FAIL] BOARDING_DENIED audit log failed:", auditErr);
             }
 
-            supabaseAdmin.from("notifications").insert({
+            await supabaseAdmin.from("notifications").insert({
               user_id: student.id,
               title: "❌ Bus Boarding Denied",
-              message: `You cannot board the campus bus right now because your scheduled outgoing shift starts at ${shiftStart.substring(0, 5)}. Early departure requires teacher approval.`,
+              message: `You cannot board the campus bus right now because your scheduled outgoing shift starts at ${shiftStart.substring(0, 5)}. To leave early, ask your teacher in My Commute → Need to leave early?`,
               type: "BOARDING",
               is_read: false,
             });
@@ -269,8 +271,8 @@ export async function POST(req: NextRequest) {
                 success: false,
                 status: "CLASS_RESTRICTION",
                 code: "ACTIVE_CLASS_RESTRICTION",
-                message: `❌ BOARDING DENIED: Your class outgoing departure shift starts at ${shiftStart.substring(0, 5)}. Early departure requires teacher approval.`,
-                reason: `Departure before scheduled outgoing shift (${shiftStart.substring(0, 5)}) without approved early departure pass.`,
+                message: `❌ BOARDING DENIED: Your class outgoing departure shift starts at ${shiftStart.substring(0, 5)}. The student needs an approved leave-early request for this bus.`,
+                reason: `Departure before scheduled outgoing shift (${shiftStart.substring(0, 5)}) without a booking on this run.`,
                 studentName: student.full_name,
                 className: student.class_name,
               },

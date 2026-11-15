@@ -1,129 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseClient";
-import { getSession } from "@/lib/jwt";
-import { isSafeId } from "@/lib/security/safe-id";
+import { z } from "zod";
+import { getSessionFromRequest } from "@/lib/jwt";
+import { waitUntil } from "@vercel/functions";
+import { getLeaveEarly, isLeaveEarlyError, notifyLeaveEarlyReviewers, requestLeaveEarly, withdrawLeaveEarly } from "@/lib/students/leave-early";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/students/early-departure
- * Student submits an emergency early departure request to their class teacher
+ * Leave early (student). The student is always the session user; no ids are read from the request.
+ * GET: today's options and requests. POST: { shiftId, reason }. DELETE: { requestId } withdraws a waiting request.
  */
-export async function POST(req: NextRequest) {
+async function studentSession(req: NextRequest) {
+  const session = await getSessionFromRequest(req);
+  if (!session) return { error: NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 }) };
+  if (session.role !== "student") return { error: NextResponse.json({ success: false, error: "Only students can ask to leave early." }, { status: 403 }) };
+  return { session };
+}
+
+function failure(e: unknown, label: string) {
+  if (isLeaveEarlyError(e)) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+  console.error(`[leave-early] ${label}:`, (e as Error)?.message);
+  return NextResponse.json({ success: false, error: "Something went wrong. Try again." }, { status: 500 });
+}
+
+export async function GET(req: NextRequest) {
+  const { session, error } = await studentSession(req);
+  if (error) return error;
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const { studentId, shiftId = "shift-halfday", reason } = body;
-
-    if (!reason || !reason.trim()) {
-      return NextResponse.json(
-        { success: false, error: "A valid emergency reason is required." },
-        { status: 400 }
-      );
-    }
-
-    const isStaffOrAdmin = ["admin", "transport_admin", "teacher", "transport_manager"].includes(session.role);
-    const targetStudentId = (!isStaffOrAdmin)
-      ? (session.studentId || session.userId)
-      : (studentId || session.studentId || session.userId);
-
-    if (!isSafeId(targetStudentId)) {
-      return NextResponse.json({ success: false, error: "Invalid student identifier." }, { status: 400 });
-    }
-
-    // Fetch student's class_id (class_name only exists on the students_full view)
-    const { data: student } = await supabaseAdmin
-      .from("students_full")
-      .select("id, full_name, class_id, class_name")
-      .or(`id.eq.${targetStudentId},user_id.eq.${targetStudentId}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (!student) {
-      return NextResponse.json(
-        { success: false, error: "Student profile record not found." },
-        { status: 404 }
-      );
-    }
-
-    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-    const todayDateStr = nowIST.toISOString().split("T")[0];
-
-    // Check if an active request already exists for today
-    const { data: existing } = await supabaseAdmin
-      .from("early_departure_requests")
-      .select("id, status")
-      .eq("student_id", student.id)
-      .eq("request_date", todayDateStr)
-      .neq("status", "REJECTED")
-      .maybeSingle();
-
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        message: "An active early departure request already exists for today.",
-        request: existing,
-      });
-    }
-
-    const { data: requestRecord, error: insertError } = await supabaseAdmin
-      .from("early_departure_requests")
-      .insert({
-        student_id: student.id,
-        class_id: student.class_id,
-        shift_id: shiftId,
-        request_date: todayDateStr,
-        reason: reason.trim(),
-        status: "PENDING",
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Emergency early departure request submitted to your class teacher.",
-      request: requestRecord,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true, ...(await getLeaveEarly(session.userId)) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (e) {
+    return failure(e, "get");
   }
 }
 
-/**
- * GET /api/students/early-departure
- * Student retrieves their early departure requests
- */
-export async function GET(req: NextRequest) {
+const RequestBody = z.object({
+  shiftId: z.string().min(1).max(100),
+  reason: z.string().trim().min(5, "Write a short reason (at least 5 characters).").max(300, "Keep the reason under 300 characters."),
+});
+
+export async function POST(req: NextRequest) {
+  const { session, error } = await studentSession(req);
+  if (error) return error;
+  const parsed = RequestBody.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message || "Pick a bus and write a reason." }, { status: 400 });
+  }
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
+    const created = await requestLeaveEarly(session.userId, parsed.data.shiftId, parsed.data.reason);
+    waitUntil(notifyLeaveEarlyReviewers(created).catch((e) => console.warn("[leave-early] notify:", e?.message)));
+    return NextResponse.json({ success: true, ...(await getLeaveEarly(session.userId)) });
+  } catch (e) {
+    return failure(e, "request");
+  }
+}
 
-    const { searchParams } = new URL(req.url);
-    const targetStudentId = searchParams.get("studentId") || session.studentId || session.id;
+const WithdrawBody = z.object({ requestId: z.string().uuid() });
 
-    const { data: requests, error } = await supabaseAdmin
-      .from("early_departure_requests")
-      .select("*, shift:shifts(id, name, start_time, end_time)")
-      .eq("student_id", targetStudentId)
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, requests: requests || [] });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+export async function DELETE(req: NextRequest) {
+  const { session, error } = await studentSession(req);
+  if (error) return error;
+  const parsed = WithdrawBody.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ success: false, error: "Send { requestId }." }, { status: 400 });
+  try {
+    await withdrawLeaveEarly(session.userId, parsed.data.requestId);
+    return NextResponse.json({ success: true, ...(await getLeaveEarly(session.userId)) });
+  } catch (e) {
+    return failure(e, "withdraw");
   }
 }

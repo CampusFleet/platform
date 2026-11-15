@@ -91,7 +91,7 @@ Steps:
 ## Phase 4 — Admin portals ⬜
 - Transport admin / manager / admin on shared components; merge duplicates (salary ×2, maintenance ×2, users ×2, campuses ×2, trips ×2).
 - Chat: MongoDB → Postgres + Supabase Realtime. Live location: Redis only.
-- Teacher gate-pass: hidden until students can create requests (or finish it).
+- ✅ Teacher gate pass finished as "Leave early": student form with earlier buses + reason, teacher approval books the bus and releases the usual seat (rpc `review_early_departure`, migration `20261119_leave_early.sql`, **apply in SQL Editor after 20261117 and 20261118**), scan checks the booking on that run. Closed: student GET read any student's requests; teachers could approve or list other classes' requests.
 
 ## Phase 5 — Remove legacy ⬜
 - Delete `src/lib/store/*`, `/api/db` proxy, `/api/sync/state`, MongoDB, Leaflet.

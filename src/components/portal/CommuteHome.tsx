@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Armchair, BusFront, CalendarOff, Clock, MapPin, Navigation, Phone, QrCode, RefreshCw, Settings } from "lucide-react";
+import { ArrowRight, Armchair, BusFront, CalendarOff, Clock, LogOut, MapPin, Navigation, Phone, QrCode, RefreshCw, Settings } from "lucide-react";
 import type { PublicRide, RideLive } from "@/lib/students/ride";
 import { useAttendancePolicy, boardingWays, joinWays } from "@/lib/attendance";
 import { Badge, Button, Card, CardHeader, EmptyState } from "@/components/ui";
@@ -188,6 +188,18 @@ export default function CommuteHome({
         )}
       </div>
 
+      {!teacher && (
+        <Link href="/portal/leave-early" className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 min-w-0">
+          <span className="flex items-center gap-2 min-w-0">
+            <LogOut className="w-5 h-5 shrink-0 text-amber-600" />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold truncate">Need to leave early?</span>
+              <span className="block text-xs text-gray-500 truncate">Ask your teacher for an earlier bus home</span>
+            </span>
+          </span>
+          <ArrowRight className="w-4 h-4 shrink-0 text-gray-400" />
+        </Link>
+      )}
       <div className="flex justify-end">
         <Button size="sm" variant="ghost" onClick={refreshAll} loading={refreshing}>
           <RefreshCw className="w-4 h-4" /> Refresh

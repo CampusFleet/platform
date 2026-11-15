@@ -217,7 +217,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **Pages:**
 - `src/app/portal/onboarding/page.tsx`: one page, four cards (details → home and pickup → live pass photo → pay). Loads campuses, classes and stop options from the server only; keeps a localStorage draft (no photo); handles the Razorpay return (`verify-link`).
-  Components in `src/components/portal/onboarding/*`: `DetailsSection` (class cascade), `HomePickupSection` (address search, GPS, pin map, stop list), `LiveFaceCapture` (camera, see section 9), `OnboardingHeader`, `form.ts` (form type, `formProblems`, `phoneError`).
+  Components in `src/components/portal/onboarding/*`: `DetailsSection` (Student ID; class cascade course → branch → specialization → semester → section, all on the common `CustomDropdown`; specialization is always asked and pre-filled only when the branch has one; `formProblems` requires each step), `HomePickupSection` (address search, GPS, pin map, stop list), `LiveFaceCapture` (camera, see section 9), `OnboardingHeader`, `form.ts` (form type, `formProblems`, `phoneError`).
 - `src/app/portal/settings/page.tsx`
 - `src/components/portal/HomeStopSettings.tsx` (Settings home + stop, reuses `HomePickupSection`), `src/components/common/CommuterSeatPreferencesCard.tsx`
 - `src/app/verify/student/page.tsx`: public ID verification.

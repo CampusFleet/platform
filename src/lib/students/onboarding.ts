@@ -93,7 +93,7 @@ export async function saveOnboarding(user: { userId: string; email?: string }, i
 
   const { error: sErr } = await db.from("students").upsert(row, { onConflict: "user_id" });
   if (sErr) {
-    if (sErr.code === "23505") throw new OnboardingError("That university ID is already registered to another account.", 409, "DUPLICATE_ID");
+    if (sErr.code === "23505") throw new OnboardingError("That student ID is already registered to another account.", 409, "DUPLICATE_ID");
     console.error("[onboarding] students upsert:", sErr.message);
     throw new OnboardingError("Could not save your details. Please try again.", 500, "SAVE_FAILED");
   }

@@ -107,7 +107,11 @@ export function formProblems(f: OnboardingForm) {
   if (f.fullName.trim().length < 2) details.push("full name");
   if (phoneError(f.phone)) details.push("phone");
   if (!f.campusId) details.push("campus");
-  if (!f.classId) details.push("class and section");
+  if (!f.courseId) details.push("course");
+  if (!f.branchId) details.push("branch");
+  if (!f.specializationId) details.push("specialization");
+  if (!f.semester) details.push("semester");
+  if (!f.classId) details.push("section");
   if (f.emergencyName.trim().length < 2) details.push("emergency contact name");
   if (phoneError(f.emergencyPhone)) details.push("emergency contact phone");
   const home: string[] = [];

@@ -2,8 +2,36 @@
 
 import React, { useEffect, useMemo } from "react";
 import { UserRound } from "lucide-react";
-import { Card, CardHeader, Field, Input, Select } from "@/components/ui";
+import { Card, CardHeader, Field, Input } from "@/components/ui";
+import { CustomDropdown } from "@/components/common/CustomDropdown";
 import { ordinal, phoneError, semesterOf, type AcademicData, type CampusOption, type OnboardingForm } from "./form";
+
+/** The app's common dropdown, styled like the other onboarding fields (rounded, blue focus). */
+function Dropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  return (
+    <CustomDropdown
+      value={value}
+      onChange={onChange}
+      options={options}
+      placeholder={placeholder}
+      disabled={disabled}
+      buttonClassName="!px-4 !py-3 !rounded-xl !border-gray-200 dark:!border-zinc-700 dark:!bg-zinc-900 focus:!border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+      menuClassName="!rounded-xl dark:!bg-zinc-900 dark:!border-zinc-700"
+    />
+  );
+}
 
 /**
  * Section 1: personal details and class. The class picker is a cascade
@@ -41,11 +69,11 @@ export function DetailsSection({
     [academic.classes, form.specializationId, form.semester, form.campusId]
   );
 
-  // One specialization (or a default one) needs no choice.
+  // The student always sees and confirms their specialization; it is only pre-filled when the
+  // branch has exactly one.
   useEffect(() => {
-    if (!form.branchId || form.specializationId || specs.length === 0) return;
-    const only = specs.length === 1 ? specs[0] : specs.find((s) => s.is_default);
-    if (only) set({ specializationId: only.id });
+    if (!form.branchId || form.specializationId || specs.length !== 1) return;
+    set({ specializationId: specs[0].id });
   }, [form.branchId, form.specializationId, specs, set]);
 
   // Drop a class that no longer matches the cascade (e.g. after changing campus).
@@ -57,7 +85,7 @@ export function DetailsSection({
 
   return (
     <Card>
-      <CardHeader icon={<UserRound className="w-5 h-5" />} title="1. Your details" subtitle="As on your university ID card" />
+      <CardHeader icon={<UserRound className="w-5 h-5" />} title="1. Your details" subtitle="As on your student ID card" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Full name" error={err(form.fullName.trim().length < 2)}>
           <Input value={form.fullName} onChange={(e) => set({ fullName: e.target.value })} autoComplete="name" maxLength={100} />
@@ -65,62 +93,68 @@ export function DetailsSection({
         <Field label="Phone" error={showErrors ? phoneError(form.phone) : null}>
           <Input value={form.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" inputMode="tel" autoComplete="tel" maxLength={16} />
         </Field>
-        <Field label="University ID" hint="Optional. Filled from your college email when possible.">
+        <Field label="Student ID" hint="Optional. Filled from your college email when possible.">
           <Input value={form.studentIdCode} onChange={(e) => set({ studentIdCode: e.target.value.toUpperCase() })} maxLength={30} autoCapitalize="characters" />
         </Field>
         <Field label="Campus" error={err(!form.campusId)}>
-          <Select value={form.campusId} onChange={(e) => set({ campusId: e.target.value, classId: "" })}>
-            <option value="">Choose campus</option>
-            {campuses.map((c) => (
-              <option key={c.id} value={c.id}>{c.name || "Campus"}</option>
-            ))}
-          </Select>
+          <Dropdown
+            value={form.campusId}
+            onChange={(v) => set({ campusId: v, classId: "" })}
+            placeholder="Choose campus"
+            options={campuses.map((c) => ({ value: c.id, label: c.name || "Campus" }))}
+          />
         </Field>
-        <Field label="Course">
-          <Select value={form.courseId} onChange={(e) => set({ courseId: e.target.value, branchId: "", specializationId: "", semester: "", classId: "" })}>
-            <option value="">Choose course</option>
-            {academic.courses.map((c) => (
-              <option key={c.id} value={c.id}>{c.short_name ? `${c.short_name} (${c.name})` : c.name}</option>
-            ))}
-          </Select>
+        <Field label="Course" error={err(!form.courseId)}>
+          <Dropdown
+            value={form.courseId}
+            onChange={(v) => set({ courseId: v, branchId: "", specializationId: "", semester: "", classId: "" })}
+            placeholder="Choose course"
+            options={academic.courses.map((c) => ({ value: c.id, label: c.short_name ? `${c.short_name} (${c.name})` : c.name }))}
+          />
         </Field>
-        <Field label="Branch">
-          <Select value={form.branchId} disabled={!form.courseId} onChange={(e) => set({ branchId: e.target.value, specializationId: "", classId: "" })}>
-            <option value="">Choose branch</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.code ? `${b.code} (${b.name})` : b.name}</option>
-            ))}
-          </Select>
+        <Field label="Branch" error={err(!form.branchId)}>
+          <Dropdown
+            value={form.branchId}
+            disabled={!form.courseId}
+            onChange={(v) => set({ branchId: v, specializationId: "", semester: "", classId: "" })}
+            placeholder={form.courseId ? "Choose branch" : "Choose a course first"}
+            options={branches.map((b) => ({ value: b.id, label: b.code ? `${b.code} (${b.name})` : b.name }))}
+          />
         </Field>
-        {specs.length > 1 && (
-          <Field label="Specialization">
-            <Select value={form.specializationId} onChange={(e) => set({ specializationId: e.target.value, classId: "" })}>
-              <option value="">Choose specialization</option>
-              {specs.map((s) => (
-                <option key={s.id} value={s.id}>{s.short_label ? `${s.short_label} (${s.name})` : s.name}</option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        <Field label="Semester">
-          <Select value={form.semester} disabled={!form.specializationId} onChange={(e) => set({ semester: e.target.value, classId: "" })}>
-            <option value="">Choose semester</option>
-            {semesters.map((n) => (
-              <option key={n} value={String(n)}>{ordinal(n)} semester</option>
-            ))}
-          </Select>
+        <Field
+          label="Specialization"
+          error={err(!form.specializationId)}
+          hint={form.branchId && specs.length === 0 ? "No specializations are set up for this branch yet. Ask your department." : undefined}
+        >
+          <Dropdown
+            value={form.specializationId}
+            disabled={!form.branchId || specs.length === 0}
+            onChange={(v) => set({ specializationId: v, semester: "", classId: "" })}
+            placeholder={form.branchId ? "Choose specialization" : "Choose a branch first"}
+            options={specs.map((sp) => ({ value: sp.id, label: sp.short_label ? `${sp.short_label} (${sp.name})` : sp.name }))}
+          />
+        </Field>
+        <Field label="Semester" error={err(!form.semester)}>
+          <Dropdown
+            value={form.semester}
+            disabled={!form.specializationId}
+            onChange={(v) => set({ semester: v, classId: "" })}
+            placeholder={form.specializationId ? "Choose semester" : "Choose a specialization first"}
+            options={semesters.map((n) => ({ value: String(n), label: `${ordinal(n)} semester` }))}
+          />
         </Field>
         <Field
           label="Section"
           error={err(!form.classId)}
           hint={form.specializationId && form.semester && sections.length === 0 ? "No sections are set up for this semester yet. Ask your department." : undefined}
         >
-          <Select value={form.classId} disabled={sections.length === 0} onChange={(e) => set({ classId: e.target.value })}>
-            <option value="">Choose section</option>
-            {sections.map((c) => (
-              <option key={c.id} value={c.id}>{c.section_name || `Section ${c.section}`}</option>
-            ))}
-          </Select>
+          <Dropdown
+            value={form.classId}
+            disabled={sections.length === 0}
+            onChange={(v) => set({ classId: v })}
+            placeholder="Choose section"
+            options={sections.map((c) => ({ value: c.id, label: c.section_name || `Section ${c.section}` }))}
+          />
         </Field>
         <Field label="Emergency contact name" error={err(form.emergencyName.trim().length < 2)}>
           <Input value={form.emergencyName} onChange={(e) => set({ emergencyName: e.target.value })} maxLength={100} />

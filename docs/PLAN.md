@@ -66,7 +66,8 @@ Steps:
 - ✅ Seat partner is chosen from a dropdown of paying students on the same route (`classmates` in the partner GET); send and accept are refused across routes.
 - ✅ Teacher front seats (`buses.teacher_seats_count`): students are seated there only after every other seat is taken.
 - ✅ Teachers on the bus (migration `20261114_teacher_rides.sql`, **must be applied to zdjooiztjzmbiwaknfir**): teacher picks route, stop, morning/evening shift and days in Settings (`TeacherBusSettings`); `teacher_chart_tick()` (pg_cron 5 min) adds them to the matching trip until the final chart; rollover creates trips for teacher demand too; `assignTripSeats` seats teachers first in the front teacher seats; teachers appear on the conductor manifest/seat map and can be marked boarded/absent; a cross-table trigger keeps one seat per trip across students and teachers. Teacher commute page now uses `CommuteHome` (old `SmartTransitCockpit`, `commute/*`, `ContactCrewModal`, `lib/commute` deleted). Until the migration is applied, teacher settings show "being set up" and everything else runs as before.
-- ⬜ `/api/bookings` still queries the dropped `bookings` table; delete it in Phase 4.
+- ✅ `POST /api/bookings` (manual seat booking around the chart, no callers) and `store.bookShift` deleted. `/api/bookings/cancel` stays for the reservations admin screen.
+- ✅ Student SOS now reaches people: `POST /api/students/sos` writes a CRITICAL `vehicle_issues` row and notifies managers and the trip's conductor (before, the button only showed a message in the student's own browser). Fake fallback locations removed.
 - ⬜ Watch `ENROLL_POSE_REJECTED` rows in `biometric_access_log` after release; tune `FACE_ENROLL_TURN_MIN` or set `FACE_ENROLL_POSE_CHECK=off` if real students fail.
 - Commute hub, pass/QR, radar (one realtime channel instead of 3 polling loops), payments, settings.
 - Boarding text/buttons built from `validation_locks` (fixes "QR scan" shown when only Face ID is on).

@@ -254,6 +254,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 - Crash reporting: `src/app/error.tsx`, `src/app/global-error.tsx` and `components/maps/MapBoundary.tsx` call `lib/client/report-error.ts` → `POST /api/client-errors`, which only logs `[client-error] {...}` to the server log (read with `vercel logs`).
 - `src/lib/teachers/ride.ts`: `getTeacherRideSettings`, `saveTeacherRideSettings`, `getTeacherRide`, `getTeacherRideLive` (Redis `teacher-ride:{userId}`, 20 s). Tables `teacher_rides`, `teacher_reservations`; function `teacher_chart_tick()`; trigger `check_trip_seat_unique` (one seat per trip across `bus_reservations` and `teacher_reservations`).
 - Routes: `/api/teacher/ride-settings` (GET, PUT), `/api/teacher/ride`, `/api/teacher/ride/live`. Page `src/app/teacher/commute/page.tsx` renders `CommuteHome audience="teacher"`.
+- `src/lib/manager/fleet-live.ts`: `getFleetLive` → `GET /api/transport-manager/fleet-live`; page `/transport-manager/live` (`LiveFleetTelematicsView`).
+- `POST /api/students/sos`: rider SOS → `vehicle_issues` (CRITICAL) + notifications to managers and the trip conductor.
 - `src/lib/trip-planner.ts`: `planTrips` (pure; used by `daily-rollover.ts`).
 - `src/lib/students/ride.ts`: `getDayOff` (Redis `schedule:class:{classId}:{DAY}`), `getRideInternal` (Redis `ride:v2:{userId}`, 20 s; holds tripId server-side), `getPublicRide`, `getRideLive`.
 - `src/lib/dispatch/halt.ts`: `haltKey`, `getHaltRequest`, `createHaltRequest` (Redis `halt_request:{tripId}:{studentId}`, 15 min).

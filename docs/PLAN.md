@@ -82,7 +82,7 @@ Steps:
 - ✅ Driver console rewritten (`DriverConsole.tsx`, ~350 lines replacing 3,400): assigned trip, start/arrived/end, real GPS only, auto-arrive 150 m, Google Maps navigation, real SOS reports, Face ID door camera when enabled.
 - ✅ Crew can no longer switch runs: the current run is picked on the server (running → next → last) and moves on when a run ends; `TodayRuns` shows the day read-only; a driver cannot start a run while another of theirs or the bus's is running. Managers can still open any trip.
 - ✅ Conductor wait-requests tab rebuilt (~170 lines replacing 420): data comes with the 8 s duty poll (`haltRequests`, `busLocation` in `/api/crew/duty`), no own polling or store; halt GET/PATCH require crew on the trip.
-- ✅ Conductor live map rebuilt as `CrewLiveMap` (route, bus GPS, riders to board per stop) instead of `ConductorLiveRadarView` (still used by the manager fleet view until Phase 4).
+- ✅ Conductor live map rebuilt as `CrewLiveMap` (route, bus GPS, riders to board per stop) instead of `ConductorLiveRadarView` (deleted).
 - ✅ Drivers can no longer open `/conductor`; conductor's radar is read-only for trip state.
 - ✅ Pass scanner no longer verifies locally when the server is unreachable.
 - ⬜ Rewrite ManifestTab / HaltRequestsTab / AuditTab / ConductorLiveRadarView UI on shared components (they now run on the new data).
@@ -96,3 +96,6 @@ Steps:
 ## Phase 5 — Remove legacy ⬜
 - Delete `src/lib/store/*`, `/api/db` proxy, `/api/sync/state`, MongoDB, Leaflet.
 - Playwright screenshot checks at 360/375/390 px (no horizontal scroll) for student, conductor, driver routes.
+
+## Phase 4 progress
+- ✅ Manager live fleet (`/transport-manager/live`) rebuilt on `GET /api/transport-manager/fleet-live` (`lib/manager/fleet-live.ts`): every run today with bus, route, shift, crew, rider counts and GPS, refreshed every 10 s; tap a bus or run → `CrewLiveMap`. No store download; `ConductorLiveRadarView` (1,100 lines) deleted.

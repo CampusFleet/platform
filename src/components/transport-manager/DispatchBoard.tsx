@@ -177,9 +177,17 @@ export default function DispatchBoard({ initial }: { initial: Board }) {
           </div>
         }
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {cancelling?.riders.assigned ? `${cancelling.riders.assigned} riders lose their seat on this run.` : "No riders are on this run yet."} This cannot be undone; add a new run if needed.
-        </p>
+        <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+          <p className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3 text-amber-900 dark:text-amber-200">
+            Replacing a broken-down bus? Choose <span className="font-bold">Keep it</span> and change the bus on this run instead, so riders stay on it.
+          </p>
+          <p>
+            {cancelling?.riders.assigned
+              ? `${cancelling.riders.assigned} riders will be moved to another run on this route and shift if there is one (now, or when you add one before boarding closes). Otherwise they lose their seat and are told.`
+              : "No riders are on this run yet."}{" "}
+            This cannot be undone.
+          </p>
+        </div>
       </Sheet>
     </div>
   );

@@ -1624,6 +1624,34 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"teacher_reservations": {
+                  Row: {
+                    "boarded_at": string | null,"boarding_stop_id": string | null,"bus_id": number | null,"chosen_seat": string | null,"created_at": string,"id": string,"reservation_date": string,"shift_id": string,"status": string,"trip_id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "boarded_at"?: string | null,"boarding_stop_id"?: string | null,"bus_id"?: number | null,"chosen_seat"?: string | null,"created_at"?: string,"id"?: string,"reservation_date": string,"shift_id": string,"status"?: string,"trip_id": string,"user_id": string
+                  }
+                  Update: {
+                    "boarded_at"?: string | null,"boarding_stop_id"?: string | null,"bus_id"?: number | null,"chosen_seat"?: string | null,"created_at"?: string,"id"?: string,"reservation_date"?: string,"shift_id"?: string,"status"?: string,"trip_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"teacher_rides": {
+                  Row: {
+                    "days": (string)[],"incoming_shift_id": string | null,"is_active": boolean,"outgoing_shift_id": string | null,"route_id": string | null,"stop_id": string | null,"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "days"?: (string)[],"incoming_shift_id"?: string | null,"is_active"?: boolean,"outgoing_shift_id"?: string | null,"route_id"?: string | null,"stop_id"?: string | null,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "days"?: (string)[],"incoming_shift_id"?: string | null,"is_active"?: boolean,"outgoing_shift_id"?: string | null,"route_id"?: string | null,"stop_id"?: string | null,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"transit_zones": {
                   Row: {
                     "campus_id": string | null,"code": string | null,"corridor_description": string | null,"created_at": string | null,"id": string,"installments_allowed": number | null,"is_active": boolean | null,"name": string | null,"semester_fee": number | null,"updated_at": string | null
@@ -2062,7 +2090,16 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "boarding_chart_tick":
+            "_dispatch_overlaps":
+{ Args: { "p_column": string,"p_date": string,"p_shift_id": string,"p_trip_id": string,"p_value": string }; Returns: string
+                           },
+"admin_delete_route":
+{ Args: { "p_actor": string,"p_actor_role": string,"p_route_id": string }; Returns: Json
+                           },
+"admin_save_route":
+{ Args: { "p_actor": string,"p_actor_role": string,"p_route": Json,"p_stops": Json }; Returns: Json
+                           },
+"boarding_chart_tick":
 { Args: { "p_now"?: string }; Returns: Json
                            },
 "cancel_seat_transaction":
@@ -2073,6 +2110,15 @@ isOneToOne: false
                            },
 "delete_user_account":
 { Args: { "p_user_id": string }; Returns: Json
+                           },
+"manager_add_run":
+{ Args: { "p_actor": string,"p_actor_role": string,"p_bus_id": number,"p_conductor_id": string,"p_date": string,"p_driver_id": string,"p_route_id": string,"p_shift_id": string,"p_trip_id": string }; Returns: Json
+                           },
+"manager_cancel_run":
+{ Args: { "p_actor": string,"p_actor_role": string,"p_reason": string,"p_trip_id": string }; Returns: Json
+                           },
+"manager_update_run":
+{ Args: { "p_actor": string,"p_actor_role": string,"p_bus_id": number,"p_conductor_id": string,"p_driver_id": string,"p_trip_id": string }; Returns: Json
                            },
 "match_face_v2":
 { Args: { "p_candidates"?: (string)[],"p_embedding": string,"p_limit"?: number,"p_model_version": string,"p_threshold": number }; Returns: {
@@ -2092,6 +2138,9 @@ isOneToOne: false
                            },
 "switch_seat_transaction":
 { Args: { "p_new_seat_number": string,"p_reservation_id": string,"p_student_id": string }; Returns: Json
+                           },
+"teacher_chart_tick":
+{ Args: { "p_now"?: string }; Returns: Json
                            }
           }
           Enums: {

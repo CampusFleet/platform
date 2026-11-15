@@ -31,7 +31,7 @@ export async function assignTripSeats(tripId: string, busId: number | null): Pro
   const all = rows || [];
   const unseated = all.filter((r) => !r.chosen_seat && r.student_id);
   // Teachers on this trip (migration 20261114; missing table = no teachers).
-  const { data: tRows, error: tErr } = await (db as any)
+  const { data: tRows, error: tErr } = await db
     .from("teacher_reservations")
     .select("id, user_id, chosen_seat, status")
     .eq("trip_id", tripId)
@@ -69,7 +69,7 @@ export async function assignTripSeats(tripId: string, busId: number | null): Pro
     for (let i = 0; i < MAX_TRIES; i++) {
       const seat = front.find((x) => !occupied.has(x)) || seats.find((x) => !occupied.has(x));
       if (!seat) break;
-      const { data, error } = await (db as any)
+      const { data, error } = await db
         .from("teacher_reservations")
         .update({ chosen_seat: seat })
         .eq("id", t.id)

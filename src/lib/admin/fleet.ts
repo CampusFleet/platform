@@ -116,26 +116,28 @@ export async function saveRoute(input: z.infer<typeof routeInput>, actor: Actor)
   const stops = input.stops
     ? input.stops.map((s, i) => ({ stop_id: s.stopId, stop_order: s.stopOrder ?? i + 1, arrival_offset_minutes: s.arrivalOffsetMinutes ?? 0, buffer_time_minutes: s.bufferTimeMinutes ?? 0 }))
     : null;
-  const { data, error } = await (db as any).rpc("admin_save_route", { p_route: route, p_stops: stops, p_actor: actor.userId, p_actor_role: actor.role });
+  const { data: raw, error } = await db.rpc("admin_save_route", { p_route: route, p_stops: stops, p_actor: actor.userId, p_actor_role: actor.role });
   if (error) {
     if (error.code === "PGRST202") throw new AdminError("Saving routes needs the 20261116 database update. Ask the admin to run it.", 503);
     console.error("[admin] save route:", error.message);
     throw new AdminError("Could not save the route.", 500);
   }
+  const data = raw as { ok?: boolean; error?: string; id?: string } | null;
   if (!data?.ok) throw new AdminError(data?.error || "Could not save the route.");
   await bust();
   return { id: data.id as string };
 }
 
 export async function deleteRoute(id: string, actor: Actor) {
-  const { data, error } = await (db as any).rpc("admin_delete_route", { p_route_id: id, p_actor: actor.userId, p_actor_role: actor.role });
+  const { data: raw, error } = await db.rpc("admin_delete_route", { p_route_id: id, p_actor: actor.userId, p_actor_role: actor.role });
   if (error) {
     if (error.code === "PGRST202") throw new AdminError("Deleting routes needs the 20261116 database update. Ask the admin to run it.", 503);
     throw new AdminError("Could not delete the route.", 500);
   }
+  const data = raw as { ok?: boolean; error?: string; deleted?: boolean; deactivated?: boolean } | null;
   if (!data?.ok) throw new AdminError(data?.error || "Could not delete the route.", 409);
   await bust();
-  return data as { deleted?: boolean; deactivated?: boolean };
+  return { deleted: data.deleted, deactivated: data.deactivated };
 }
 
 // ── Special-shift allocations (placement drives, events) ─────────────────

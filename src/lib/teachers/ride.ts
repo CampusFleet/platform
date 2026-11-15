@@ -14,7 +14,6 @@ import { EMPTY_RIDE, rideFromReservations, type PublicRide, type RideInternal, t
  * migration is applied (tools/gen-db-types.sh) and drop the casts.
  */
 
-const tdb = db as any;
 const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"] as const;
 const todayIst = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
@@ -38,17 +37,18 @@ export class TeacherRideError extends Error {
 export async function getTeacherRideSettings(userId: string) {
   const [{ data: user }, ride, { data: routes }, { data: rs }, { data: shifts }] = await Promise.all([
     db.from("users").select("campus_id").eq("id", userId).maybeSingle(),
-    tdb.from("teacher_rides").select("*").eq("user_id", userId).maybeSingle(),
+    db.from("teacher_rides").select("*").eq("user_id", userId).maybeSingle(),
     db.from("routes").select("id, name, campus_id, is_active").eq("is_active", true).order("name"),
     db.from("route_stops").select("route_id, stop_id, stop_order, stop:stops(id, name)").order("stop_order"),
     db.from("shifts").select("id, name, direction, start_time, is_active, is_special").eq("is_active", true).order("start_time"),
   ]);
   const campusId = user?.campus_id ?? null;
   const stopsByRoute = new Map<string, { id: string; name: string }[]>();
-  for (const r of (rs || []) as any[]) {
-    if (!r.route_id || !r.stop) continue;
+  for (const r of rs || []) {
+    const stop = r.stop;
+    if (!r.route_id || !stop) continue;
     const list = stopsByRoute.get(r.route_id) || [];
-    if (!list.some((x) => x.id === r.stop.id)) list.push({ id: r.stop.id, name: r.stop.name || "Stop" });
+    if (!list.some((x) => x.id === stop.id)) list.push({ id: stop.id, name: stop.name || "Stop" });
     stopsByRoute.set(r.route_id, list);
   }
   const routeOptions = (routes || [])
@@ -86,7 +86,7 @@ export async function saveTeacherRideSettings(userId: string, input: TeacherRide
   if (!ok(input.incomingShiftId, "HOME_TO_CAMPUS") || !ok(input.outgoingShiftId, "CAMPUS_TO_HOME")) throw new TeacherRideError("Choose a valid shift.");
   if (!input.incomingShiftId && !input.outgoingShiftId) throw new TeacherRideError("Choose at least one shift.");
 
-  const { error } = await tdb.from("teacher_rides").upsert(
+  const { error } = await db.from("teacher_rides").upsert(
     {
       user_id: userId,
       route_id: input.routeId,
@@ -101,7 +101,7 @@ export async function saveTeacherRideSettings(userId: string, input: TeacherRide
   );
   if (error) throw new TeacherRideError("Bus settings are not available yet. Ask the admin to finish the update.", 503);
   // Today's not-yet-boarded seats on a route the teacher left are released.
-  await tdb
+  await db
     .from("teacher_reservations")
     .update({ status: "CANCELLED", chosen_seat: null })
     .eq("user_id", userId)
@@ -113,20 +113,20 @@ export async function saveTeacherRideSettings(userId: string, input: TeacherRide
 async function buildTeacherRide(userId: string): Promise<RideInternal> {
   const [{ data: user }, ride] = await Promise.all([
     db.from("users").select("campus_id").eq("id", userId).maybeSingle(),
-    tdb.from("teacher_rides").select("stop_id").eq("user_id", userId).maybeSingle(),
+    db.from("teacher_rides").select("stop_id").eq("user_id", userId).maybeSingle(),
   ]);
   const base: RideInternal = { ...EMPTY_RIDE, myStopId: ride.data?.stop_id ?? null };
-  const { data: res, error } = await tdb
+  const { data: res, error } = await db
     .from("teacher_reservations")
     .select("trip_id, bus_id, boarding_stop_id, shift_id, status")
     .eq("user_id", userId)
     .eq("reservation_date", todayIst())
     .neq("status", "CANCELLED");
   if (error || !res?.length) return base;
-  const shiftIds = Array.from(new Set((res as any[]).map((r) => r.shift_id)));
+  const shiftIds = Array.from(new Set((res || []).map((r) => r.shift_id)));
   const { data: shifts } = await db.from("shifts").select("id, name, start_time, end_time, direction").in("id", shiftIds);
   const byId = new Map((shifts || []).map((s) => [s.id, s]));
-  const list: RideReservation[] = (res as any[]).map((r) => ({
+  const list: RideReservation[] = (res || []).map((r) => ({
     trip_id: r.trip_id,
     bus_id: r.bus_id,
     boarding_stop_id: r.boarding_stop_id,
@@ -149,7 +149,7 @@ export async function getTeacherRideLive(userId: string): Promise<RideLive> {
   if (!ride.hasRide || !ride.tripId) return { status: "NO_RIDE", currentStopIndex: null, delayMinutes: 0, boarded: false, seat: null, bus: null, halt: null };
   const [{ data: trip }, { data: resv }, loc] = await Promise.all([
     db.from("trips").select("status, current_stop_index, delay_minutes").eq("id", ride.tripId).maybeSingle(),
-    tdb.from("teacher_reservations").select("status, chosen_seat").eq("trip_id", ride.tripId).eq("user_id", userId).maybeSingle(),
+    db.from("teacher_reservations").select("status, chosen_seat").eq("trip_id", ride.tripId).eq("user_id", userId).maybeSingle(),
     ride.busId != null ? cacheGet<any>(`telematics:bus:${ride.busId}`).catch(() => null) : Promise.resolve(null),
   ]);
   let bus: RideLive["bus"] = null;

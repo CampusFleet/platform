@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   }
   const [{ data: teachers }, rides, { data: routes }, { data: stops }] = await Promise.all([
     db.from("users").select("id, full_name, email").in("role", ["teacher", "faculty"]).order("full_name"),
-    (db as any).from("teacher_rides").select("user_id, route_id, stop_id, is_active"),
+    db.from("teacher_rides").select("user_id, route_id, stop_id, is_active"),
     db.from("routes").select("id, name"),
     db.from("stops").select("id, name"),
   ]);

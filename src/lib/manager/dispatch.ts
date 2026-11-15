@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/supabaseClient";
+import type { Database } from "@/lib/database.types";
 import { createTripId } from "@/lib/id";
 import { getFleetLive } from "./fleet-live";
 
@@ -59,9 +60,15 @@ export class DispatchError extends Error {
   }
 }
 
+type DispatchFn = "manager_update_run" | "manager_add_run" | "manager_cancel_run";
+type Fns = Database["public"]["Functions"];
+/** The generator marks every SQL argument required; these functions accept NULL (e.g. no bus yet). */
+type NullableArgs<F extends DispatchFn> = { [K in keyof Fns[F]["Args"]]: Fns[F]["Args"][K] | null };
+
 export async function runDispatchAction(a: DispatchAction, actor: { userId: string; role: string }) {
-  const call = async (fn: string, args: Record<string, unknown>) => {
-    const { data, error } = await (db as any).rpc(fn, args);
+  const call = async <F extends DispatchFn>(fn: F, args: NullableArgs<F>) => {
+    const { data: raw, error } = await db.rpc(fn, args as Fns[F]["Args"]);
+    const data = raw as { ok?: boolean; error?: string; tripId?: string } | null;
     if (error) {
       if (error.code === "PGRST202" || /function .* does not exist/i.test(error.message)) {
         throw new DispatchError("Dispatch changes need the 20261115 database update. Ask the admin to run it.", 503);
@@ -77,8 +84,8 @@ export async function runDispatchAction(a: DispatchAction, actor: { userId: stri
   }
   if (a.action === "ADD") {
     const res = await call("manager_add_run", { p_trip_id: createTripId(), p_date: a.date, p_route_id: a.routeId, p_shift_id: a.shiftId, p_bus_id: a.busId, p_driver_id: a.driverId || "", p_conductor_id: a.conductorId || "", p_actor: actor.userId, p_actor_role: actor.role });
-    if (a.isSpecial || a.facilityType) {
-      await db.from("trips").update({ is_special: Boolean(a.isSpecial), facility_type: a.facilityType || null } as any).eq("id", res.tripId);
+    if (res.tripId && (a.isSpecial || a.facilityType)) {
+      await db.from("trips").update({ is_special: Boolean(a.isSpecial), facility_type: a.facilityType || null }).eq("id", res.tripId);
     }
     return res;
   }

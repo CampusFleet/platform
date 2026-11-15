@@ -73,6 +73,21 @@ export interface CrewDuty {
   attendance: DutyAttendance[];
   departureAlert: { id: string; message: string; triggeredAt: string } | null;
   pendingHaltRequests: number;
+  /** "Wait for me" requests on this trip, newest first (Redis, 15 min). */
+  haltRequests: DutyHalt[];
+  /** Last bus GPS fix (Redis telematics:bus:{busId}); null when none in the last 3 minutes. */
+  busLocation: { latitude: number; longitude: number; ageSeconds: number } | null;
+}
+
+export interface DutyHalt {
+  studentId: string;
+  studentName: string;
+  studentPhoto: string | null;
+  latitude: number;
+  longitude: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const TRIP_SELECT =
@@ -281,7 +296,7 @@ export async function getCrewDuty(session: SessionPayload, requestedTripId?: str
   const trip = (manager && requestedTripId && trips.find((t) => t.id === requestedTripId)) || pickCurrentTrip(trips);
 
   const empty = { manifest: [] as DutyPassenger[], attendance: [] as DutyAttendance[] };
-  const [{ manifest, attendance }, alert, halts] = await Promise.all([
+  const [{ manifest, attendance }, alert, haltRequests, busLocation] = await Promise.all([
     trip ? loadManifest(trip) : Promise.resolve(empty),
     trip
       ? supabaseAdmin
@@ -293,7 +308,8 @@ export async function getCrewDuty(session: SessionPayload, requestedTripId?: str
           .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null }),
-    trip ? countPendingHalts(trip.id) : Promise.resolve(0),
+    trip ? loadHalts(trip.id) : Promise.resolve([] as DutyHalt[]),
+    trip ? loadBusLocation(trip.bus.id) : Promise.resolve(null),
   ]);
 
   return {
@@ -303,20 +319,48 @@ export async function getCrewDuty(session: SessionPayload, requestedTripId?: str
     manifest,
     attendance,
     departureAlert: alert.data ? { id: alert.data.id, message: alert.data.message || "Bus is about to leave. Please board now.", triggeredAt: alert.data.triggered_at || new Date().toISOString() } : null,
-    pendingHaltRequests: halts,
+    pendingHaltRequests: haltRequests.filter((h) => h.status === "PENDING").length,
+    haltRequests,
+    busLocation,
   };
 }
 
-async function countPendingHalts(tripId: string): Promise<number> {
+async function loadHalts(tripId: string): Promise<DutyHalt[]> {
   try {
     const { redis } = await import("@/lib/redis");
-    if (!redis) return 0;
+    if (!redis) return [];
     const keys = await redis.keys(`halt_request:${tripId}:*`);
-    if (keys.length === 0) return 0;
-    const rows = (await redis.mget(...keys)) as any[];
-    return rows.filter((r) => r?.status === "PENDING").length;
+    if (keys.length === 0) return [];
+    const rows = ((await redis.mget(...keys)) as any[]).filter(Boolean);
+    return rows
+      .map((r) => ({
+        studentId: r.studentId,
+        studentName: r.studentName || "Student",
+        studentPhoto: r.studentPhoto || null,
+        latitude: Number(r.latitude),
+        longitude: Number(r.longitude),
+        status: r.status,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   } catch {
-    return 0;
+    return [];
+  }
+}
+
+async function loadBusLocation(busId: number | null | undefined) {
+  if (busId == null) return null;
+  try {
+    const { cacheGet } = await import("@/lib/redis");
+    const loc = await cacheGet<any>(`telematics:bus:${busId}`);
+    if (!loc || !Number.isFinite(Number(loc.latitude))) return null;
+    const ts = new Date(loc.timestamp || loc.lastPingAt || 0).getTime();
+    const ageSeconds = ts ? Math.max(0, Math.round((Date.now() - ts) / 1000)) : 9999;
+    if (ageSeconds > 180) return null;
+    return { latitude: Number(loc.latitude), longitude: Number(loc.longitude), ageSeconds };
+  } catch {
+    return null;
   }
 }
 

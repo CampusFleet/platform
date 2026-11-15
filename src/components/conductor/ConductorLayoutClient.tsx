@@ -8,19 +8,19 @@ import { useTranslation } from "@/components/common/LanguageProvider";
 import { BusFront, AlertTriangle, QrCode, FileText, LayoutGrid, ShieldCheck, Home, Navigation, ScanFace } from "lucide-react";
 import { UnifiedAppHeader } from "@/components/common/UnifiedAppHeader";
 import { MobileBottomNav } from "@/components/common/MobileBottomNav";
-import ConductorLiveRadarView from "./ConductorLiveRadarView";
+import { CrewLiveMap } from "./CrewLiveMap";
 import { useConductorContext } from "./ConductorContext";
 import { useAttendancePolicy } from "@/lib/attendance";
 import { EmptyState } from "@/components/ui";
 
 /**
  * Conductor shell. The bus/trip comes from the transport manager's assignment; the conductor can
- * only switch between their own trips today (e.g. morning and evening runs).
+ * not switch runs: the current run is chosen on the server (TodayRuns shows the day).
  */
 export default function ConductorLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useTranslation();
-  const { duty, currentUser, activeTrip, bus, route, shift, trips, routes, stops, bookings, students, tripBookings, selectedTripId, setSelectedTripId } =
+  const { duty, currentUser, activeTrip, bus, shift, selectedTripId, setSelectedTripId } =
     useConductorContext();
   const { rules: attendanceRules } = useAttendancePolicy();
   const [isRadarOpen, setIsRadarOpen] = useState(false);
@@ -136,24 +136,9 @@ export default function ConductorLayoutClient({ children }: { children: React.Re
         </div>
       )}
 
-      {isRadarOpen && activeTrip && (
+      {isRadarOpen && activeTrip && duty?.trip && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
-          <ConductorLiveRadarView
-            initialUser={currentUser}
-            activeTrip={activeTrip}
-            route={route || null}
-            bus={bus || null}
-            shift={shift || null}
-            allTrips={trips}
-            allBuses={bus ? [bus] : []}
-            allRoutes={routes}
-            allStops={stops}
-            bookings={bookings}
-            students={students}
-            tripBookings={tripBookings}
-            shiftDirection={shift?.direction}
-            onClose={() => setIsRadarOpen(false)}
-          />
+          <CrewLiveMap duty={duty!} onClose={() => setIsRadarOpen(false)} />
         </div>
       )}
     </div>

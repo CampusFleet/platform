@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { redis, cacheSet, cacheGet } from "@/lib/redis";
 import type { HaltRequest, HaltRequestStatus } from "@/lib/types";
 import { createHaltRequest } from "@/lib/dispatch/halt";
+import { canActOnTrip } from "@/lib/crew/duty";
 import { isSafeId } from "@/lib/security/safe-id";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { isStaffRole, resolveActingStudentId } from "@/lib/security/actor";
@@ -31,6 +32,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, request: data });
     }
     if (!isStaff) return NextResponse.json({ success: true, request: null });
+    if (!(await canActOnTrip(session, tripId, "conductor")) && !(await canActOnTrip(session, tripId, "driver"))) {
+      return NextResponse.json({ success: false, error: "This trip is not assigned to you." }, { status: 403 });
+    }
 
     const keys = await redis.keys(`halt_request:${tripId}:*`);
     if (keys.length === 0) return NextResponse.json({ success: true, requests: [] });
@@ -87,6 +91,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing or invalid fields" }, { status: 400 });
     }
 
+    if (!(await canActOnTrip(session, tripId, "conductor")) && !(await canActOnTrip(session, tripId, "driver"))) {
+      return NextResponse.json({ success: false, error: "This trip is not assigned to you." }, { status: 403 });
+    }
     const key = keyFor(tripId, studentId);
     const existing = await cacheGet<HaltRequest>(key);
     if (!existing) return NextResponse.json({ success: false, error: "Request not found or expired" }, { status: 404 });

@@ -278,7 +278,15 @@ export async function POST(req: NextRequest) {
 
         const incomingRaw = entry.incoming_shift_id || entry.incomingShiftId || null;
         const outgoingRaw = entry.outgoing_shift_id || entry.outgoingShiftId || null;
-        const isOff = Boolean(entry.is_today_off ?? entry.isTodayOff) || (!incomingRaw && !outgoingRaw);
+        const offFlag = entry.is_today_off ?? entry.isTodayOff;
+        // "On" with no shift used to be saved as a day off while the response said "saved".
+        if (offFlag === false && !incomingRaw && !outgoingRaw) {
+          return NextResponse.json(
+            { success: false, message: `${day.charAt(0)}${day.slice(1).toLowerCase()} is switched on but has no shift. Pick an incoming or outgoing shift, or mark it as a day off.` },
+            { status: 400 }
+          );
+        }
+        const isOff = Boolean(offFlag) || (!incomingRaw && !outgoingRaw);
         const incomingId = isOff ? null : incomingRaw;
         const outgoingId = isOff ? null : outgoingRaw;
         const notes = entry.notes || null;

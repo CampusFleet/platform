@@ -216,13 +216,23 @@ export default function TeacherScheduleShiftView({
         notes: "",
       };
 
-      return {
-        ...prev,
-        [targetKey]: {
-          ...current,
-          [field]: value,
-        },
-      };
+      const next = { ...current, [field]: value };
+      // Turning a day on: fill the class's usual shifts (most used on its other on-days, else the
+      // first incoming / evening outgoing shift), so the day is not saved as "on" with no bus.
+      if (field === "is_today_off" && value === false) {
+        const others = DAYS_OF_WEEK.map((d) => prev[`${selectedClassId}_${d.key}`]).filter((d) => d && !d.is_today_off);
+        const most = (k: "incoming_shift_id" | "outgoing_shift_id") => {
+          const n = new Map<string, number>();
+          for (const d of others) if (d![k]) n.set(d![k]!, (n.get(d![k]!) || 0) + 1);
+          return Array.from(n.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+        };
+        if (!next.incoming_shift_id) next.incoming_shift_id = most("incoming_shift_id") || incomingShifts[0]?.id || null;
+        if (!next.outgoing_shift_id) {
+          next.outgoing_shift_id =
+            most("outgoing_shift_id") || outgoingShifts.find((s) => s.type === "EVENING")?.id || outgoingShifts[0]?.id || null;
+        }
+      }
+      return { ...prev, [targetKey]: next };
     });
   };
 
@@ -302,6 +312,17 @@ export default function TeacherScheduleShiftView({
     const targetClassIds = applyToAllClasses
       ? initialClasses.map((c) => c.id)
       : [selectedClassId];
+
+    // A day with classes needs at least one bus shift; otherwise students get no bus that day.
+    const missing = DAYS_OF_WEEK.filter((d) => {
+      const s = schedulesMap[`${selectedClassId}_${d.key}`];
+      return s && !s.is_today_off && !s.incoming_shift_id && !s.outgoing_shift_id;
+    }).map((d) => d.label);
+    if (missing.length) {
+      setErrorMessage(`Pick an incoming or outgoing shift for ${missing.join(", ")}, or mark ${missing.length === 1 ? "it" : "them"} as a day off.`);
+      setIsSaving(false);
+      return;
+    }
 
     try {
       // Gather schedule array for selected class

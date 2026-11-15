@@ -678,6 +678,7 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Teacher list:** `src/lib/teachers/gate-passes.ts` (`listGatePasses`, `reviewGatePass`), used by the page and the API. A PENDING request from an earlier day shows as Expired.
 - **Types:** `review_early_departure` and `booked_trip_id` are not in `database.types.ts` until it is regenerated after the migration (rpc call is cast).
 
+- **Teacher timetable screen:** switching a day on fills the class's usual shifts; saving a day that is on with no shift is refused (client and `POST /api/teacher/schedule-shift` 400). Before, it was silently saved as a day off.
 - **Shift and timetable changes** (`src/lib/shifts/changes.ts`, used by `PUT/DELETE /api/shifts`; migration `20261121_timetable_release.sql`, apply in SQL Editor):
   - Shift time / cutoff: refused (409) once a run of that shift left or its final chart is locked today; otherwise booked riders and teachers get `SHIFT_CHANGED`, and buses whose runs now overlap come back as `warning` (fix on the dispatch board). Trips read the shift's time, so nothing else moves.
   - Direction: refused while the shift has runs today or later. Switching off: refused while today's runs are not finished (cancel them on the dispatch board, which moves/tells riders). Switching on: `executeDailyRollover(force)` adds today's missing runs.

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation";
 import { ArrowRight, Camera, CheckCircle2, CreditCard, Loader2, ScanFace, ShieldCheck } from "lucide-react";
 import { CONSENT_POINTS, CONSENT_SUMMARY } from "@/lib/biometrics-consent";
+import { useAttendancePolicy } from "@/lib/attendance";
 import { saveOnboardingDraft, loadOnboardingDraft, clearOnboardingDraft } from "@/lib/onboarding-cache";
 import { Badge, Button, Card, CardHeader, cn } from "@/components/ui";
 import {
@@ -23,7 +24,8 @@ import {
 } from "@/components/portal/onboarding";
 
 /**
- * Single-page onboarding: details → home and pickup stop → live pass photo (+ optional Face ID) → pay.
+ * Single-page onboarding: details → home and pickup stop → live pass photo → Face ID (required while
+ * camera boarding is on in validation_locks; the server checks this again before payment) → pay.
  *
  * - Everything shown comes from the server: campuses (/api/students/onboarding GET), classes
  *   (/api/academic/cascade), stops/zone/fee (/api/students/pickup-options). No placeholder values.
@@ -61,6 +63,9 @@ export default function StudentOnboardingPage() {
 
   const [photo, setPhoto] = useState<{ url: string; preview: string } | null>(null);
   const [faceIdDone, setFaceIdDone] = useState(false);
+  // Door cameras check riders in by face, so Face ID is required while that method is on.
+  const { locks } = useAttendancePolicy();
+  const faceIdRequired = locks.faceId;
   const [consent, setConsent] = useState(false);
   const [capture, setCapture] = useState<CaptureMode | null>(null);
 
@@ -316,6 +321,10 @@ export default function StudentOnboardingPage() {
         setError("Take your pass photo first.");
         return;
       }
+      if (faceIdMissing) {
+        setError("Set up Face ID first (step 2). The bus door cameras use it to check you in.");
+        return;
+      }
       const res = await fetch("/api/payments/razorpay/create-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -372,7 +381,8 @@ export default function StudentOnboardingPage() {
   }
 
   const fee = selected?.semesterFee ?? null;
-  const canPay = formComplete && Boolean(photo) && fee != null;
+  const faceIdMissing = faceIdRequired && !faceIdDone;
+  const canPay = formComplete && Boolean(photo) && !faceIdMissing && fee != null;
 
   return (
     <div className="min-h-[100dvh] bg-gray-50/80 dark:bg-black text-gray-900 dark:text-gray-100 pb-[calc(env(safe-area-inset-bottom)+6rem)]">
@@ -397,7 +407,7 @@ export default function StudentOnboardingPage() {
           showErrors={showErrors}
         />
 
-        {/* 3. Pass photo (step 1) and optional Face ID (step 2) */}
+        {/* 3. Pass photo (step 1) and Face ID (step 2, required while camera boarding is on) */}
         <Card>
           <CardHeader
             icon={<Camera className="w-5 h-5" />}
@@ -427,8 +437,8 @@ export default function StudentOnboardingPage() {
 
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-zinc-900 space-y-2.5">
             <p className="text-sm font-black flex items-center gap-2">
-              <ScanFace className="w-4 h-4" /> Step 2. Face ID for boarding (optional)
-              {faceIdDone && <Badge tone="green" dot>Set up</Badge>}
+              <ScanFace className="w-4 h-4" /> Step 2. Face ID for boarding{faceIdRequired ? "" : " (optional)"}
+              {faceIdDone ? <Badge tone="green" dot>Set up</Badge> : faceIdRequired ? <Badge tone="amber">Required</Badge> : null}
             </p>
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0" />
@@ -446,7 +456,13 @@ export default function StudentOnboardingPage() {
               <ScanFace className="w-4 h-4" /> {faceIdDone ? "Redo Face ID" : "Set up Face ID"}
             </Button>
             {!photo && <p className="text-[11px] text-gray-500">Take your pass photo first.</p>}
-            <p className="text-[11px] text-gray-500">You can skip this. Boarding with your pass or the conductor still works.</p>
+            {faceIdRequired ? (
+              <p className="text-[11px] text-gray-500">
+                Required: the bus door cameras check you in by face. Tick the consent box, then follow the head-turn prompt.
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-500">You can skip this. Boarding with your pass or the conductor still works.</p>
+            )}
           </div>
         </Card>
 
@@ -480,7 +496,22 @@ export default function StudentOnboardingPage() {
             block
             variant="success"
             size="lg"
-            onClick={canPay ? pay : () => { setShowErrors(true); setError(!formComplete ? `Still needed: ${[...problems.details, ...problems.home].join(", ")}.` : !photo ? "Take your pass photo first." : "The fee for this stop is not set yet."); }}
+            onClick={
+              canPay
+                ? pay
+                : () => {
+                    setShowErrors(true);
+                    setError(
+                      !formComplete
+                        ? `Still needed: ${[...problems.details, ...problems.home].join(", ")}.`
+                        : !photo
+                          ? "Take your pass photo first."
+                          : faceIdMissing
+                            ? "Set up Face ID first (step 2). The bus door cameras use it to check you in."
+                            : "The fee for this stop is not set yet."
+                    );
+                  }
+            }
             loading={busy === "pay"}
             disabled={busy !== null}
             className={cn(!canPay && "opacity-60")}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSemesterFee } from "@/lib/students/fees";
 import { getSessionFromRequest } from "@/lib/jwt";
 import { supabaseAdmin } from "@/lib/supabaseClient";
+import { faceIdRequiredButMissing } from "@/lib/face/status";
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request);
@@ -50,6 +51,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Camera boarding is on: the student must set up Face ID before the pass is activated.
+    if (session.role === "student" && (await faceIdRequiredButMissing(studentId))) {
+      return NextResponse.json(
+        { success: false, code: "FACE_ID_REQUIRED", error: "Set up Face ID first. The bus door cameras use it to check you in." },
+        { status: 409 }
+      );
+    }
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
       return NextResponse.json(
         { success: false, error: "Razorpay credentials not configured on the server." },

@@ -217,7 +217,7 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **Pages:**
 - `src/app/portal/onboarding/page.tsx`: one page, four cards (details → home and pickup → live pass photo → pay). Loads campuses, classes and stop options from the server only; keeps a localStorage draft (no photo); handles the Razorpay return (`verify-link`).
-  Components in `src/components/portal/onboarding/*`: `DetailsSection` (Student ID; class cascade course → branch → specialization → semester → section, all on the common `CustomDropdown`; specialization is always asked and pre-filled only when the branch has one; `formProblems` requires each step), `HomePickupSection` (address search, GPS, pin map, stop list), `LiveFaceCapture` (camera, see section 9), `OnboardingHeader`, `form.ts` (form type, `formProblems`, `phoneError`).
+  Face ID is required to pay while `validation_locks.faceId` is on: the page blocks Pay until Face ID is set up, and `POST /api/payments/razorpay/create-link` returns 409 `FACE_ID_REQUIRED` (`lib/face/status.ts`: `hasActiveFaceId`, `faceIdRequiredButMissing`). Components in `src/components/portal/onboarding/*`: `DetailsSection` (Student ID; class cascade course → branch → specialization → semester → section, all on the common `CustomDropdown`; specialization is always asked and pre-filled only when the branch has one; `formProblems` requires each step), `HomePickupSection` (address search, GPS, pin map, stop list), `LiveFaceCapture` (camera, see section 9), `OnboardingHeader`, `form.ts` (form type, `formProblems`, `phoneError`).
 - `src/app/portal/settings/page.tsx`
 - `src/components/portal/HomeStopSettings.tsx` (Settings home + stop, reuses `HomePickupSection`), `src/components/common/CommuterSeatPreferencesCard.tsx`
 - `src/app/verify/student/page.tsx`: public ID verification.
@@ -678,6 +678,7 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Teacher list:** `src/lib/teachers/gate-passes.ts` (`listGatePasses`, `reviewGatePass`), used by the page and the API. A PENDING request from an earlier day shows as Expired.
 - **Types:** `review_early_departure` and `booked_trip_id` are not in `database.types.ts` until it is regenerated after the migration (rpc call is cast).
 
+- **Timetable change on the same day:** `POST /api/teacher/schedule-shift` clears `schedule:class:{id}:{DAY}` and, when today's weekday was switched on, runs `executeDailyRollover(today, { force: true })`, which only adds missing (route, shift) trips. Before this, trips planned at 00:05 IST never picked up a day switched on later (e.g. Sunday), so students showed "no bus".
 ## 16. Geo / maps
 
 **API routes** (session; no role rule):

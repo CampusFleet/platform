@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseClient";
 import { getSession } from "@/lib/jwt";
+import { cacheDel } from "@/lib/redis";
+import { executeDailyRollover } from "@/lib/daily-rollover";
 
 export const dynamic = "force-dynamic";
 
@@ -337,8 +339,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Today's trips were planned at 00:05 IST from the timetable as it was then. If today's row
+    // changed (e.g. Sunday switched on), add the trips that are now missing (existing trips are
+    // never changed or removed), and drop the cached schedule so students see it at once.
+    // The 5-minute boarding chart then books the students on them.
+    const todayName = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][new Date(Date.now() + 5.5 * 3600_000).getUTCDay()];
+    const touched = Array.from(new Set(classShiftRows.map((r: any) => String(r.day_of_week))));
+    await Promise.all(
+      classShiftRows.map((r: any) => cacheDel(`schedule:class:${r.class_id}:${r.day_of_week}`).catch(() => false))
+    );
+    let todayTrips: { created: number; message: string } | null = null;
+    if (touched.includes(todayName) && classShiftRows.some((r: any) => r.day_of_week === todayName && !r.is_today_off)) {
+      const roll = await executeDailyRollover(undefined, { force: true, triggeredBy: "TIMETABLE_CHANGE" });
+      todayTrips = { created: roll.success ? roll.newTripsCount : 0, message: roll.message };
+      if (!roll.success) console.error("[schedule-shift] filling today's trips failed:", roll.message);
+    }
+
     return NextResponse.json({
       success: true,
+      todayTrips,
       message: `Shift schedule successfully updated for ${classIds.length} academic ${
         classIds.length === 1 ? "class" : "classes"
       }.`,

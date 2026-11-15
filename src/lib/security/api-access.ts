@@ -59,6 +59,7 @@ const ROLE_RULES: RoleRule[] = [
   { prefix: "/api/audit-logs", roles: MANAGE },
   { prefix: "/api/merges", roles: MANAGE },
   { prefix: "/api/transport-manager", roles: MANAGE },
+  { prefix: "/api/transport-admin", roles: MANAGE },
   { prefix: "/api/payments/approvals", write: MANAGE }, // GET is scoped to own rows in the handler
   { prefix: "/api/telematics/devices", roles: MANAGE },
   { prefix: "/api/telematics/rfid/map", roles: MANAGE },

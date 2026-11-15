@@ -212,6 +212,8 @@ async function handle(req: NextRequest, { params }: { params: { table: string } 
 
 export const GET = handle;
 export const HEAD = handle;
-export const POST = handle;
-export const PATCH = handle;
-export const DELETE = handle;
+// Read-only since Phase 4: every write goes through a typed server route (see docs/CODEMAP.md).
+const readOnly = () => NextResponse.json({ code: "PROXY_READ_ONLY", message: "Writes through /api/db are disabled. Use the matching server route.", details: null, hint: null }, { status: 405 });
+export const POST = readOnly;
+export const PATCH = readOnly;
+export const DELETE = readOnly;

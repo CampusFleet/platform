@@ -254,6 +254,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 - Crash reporting: `src/app/error.tsx`, `src/app/global-error.tsx` and `components/maps/MapBoundary.tsx` call `lib/client/report-error.ts` → `POST /api/client-errors`, which only logs `[client-error] {...}` to the server log (read with `vercel logs`).
 - `src/lib/teachers/ride.ts`: `getTeacherRideSettings`, `saveTeacherRideSettings`, `getTeacherRide`, `getTeacherRideLive` (Redis `teacher-ride:{userId}`, 20 s). Tables `teacher_rides`, `teacher_reservations`; function `teacher_chart_tick()`; trigger `check_trip_seat_unique` (one seat per trip across `bus_reservations` and `teacher_reservations`).
 - Routes: `/api/teacher/ride-settings` (GET, PUT), `/api/teacher/ride`, `/api/teacher/ride/live`. Page `src/app/teacher/commute/page.tsx` renders `CommuteHome audience="teacher"`.
+- `src/lib/admin/fleet.ts`: buses (`createBus`, `updateBus`, `deleteBus` retires if history), routes (`saveRoute`, `deleteRoute` via RPCs, migration 20261116), special-shift allocations. Routes `/api/transport-admin/{buses,routes,special-allocations}` (MANAGE).
+- `/api/db/rest/v1/[table]` is read-only (writes → 405).
 - `src/lib/manager/dispatch.ts`: `getDispatchBoard(date)`, `runDispatchAction` → `/api/transport-manager/dispatch` (GET board, POST UPDATE/ADD/CANCEL); RPCs in migration 20261115.
 - `src/lib/manager/fleet-live.ts`: `getFleetLive` → `GET /api/transport-manager/fleet-live`; page `/transport-manager/live` (`LiveFleetTelematicsView`).
 - `POST /api/students/sos`: rider SOS → `vehicle_issues` (CRITICAL) + notifications to managers and the trip conductor.

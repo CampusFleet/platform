@@ -277,19 +277,16 @@ export function QRPassScanner({
         setPendingVerification(null);
         return;
       }
-    } catch (e) {
-      console.warn("Backend confirm scan failed, recording locally", e);
+    } catch {
+      // No offline fallback: attendance is only recorded by the server (it checks pass, trip and method).
+      if (soundEnabled) playChime("error");
+      setLastResult({ status: "REJECTED", message: "No connection. Check the network and scan again, or mark the student on the passenger list.", timestamp: new Date().toLocaleTimeString() });
+      setIsProcessing(false);
+      setPendingVerification(null);
+      return;
     }
 
     const isStanding = booking.passengerType === "STANDING_TILL_MERGE" || booking.passenger_type === "STANDING_TILL_MERGE";
-
-    store.recordAttendance(
-      student.id || booking.studentId || "unknown",
-      trip.id,
-      "QR_SCAN",
-      "BOARDED",
-      `Verified via Conductor ${method} (Photo ID Match Confirmed)`
-    );
 
     if (soundEnabled) playChime("success");
     triggerHaptic("success");
@@ -342,15 +339,6 @@ export function QRPassScanner({
           message: `🎒 SEAT HELD & ROAMING ACTIVE: ${student.fullName} (Seat ${booking.seatNumber || booking.seat_number || "Held"}) is free to roam campus without keeping a physical bag on the seat. Audible departure alert will ring when bus fills.`,
           timestamp: new Date().toLocaleTimeString(),
         });
-
-        // Also record in local store for immediate UI reactivity
-        store.recordAttendance(
-          student.id || booking.studentId || "unknown",
-          trip.id,
-          "QR_SCAN",
-          "BOARDED",
-          `Seat held digitally (Roaming Campus) - verified via Conductor ${method}`
-        );
 
         onAttendanceSuccess(student.fullName, "Seat Hold & Campus Roam");
         setIsProcessing(false);

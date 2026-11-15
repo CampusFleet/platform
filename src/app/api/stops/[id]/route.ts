@@ -79,6 +79,7 @@ export async function DELETE(
 
     // Deactivate merge points
     await supabaseAdmin.from("bus_merge_points").delete().eq("stop_id", stopId);
+    await supabaseAdmin.from("route_stops").delete().eq("stop_id", stopId);
 
     const { error } = await supabaseAdmin.from("stops").delete().eq("id", stopId);
     if (error) throw error;

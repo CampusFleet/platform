@@ -26,6 +26,8 @@ export const dispatchAction = z.discriminatedUnion("action", [
     busId: z.number().int().nullable(),
     driverId: z.string().max(128).nullable(),
     conductorId: z.string().max(128).nullable(),
+    isSpecial: z.boolean().optional(),
+    facilityType: z.string().max(40).optional(),
   }),
   z.object({ action: z.literal("CANCEL"), tripId: z.string().min(1).max(128), reason: z.string().max(300).optional() }),
 ]);
@@ -74,7 +76,11 @@ export async function runDispatchAction(a: DispatchAction, actor: { userId: stri
     return call("manager_update_run", { p_trip_id: a.tripId, p_bus_id: a.busId, p_driver_id: a.driverId || "", p_conductor_id: a.conductorId || "", p_actor: actor.userId, p_actor_role: actor.role });
   }
   if (a.action === "ADD") {
-    return call("manager_add_run", { p_trip_id: createTripId(), p_date: a.date, p_route_id: a.routeId, p_shift_id: a.shiftId, p_bus_id: a.busId, p_driver_id: a.driverId || "", p_conductor_id: a.conductorId || "", p_actor: actor.userId, p_actor_role: actor.role });
+    const res = await call("manager_add_run", { p_trip_id: createTripId(), p_date: a.date, p_route_id: a.routeId, p_shift_id: a.shiftId, p_bus_id: a.busId, p_driver_id: a.driverId || "", p_conductor_id: a.conductorId || "", p_actor: actor.userId, p_actor_role: actor.role });
+    if (a.isSpecial || a.facilityType) {
+      await db.from("trips").update({ is_special: Boolean(a.isSpecial), facility_type: a.facilityType || null } as any).eq("id", res.tripId);
+    }
+    return res;
   }
   return call("manager_cancel_run", { p_trip_id: a.tripId, p_reason: a.reason || "", p_actor: actor.userId, p_actor_role: actor.role });
 }

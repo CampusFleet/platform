@@ -642,6 +642,14 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 
 ## 15. Notifications
 - **Tables:** `notifications` rows are written by bookings, bookings/cancel, boarding/scan, boarding/roaming, payments/approvals and seat-partner-requests.
+- **Seat notifications (migration `20261117_seat_notifications.sql`, apply in SQL Editor):** Postgres triggers write the rows, so every path is covered (5-minute `boarding_chart_tick`, manager `manager_cancel_run`).
+  - `trg_notify_chart_ready` on `trips` (`manifest_locked` false → true): `CHART_READY` to every student and teacher still on the trip.
+  - `trg_notify_seat_change` on `bus_reservations`: `SEAT_CONFIRM` when `needs_confirmation` turns on; `SEAT_RELEASED` when status → CANCELLED with `cancel_reason` `NOT_CONFIRMED_AFTER_ABSENCE` or `RUN_CANCELLED` (student cancellations have no reason and are skipped).
+  - Text comes from `_ride_label(trip, stop)`: "Bus 37 · Morning Pick-Up · Route · leaves Stop at 07:45 AM". No trip codes.
+  - `trg_notifications_owner_fix` (BEFORE INSERT): older routes insert `students.id` as `user_id`; it maps it to `students.user_id` (the FK is to `users.id`). The migration also fixes old rows.
+  - New column `notifications.url` (where a tap goes).
+- **Inbox:** `GET /api/notifications` (latest 30 + unread count), `PATCH /api/notifications` (`{ids}` or `{all:true}` → read). Session only; rows filtered by `session.userId`. Lib `src/lib/notifications/inbox.ts` (`listInbox`, `markRead`; reads without `url` until the migration runs). UI `src/components/common/NotificationBell.tsx` in `UnifiedAppHeader`: badge + `Sheet`, polls every 60 s while visible.
+- **Not yet:** push to a closed app (the service worker has a `push` handler but nothing subscribes; needs VAPID keys + a sender).
 - **Preferences:** `/api/users/notifications` (users table; migration `20260924_add_notification_prefs.sql`).
 - **Departure alerts:** `bus_departure_alerts`, through `/api/boarding/roaming` and `BusDepartureAlertModal`.
 

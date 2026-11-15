@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AlertTriangle, Crosshair, MapPin, Search, X } from "lucide-react";
 import type { Stop } from "@/lib/types";
+import { MapBoundary } from "@/components/maps/MapBoundary";
 import { Badge, Button, Card, CardHeader, cn, Field, Input } from "@/components/ui";
 import type { CampusOption, HomeLocation, PickupOption } from "./form";
 
@@ -108,6 +109,11 @@ export function HomePickupSection({
     onHome({ latitude: lat, longitude: lng, address });
   };
 
+  const reverseRef = useRef(reverse);
+  reverseRef.current = reverse;
+  const homeRef = useRef(home);
+  homeRef.current = home;
+
   const gps = () => {
     if (!navigator.geolocation) {
       setNotice("Location is not available in this browser.");
@@ -128,7 +134,12 @@ export function HomePickupSection({
   };
 
   const selected = options.find((o) => o.stopId === stopId) || null;
-  const mapStop = selected ? ({ id: selected.stopId, name: selected.name, latitude: selected.latitude, longitude: selected.longitude } as unknown as Stop) : null;
+  // Stable object so the map does not redraw the stop on every render.
+  const mapStop = useMemo(
+    () => (selected ? ({ id: selected.stopId, name: selected.name, latitude: selected.latitude, longitude: selected.longitude } as unknown as Stop) : null),
+    [selected?.stopId, selected?.latitude, selected?.longitude, selected?.name]
+  );
+  const onPinMove = useCallback((lat: number, lng: number) => void reverseRef.current(lat, lng, homeRef.current?.address || ""), []);
 
   return (
     <Card>
@@ -175,16 +186,18 @@ export function HomePickupSection({
 
         {home && (
           <>
+            <MapBoundary where="onboarding">
             <OnboardingPinMap
-              latitude={home.latitude}
-              longitude={home.longitude}
-              onLocationChange={(lat, lng) => void reverse(lat, lng, home.address)}
-              assignedStop={mapStop}
-              walkingDistanceMeters={selected ? Math.round(selected.distanceKm * 1000) : undefined}
-              walkingTimeMins={selected?.walkMins}
-              height="260px"
-              zoom={15}
-            />
+                latitude={home.latitude}
+                longitude={home.longitude}
+                onLocationChange={onPinMove}
+                assignedStop={mapStop}
+                walkingDistanceMeters={selected ? Math.round(selected.distanceKm * 1000) : undefined}
+                walkingTimeMins={selected?.walkMins}
+                height="260px"
+                zoom={15}
+              />
+            </MapBoundary>
             <p className="text-xs text-gray-500">Drag the pin to your exact gate if it is off.</p>
           </>
         )}

@@ -9,6 +9,7 @@ import type { CommuterCorridorMapHandle } from "@/components/maps/CommuterCorrid
 import type { PublicRide, RideLive } from "@/lib/students/ride";
 import { Badge, Button, Card, EmptyState, cn } from "@/components/ui";
 import { calculateHaversineDistanceKm } from "@/lib/eta-calculator";
+import { MapBoundary } from "@/components/maps/MapBoundary";
 
 const CommuterCorridorMap = dynamic(() => import("@/components/maps/CommuterCorridorMap"), {
   ssr: false,
@@ -166,6 +167,7 @@ export default function FullScreenLiveRadarView({ initialRide }: { initialRide: 
       <TopBar title={ride.busNumber ? `Bus ${ride.busNumber}` : "Your bus"} badge={statusBadge(live)} />
 
       <div className="relative flex-1 min-h-[220px]">
+        <MapBoundary where="radar">
         <CommuterCorridorMap
           ref={mapRef}
           homeCoords={ride.home}
@@ -179,6 +181,7 @@ export default function FullScreenLiveRadarView({ initialRide }: { initialRide: 
           className="absolute inset-0"
           hideInlineControls
         />
+        </MapBoundary>
         <div className="absolute right-3 bottom-3 flex flex-col gap-2 z-[500]">
           <MapButton label="Show bus" onClick={() => mapRef.current?.recenterOnBus()} disabled={!busLive}><BusIcon className="w-5 h-5" /></MapButton>
           <MapButton label="Show my stop" onClick={() => mapRef.current?.recenterOnStop(mapMyStop)} disabled={!mapMyStop}><MapPin className="w-5 h-5" /></MapButton>

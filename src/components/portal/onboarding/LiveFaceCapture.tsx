@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Camera, Check, RefreshCw, ScanFace, X } from "lucide-react";
 import { getFaceLandmarker } from "@/lib/face-landmarker-loader";
 import { CONSENT_VERSION } from "@/lib/biometrics-consent";
-import { CLIENT_POSE, framingIssue, faceBox, isTurned, signedYawRatio, type Point2D, type TurnSide } from "@/lib/face/pose";
+import { CLIENT_POSE, framingIssue, headBox, isTurned, signedYawRatio, type Point2D, type TurnSide } from "@/lib/face/pose";
 import { Button, cn } from "@/components/ui";
 
 /**
@@ -26,13 +26,15 @@ type Phase = "STARTING" | "FRAME" | "REVIEW" | "STRAIGHT" | "TURN" | "CENTRE" | 
 const HOLD_MS = 450;
 const STEP_TIMEOUT_MS = 30_000;
 const DETECT_EVERY_MS = 70;
-const FRAME_MAX_PX = 720;
+// Larger frames keep detail around the eyes (glasses frames, glare) for the face service.
+const FRAME_MAX_PX = 960;
 const PORTRAIT_PX = 640;
 
 const FRAMING_TEXT = {
   TOO_FAR: "Move closer",
   TOO_CLOSE: "Move a little further away",
   OFF_CENTRE: "Centre your face in the oval",
+  HEAD_CUT: "Move back a little so your whole head is in the frame",
 } as const;
 const turnText = (side: TurnSide) => (side === "LEFT" ? "Slowly turn your head to your left" : "Slowly turn your head to your right");
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -69,9 +71,12 @@ export function LiveFaceCapture({
   mode,
   onClose,
   onDone,
+  append = false,
 }: {
   open: boolean;
   mode: CaptureMode;
+  /** faceid mode: add this scan as another look (e.g. glasses on/off) instead of replacing Face ID. */
+  append?: boolean;
   onClose: () => void;
   /** photo mode: photoUrl + preview of the saved pass photo. faceid mode: photoUrl is "" (photo unchanged). */
   onDone: (result: { photoUrl: string; preview: string; faceId: boolean }) => void;
@@ -135,16 +140,19 @@ export function LiveFaceCapture({
     return c.toDataURL("image/jpeg", 0.88);
   }, []);
 
-  /** Head-and-shoulders crop around the face, in true (not mirrored) orientation like an ID photo. */
+  /**
+   * Head-and-shoulders crop like an ID photo, in true (not mirrored) orientation: the whole head
+   * (crown to chin) fills about 55% of the height with a gap above the hair, so nothing is cut off.
+   */
   const cropPortrait = useCallback((lm: Point2D[]): HTMLCanvasElement | null => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return null;
-    const b = faceBox(lm);
+    const head = headBox(lm);
     const W = v.videoWidth;
     const H = v.videoHeight;
-    const side = Math.min(Math.max(b.w * W, b.h * H) * 2.3, W, H);
-    const sx = Math.max(0, Math.min(W - side, b.cx * W - side / 2));
-    const sy = Math.max(0, Math.min(H - side, b.cy * H - side * 0.45));
+    const side = Math.min((head.h * H) / 0.55, W, H);
+    const sx = Math.max(0, Math.min(W - side, head.cx * W - side / 2));
+    const sy = Math.max(0, Math.min(H - side, head.top * H - side * 0.12));
     const out = Math.min(PORTRAIT_PX, Math.round(side));
     const c = document.createElement("canvas");
     c.width = out;
@@ -210,6 +218,7 @@ export function LiveFaceCapture({
           consentVersion: CONSENT_VERSION,
           challenge: challengeRef.current?.token,
           frames: framesRef.current.slice(0, 5),
+          ...(append ? { mode: "add" } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));

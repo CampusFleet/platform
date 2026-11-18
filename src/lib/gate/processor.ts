@@ -116,6 +116,9 @@ export interface ProcessResult {
   error?: string;
 }
 
+/** A gate match must be this far inside the threshold before its crop is kept as a template. */
+const ADAPTIVE_FRACTION = 0.6;
+
 export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
   const fail = async (error: string, retryable: boolean): Promise<ProcessResult> => {
     const backoffS = Math.min(3600, 30 * 2 ** c.attempts);
@@ -283,6 +286,19 @@ export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
 
   // 5. Side effects
   await applyDecision({ c, decision, matched, reservation, trip, stopId, busLabel, template: tpl.template });
+
+  // Learn the student's real door-camera look (glasses, light) from very confident boardings on
+  // their own bus only. Quality and liveness already passed (tpl.accepted). Migration 20261123.
+  if (decision.outcome === "BOARDED" && scope === "BUS_ROSTER" && matched && matched.distance <= threshold * ADAPTIVE_FRACTION) {
+    const { error: adErr } = await supabaseAdmin.rpc("add_gate_face_template" as never, {
+      p_student_id: matched.student_id,
+      p_embedding: vec,
+      p_model_version: tpl.model_version,
+      p_quality: tpl.quality?.score ?? 0,
+      p_pad: tpl.pad?.real_score ?? 0,
+    } as never);
+    if (adErr && adErr.code !== "PGRST202") console.warn("[gate] adaptive template:", adErr.message);
+  }
 
   await supabaseAdmin
     .from("gate_captures")

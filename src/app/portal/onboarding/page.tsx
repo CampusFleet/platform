@@ -68,6 +68,8 @@ export default function StudentOnboardingPage() {
   const faceIdRequired = locks.faceId;
   const [consent, setConsent] = useState(false);
   const [capture, setCapture] = useState<CaptureMode | null>(null);
+  const [captureAppend, setCaptureAppend] = useState(false);
+  const [extraLook, setExtraLook] = useState(false);
 
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -303,7 +305,8 @@ export default function StudentOnboardingPage() {
     return data.studentId as string;
   };
 
-  const openCamera = async (mode: CaptureMode) => {
+  const openCamera = async (mode: CaptureMode, append = false) => {
+    setCaptureAppend(append);
     setBusy("photo");
     try {
       if (await save()) setCapture(mode);
@@ -456,6 +459,17 @@ export default function StudentOnboardingPage() {
               <ScanFace className="w-4 h-4" /> {faceIdDone ? "Redo Face ID" : "Set up Face ID"}
             </Button>
             {!photo && <p className="text-[11px] text-gray-500">Take your pass photo first.</p>}
+            {faceIdDone && (
+              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 space-y-2">
+                <p className="text-xs text-blue-900 dark:text-blue-200">
+                  <span className="font-bold">Wear glasses?</span> Add a second scan with them {extraLook ? "on or off again" : "off (or on, if you scanned without them)"}. The door camera then knows both looks.
+                </p>
+                <Button size="sm" variant="secondary" onClick={() => openCamera("faceid", true)} disabled={busy !== null}>
+                  <ScanFace className="w-4 h-4" /> {extraLook ? "Add another look" : "Add a second look"}
+                </Button>
+                {extraLook && <Badge tone="green" dot>Second look saved</Badge>}
+              </div>
+            )}
             {faceIdRequired ? (
               <p className="text-[11px] text-gray-500">
                 Required: the bus door cameras check you in by face. Tick the consent box, then follow the head-turn prompt.
@@ -522,12 +536,16 @@ export default function StudentOnboardingPage() {
       </div>
 
       <LiveFaceCapture
+        append={captureAppend}
         open={capture !== null}
         mode={capture ?? "photo"}
         onClose={() => setCapture(null)}
         onDone={({ photoUrl, preview, faceId }) => {
           if (photoUrl) setPhoto({ url: photoUrl, preview });
-          if (faceId) setFaceIdDone(true);
+          if (faceId) {
+            if (captureAppend) setExtraLook(true);
+            setFaceIdDone(true);
+          }
           setError(null);
         }}
       />

@@ -59,3 +59,24 @@ describe("checkEnrollmentPoses turn direction", () => {
     expect(checkEnrollmentPoses([0.02, 0.2], gates, { side: "RIGHT", signed: [null, null] })).toEqual({ ok: true });
   });
 });
+
+import { framingIssue, headBox } from "@/lib/face/pose";
+
+/** 478 landmarks filling a box (cx, cy, w, h) in normalised units. */
+function mesh(cx: number, cy: number, w: number, h: number) {
+  return Array.from({ length: 478 }, (_, i) => ({ x: cx - w / 2 + ((i % 2) * w), y: cy - h / 2 + ((i % 3) / 2) * h }));
+}
+
+describe("full-head framing", () => {
+  it("accepts a centred face with room for the head", () => {
+    expect(framingIssue(mesh(0.5, 0.55, 0.35, 0.4))).toBeNull();
+  });
+  it("asks to move back when the top of the head is out of frame", () => {
+    expect(framingIssue(mesh(0.5, 0.3, 0.35, 0.45))).toBe("HEAD_CUT");
+  });
+  it("estimates the crown above the mesh top", () => {
+    const h = headBox(mesh(0.5, 0.5, 0.3, 0.4));
+    expect(h.top).toBeCloseTo(0.5 - 0.2 - 0.12, 5);
+    expect(h.bottom).toBeCloseTo(0.7, 5);
+  });
+});

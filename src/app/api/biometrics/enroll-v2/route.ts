@@ -19,7 +19,10 @@ const MIN_ACCEPTED = 2;
 
 /**
  * POST /api/biometrics/enroll-v2
- * Body: { consentVersion, consentGiven: true, challenge, frames: [base64 JPEG ×3–5], portrait?: base64 JPEG }
+ * Body: { consentVersion, consentGiven: true, challenge, frames: [base64 JPEG ×3–5], portrait?: base64 JPEG, mode?: "add" }
+ *
+ * - mode "add": a second look (e.g. glasses on/off) is added next to the existing Face ID instead of
+ *   replacing it (migration 20261123). Matching takes the closest template, so more looks help.
  *
  * - `challenge` is the one-time token from GET /api/biometrics/challenge (5 min, single use).
  * - Frames must include one looking straight and one with the head turned (face-service yaw ratio).
@@ -151,7 +154,8 @@ export async function POST(req: NextRequest) {
   // 3. Consent record + revoke old templates + store new, in one transaction (migration 20261120).
   const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0] || null;
   const userAgent = (req.headers.get("user-agent") || "").slice(0, 200);
-  const { error: eErr } = await supabaseAdmin.rpc("enroll_face_templates" as never, {
+  const append = body.mode === "add";
+  const { data: eData, error: eErr } = await supabaseAdmin.rpc("enroll_face_templates" as never, {
     p_student_id: student.id,
     p_user_id: session.userId,
     p_consent_version: CONSENT_VERSION,
@@ -160,7 +164,15 @@ export async function POST(req: NextRequest) {
     p_user_agent: userAgent,
     p_model_version: model,
     p_templates: accepted.map((r) => ({ embedding: r.template, quality: r.quality ?? 0, pad: r.pad ?? 0 })),
+    ...(append ? { p_append: true } : {}),
   } as never);
+  const eRes = eData as unknown as { ok?: boolean; error?: string } | null;
+  if (!eErr && eRes && eRes.ok === false) {
+    return NextResponse.json({ success: false, message: eRes.error || "Could not save Face ID." }, { status: 409 });
+  }
+  if (eErr?.code === "PGRST202" && append) {
+    return NextResponse.json({ success: false, message: "Adding a second look needs the 20261123 database update." }, { status: 503 });
+  }
   if (eErr?.code === "PGRST202") {
     // Migration not applied yet: older step-by-step path.
     const saved = await saveStepByStep({ studentId: student.id, userId: session.userId, clientIp, userAgent, model, accepted });

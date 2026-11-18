@@ -528,6 +528,8 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **DB:** face_templates, biometric_consents, biometric_access_log, bus_security_incidents, gate_captures, gate_devices. Migrations: `20261109_biometric_face_id_and_gate_telematics.sql`, `20261111_face_id_v2_schema.sql`, `20261120_face_enroll_atomic.sql` (rpc `enroll_face_templates`: consent + revoke + insert in one transaction; enroll-v2 falls back to the old three writes until it is applied).
 
+**More looks per student (migration `20261123_face_templates_variety.sql`, apply after 20261120):** `face_templates.source` adds `ENROLLMENT_EXTRA` (enroll-v2 `mode: "add"`, e.g. glasses on/off; onboarding "Add a second look"; max 8, never replaces the main scan) and `GATE_ADAPTIVE` (processor: BOARDED on own bus roster with distance ≤ 0.6 × threshold → rpc `add_gate_face_template`, one per day, newest 3). A fresh enrollment revokes all looks. Matching already takes the closest template. Capture: whole-head framing (`headBox`, `HEAD_CUT`), ID-style portrait crop (head ≈ 55% of height), enrollment frames up to 960 px.
+
 **Rules fixed in the end-to-end audit (gate + enrollment):**
 - Gate reservation is the one for the capture's trip (`pickReservation`: same trip, else same shift without a trip). A bus with a morning and an evening run no longer marks the wrong reservation, and the reservation's `trip_id` is never moved.
 - One Face ID attendance row per student per trip (was per bus per day). Attendance and reservation writes throw on error, so the capture is retried (`FAILED`) instead of showing BOARDED with nothing saved; the event log and alerts are written after them.

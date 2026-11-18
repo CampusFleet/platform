@@ -67,13 +67,29 @@ export function faceBox(lm: Point2D[]): { cx: number; cy: number; w: number; h: 
   return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY };
 }
 
-export type FramingIssue = "TOO_FAR" | "TOO_CLOSE" | "OFF_CENTRE" | null;
+/**
+ * Whole head in normalised units. The MediaPipe mesh stops at the upper forehead, so the crown is
+ * estimated about 30% of the mesh height above it (hair / top of head); the chin is the mesh bottom.
+ */
+export function headBox(lm: Point2D[]): { top: number; bottom: number; left: number; right: number; cx: number; h: number } {
+  const b = faceBox(lm);
+  const top = b.cy - b.h / 2 - b.h * 0.3;
+  const bottom = b.cy + b.h / 2;
+  return { top, bottom, left: b.cx - b.w / 2, right: b.cx + b.w / 2, cx: b.cx, h: bottom - top };
+}
 
-/** Is the face large enough and roughly centred for a usable pass photo? */
+export type FramingIssue = "TOO_FAR" | "TOO_CLOSE" | "OFF_CENTRE" | "HEAD_CUT" | null;
+
+/**
+ * Is the whole head in view, large enough and roughly centred? Face-comparison guidance (e.g. Amazon
+ * Rekognition) asks for the full head, not a tight face crop, and a face that fills much of the image.
+ */
 export function framingIssue(lm: Point2D[]): FramingIssue {
   const b = faceBox(lm);
+  const head = headBox(lm);
   if (b.w < 0.22) return "TOO_FAR";
-  if (b.w > 0.7) return "TOO_CLOSE";
+  if (b.w > 0.6) return "TOO_CLOSE";
+  if (head.top < 0.02 || head.bottom > 0.98 || head.left < 0.02 || head.right > 0.98) return "HEAD_CUT";
   if (Math.abs(b.cx - 0.5) > 0.16 || Math.abs(b.cy - 0.5) > 0.2) return "OFF_CENTRE";
   return null;
 }

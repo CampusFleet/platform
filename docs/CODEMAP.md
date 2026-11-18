@@ -528,6 +528,10 @@ Handler helpers in `src/lib/security/actor.ts`:
 
 **DB:** face_templates, biometric_consents, biometric_access_log, bus_security_incidents, gate_captures, gate_devices. Migrations: `20261109_biometric_face_id_and_gate_telematics.sql`, `20261111_face_id_v2_schema.sql`, `20261120_face_enroll_atomic.sql` (rpc `enroll_face_templates`: consent + revoke + insert in one transaction; enroll-v2 falls back to the old three writes until it is applied).
 
+**Model (migration `20261124_face_model_auraface.sql`):** face-service uses AuraFace v1 (Apache-2.0, ResNet100, 512-d; model_version `yunet2023mar+auraface-v1+minifasnet-v2v1se/1`, provisional threshold 0.55). `face_templates.embedding` and `bus_security_incidents.face_embedding` are `vector(512)`; the migration deletes old 128-d templates (demo data), so everyone re-enrolls.
+**Multi-angle scan:** `LiveFaceCapture` faceid mode takes 6 frames: straight, challenge side, other side, chin up, chin down, straight (`pitchRatio` vs the student's own straight value; up/down only need opposite directions). enroll-v2 accepts up to 6 frames and, for 6, checks the side order (`checkTurnOrder`). Every accepted angle is stored, so door cameras match turned or tilted faces.
+**Sheet** renders through a portal to `document.body` (the header's backdrop-filter made `fixed` sheets open inside the header, e.g. the notification panel on /driver).
+
 **More looks per student (migration `20261123_face_templates_variety.sql`, apply after 20261120):** `face_templates.source` adds `ENROLLMENT_EXTRA` (enroll-v2 `mode: "add"`, e.g. glasses on/off; onboarding "Add a second look"; max 8, never replaces the main scan) and `GATE_ADAPTIVE` (processor: BOARDED on own bus roster with distance ≤ 0.6 × threshold → rpc `add_gate_face_template`, one per day, newest 3). A fresh enrollment revokes all looks. Matching already takes the closest template. Capture: whole-head framing (`headBox`, `HEAD_CUT`), ID-style portrait crop (head ≈ 55% of height), enrollment frames up to 960 px.
 
 **Rules fixed in the end-to-end audit (gate + enrollment):**

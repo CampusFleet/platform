@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Camera, Check, RefreshCw, ScanFace, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Check, RefreshCw, ScanFace, X, ArrowUp, ArrowDown } from "lucide-react";
 import { getFaceLandmarker } from "@/lib/face-landmarker-loader";
 import { CONSENT_VERSION } from "@/lib/biometrics-consent";
-import { CLIENT_POSE, framingIssue, headBox, isTurned, signedYawRatio, type Point2D, type TurnSide } from "@/lib/face/pose";
+import { CLIENT_POSE, PITCH_MAX, PITCH_MIN, framingIssue, headBox, isTurned, pitchRatio, signedYawRatio, type Point2D, type TurnSide } from "@/lib/face/pose";
 import { Button, cn } from "@/components/ui";
 
 /**
@@ -21,7 +21,11 @@ import { Button, cn } from "@/components/ui";
  */
 
 export type CaptureMode = "faceid" | "photo";
-type Phase = "STARTING" | "FRAME" | "REVIEW" | "STRAIGHT" | "TURN" | "CENTRE" | "SAVING" | "DONE" | "ERROR";
+// Face ID: straight → challenge side → other side → up → down → straight (6 frames, every angle the
+// door camera may see). The server checks the order of the two sides against the challenge.
+type Phase = "STARTING" | "FRAME" | "REVIEW" | "STRAIGHT" | "TURN" | "TURN2" | "UP" | "DOWN" | "CENTRE" | "SAVING" | "DONE" | "ERROR";
+const SCAN_PHASES = ["STRAIGHT", "TURN", "TURN2", "UP", "DOWN", "CENTRE"] as const;
+const other = (s: TurnSide): TurnSide => (s === "LEFT" ? "RIGHT" : "LEFT");
 
 const HOLD_MS = 450;
 const STEP_TIMEOUT_MS = 30_000;
@@ -101,6 +105,8 @@ export function LiveFaceCapture({
   const [review, setReview] = useState<string | null>(null);
   const [shooting, setShooting] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
+  const basePitchRef = useRef<number | null>(null);
+  const upSignRef = useRef(0);
 
   const go = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -217,7 +223,7 @@ export function LiveFaceCapture({
           consentGiven: true,
           consentVersion: CONSENT_VERSION,
           challenge: challengeRef.current?.token,
-          frames: framesRef.current.slice(0, 5),
+          frames: framesRef.current.slice(0, 6),
           ...(append ? { mode: "add" } : {}),
         }),
       });
@@ -238,7 +244,7 @@ export function LiveFaceCapture({
       const v = videoRef.current;
       const lmk = landmarkerRef.current;
       const p = phaseRef.current;
-      if (!v || v.readyState < 2 || !lmk || !["FRAME", "STRAIGHT", "TURN", "CENTRE"].includes(p)) return;
+      if (!v || v.readyState < 2 || !lmk || !["FRAME", ...SCAN_PHASES].includes(p)) return;
       if (now - last < DETECT_EVERY_MS) return;
       last = now;
       if (p !== "FRAME" && now - stepStartedRef.current > STEP_TIMEOUT_MS) {
@@ -274,9 +280,24 @@ export function LiveFaceCapture({
         return;
       }
 
-      const turn = challengeRef.current?.turn ?? "LEFT";
+      const first = challengeRef.current?.turn ?? "LEFT";
+      const turn = p === "TURN2" ? other(first) : first;
+      const pitch = pitchRatio(lm);
       let good = false;
-      if (p === "STRAIGHT" || p === "CENTRE") {
+      if (p === "UP" || p === "DOWN") {
+        const base = basePitchRef.current;
+        const delta = pitch !== null && base !== null ? pitch - base : 0;
+        // "Up" may move the measure either way on different faces; "down" must go the other way.
+        const want = p === "UP" ? 0 : -(upSignRef.current || 1);
+        const moved = Math.abs(delta) >= PITCH_MIN && Math.abs(delta) <= PITCH_MAX && (want === 0 || Math.sign(delta) === want);
+        if (framing === "TOO_FAR" || framing === "TOO_CLOSE") setHint(FRAMING_TEXT[framing]);
+        else if (Math.abs(yaw) > CLIENT_POSE.TURN_MIN) setHint("Keep your face towards the camera");
+        else if (Math.abs(delta) > PITCH_MAX) setHint("Not so far");
+        else if (moved) {
+          setHint("Hold it there");
+          good = true;
+        } else setHint(p === "UP" ? "Slowly tilt your chin up" : "Now slowly tilt your chin down");
+      } else if (p === "STRAIGHT" || p === "CENTRE") {
         if (framing) setHint(FRAMING_TEXT[framing]);
         else if (Math.abs(yaw) > CLIENT_POSE.FRONTAL_MAX) setHint("Look straight at the camera");
         else {
@@ -306,18 +327,28 @@ export function LiveFaceCapture({
       navigator.vibrate?.(15);
       const f = grabFrame();
       if (f) framesRef.current.push(f);
+      holdSinceRef.current = null;
+      setHoldProgress(0);
       if (p === "STRAIGHT") {
-        setTimeout(() => {
-          const f2 = grabFrame();
-          if (f2) framesRef.current.push(f2);
-        }, 250);
+        basePitchRef.current = pitch;
         go("TURN");
-        setHint(turnText(turn));
+        setHint(turnText(first));
       } else if (p === "TURN") {
+        go("TURN2");
+        setHint(turnText(other(first)));
+      } else if (p === "TURN2") {
+        go("UP");
+        setHint("Look straight, then slowly tilt your chin up");
+      } else if (p === "UP") {
+        const base = basePitchRef.current;
+        upSignRef.current = pitch !== null && base !== null ? Math.sign(pitch - base) || 1 : 1;
+        go("DOWN");
+        setHint("Now slowly tilt your chin down");
+      } else if (p === "DOWN") {
         go("CENTRE");
         setHint("Now look straight at the camera again");
       } else {
-        if (framesRef.current.length < 3) {
+        if (framesRef.current.length < 5) {
           fail("The camera did not give us clear frames. Please try again.");
           return;
         }
@@ -332,6 +363,8 @@ export function LiveFaceCapture({
     setReview(null);
     setReady(false);
     framesRef.current = [];
+    basePitchRef.current = null;
+    upSignRef.current = 0;
     lastLmRef.current = null;
     challengeRef.current = null;
     go("STARTING");
@@ -402,10 +435,10 @@ export function LiveFaceCapture({
 
   if (!open) return null;
 
-  const faceSteps = ["STRAIGHT", "TURN", "CENTRE"] as const;
+  const faceSteps = SCAN_PHASES;
   const stepIndex = Math.max(0, faceSteps.indexOf(phase as any));
   const turn = challengeRef.current?.turn;
-  const live = ["FRAME", "STRAIGHT", "TURN", "CENTRE"].includes(phase);
+  const live = (["FRAME", ...SCAN_PHASES] as string[]).includes(phase);
   const ring = phase === "FRAME" ? (ready ? "rgba(52,211,153,1)" : "rgba(255,255,255,0.25)") : holdProgress > 0 ? `rgba(52,211,153,${0.4 + holdProgress * 0.6})` : "rgba(255,255,255,0.25)";
 
   return (
@@ -435,9 +468,17 @@ export function LiveFaceCapture({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={review} alt="Your pass photo" className="absolute inset-0 w-full h-full object-cover" />
           )}
-          {phase === "TURN" && turn && (
-            <div className={cn("absolute top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50", turn === "LEFT" ? "left-2" : "right-2")}>
-              {turn === "LEFT" ? <ArrowLeft className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
+          {(phase === "TURN" || phase === "TURN2") && turn && (() => {
+            const side = phase === "TURN" ? turn : turn === "LEFT" ? "RIGHT" : "LEFT";
+            return (
+              <div className={cn("absolute top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50", side === "LEFT" ? "left-2" : "right-2")}>
+                {side === "LEFT" ? <ArrowLeft className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
+              </div>
+            );
+          })()}
+          {(phase === "UP" || phase === "DOWN") && (
+            <div className={cn("absolute left-1/2 -translate-x-1/2 p-2 rounded-full bg-black/50", phase === "UP" ? "top-2" : "bottom-14")}>
+              {phase === "UP" ? <ArrowUp className="w-6 h-6" /> : <ArrowDown className="w-6 h-6" />}
             </div>
           )}
           {(phase === "STARTING" || phase === "SAVING") && (

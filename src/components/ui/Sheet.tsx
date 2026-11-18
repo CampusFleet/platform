@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "./cn";
 
 /**
  * Dialog that is a bottom sheet on phones and a centred card on larger screens.
  * Height is capped to the dynamic viewport and the body scrolls; respects the safe area.
+ * Rendered into document.body (portal): a parent with backdrop-filter or transform (e.g. the app
+ * header) would otherwise become the containing block of `fixed` and squeeze the sheet into it.
  */
 export function Sheet({
   open,
@@ -35,8 +38,10 @@ export function Sheet({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!open || !mounted) return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 sm:p-4" onClick={onClose}>
       <div
         role="dialog"
@@ -58,6 +63,7 @@ export function Sheet({
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] border-t border-gray-100 dark:border-zinc-900">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

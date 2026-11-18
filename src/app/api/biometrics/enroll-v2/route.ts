@@ -7,14 +7,15 @@ import { decodeImagePayload } from "@/lib/gate/evidence";
 import { getMatchThreshold } from "@/lib/gate/processor";
 import { CONSENT_PURPOSE, CONSENT_VERSION } from "@/lib/biometrics-consent";
 import { verifyFaceChallenge, consumeFaceChallenge } from "@/lib/face/challenge";
-import { checkEnrollmentPoses, SERVER_POSE } from "@/lib/face/pose";
+import { checkEnrollmentPoses, checkTurnOrder, SERVER_POSE } from "@/lib/face/pose";
 import { savePortrait } from "@/lib/students/portrait";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MIN_FRAMES = 3;
-const MAX_FRAMES = 5;
+// 6 = the multi-angle scan (straight, both sides, up, down, straight); 3–5 = older clients.
+const MAX_FRAMES = 6;
 const MIN_ACCEPTED = 2;
 
 /**
@@ -111,14 +112,18 @@ export async function POST(req: NextRequest) {
   }
   // Head movement: one frame looking straight and one turned. A still photo held to the camera has neither.
   if (process.env.FACE_ENROLL_POSE_CHECK !== "off") {
-    const pose = checkEnrollmentPoses(
+    const turnMin = Number(process.env.FACE_ENROLL_TURN_MIN) || SERVER_POSE.TURN_MIN;
+    const multiAngle = frames.length >= 6;
+    let pose = checkEnrollmentPoses(
       results.map((r) => r.yaw),
-      {
-        frontalMax: Number(process.env.FACE_ENROLL_FRONTAL_MAX) || SERVER_POSE.FRONTAL_MAX,
-        turnMin: Number(process.env.FACE_ENROLL_TURN_MIN) || SERVER_POSE.TURN_MIN,
-      },
-      { side: challenge.turn, signed: results.map((r) => r.yawSigned) }
+      { frontalMax: Number(process.env.FACE_ENROLL_FRONTAL_MAX) || SERVER_POSE.FRONTAL_MAX, turnMin },
+      // Multi-angle scans turn both ways, so "any frame to the challenge side" proves nothing there;
+      // the order of the two sides is checked instead.
+      multiAngle ? undefined : { side: challenge.turn, signed: results.map((r) => r.yawSigned) }
     );
+    if (pose.ok && multiAngle && !checkTurnOrder(results.map((r) => r.yawSigned), challenge.turn, turnMin)) {
+      pose = { ok: false, code: "WRONG_TURN_DIRECTION" };
+    }
     if (!pose.ok) {
       await supabaseAdmin.from("biometric_access_log").insert({
         actor_user_id: session.userId, actor_role: session.role, action: "ENROLL_POSE_REJECTED", subject_student_id: student.id,

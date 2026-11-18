@@ -80,3 +80,23 @@ describe("full-head framing", () => {
     expect(h.bottom).toBeCloseTo(0.7, 5);
   });
 });
+
+import { checkTurnOrder, pitchRatio } from "@/lib/face/pose";
+
+describe("multi-angle scan", () => {
+  it("accepts sides in the challenged order and rejects the reverse", () => {
+    expect(checkTurnOrder([0, 0.2, -0.2, 0, 0, 0], "LEFT", 0.12)).toBe(true);
+    expect(checkTurnOrder([0, -0.2, 0.2, 0, 0, 0], "LEFT", 0.12)).toBe(false);
+    expect(checkTurnOrder([0, -0.2, 0.2, 0, 0, 0], "RIGHT", 0.12)).toBe(true);
+  });
+  it("does not fail when the face service sends no signed yaw", () => {
+    expect(checkTurnOrder([null, null, null], "LEFT", 0.12)).toBe(true);
+  });
+  it("measures vertical tilt from landmarks", () => {
+    const lm = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
+    for (const i of [33, 133, 362, 263]) lm[i] = { x: 0.5, y: 0.4 };
+    lm[1] = { x: 0.5, y: 0.5 };
+    lm[152] = { x: 0.5, y: 0.65 };
+    expect(pitchRatio(lm)).toBeCloseTo(0.4, 5);
+  });
+});

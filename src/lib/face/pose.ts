@@ -55,6 +55,26 @@ export function signedYawRatio(lm: Point2D[] | null | undefined): number | null 
   return (nose.x - (r.x + l.x) / 2) / eyeDist;
 }
 
+/**
+ * Vertical head tilt measure: (nose − eye line) / (chin − eye line). Compared with the student's own
+ * straight-ahead value, so it needs no calibration; the capture screen only needs it to change by
+ * PITCH_MIN in one direction for "up" and the opposite direction for "down".
+ */
+export function pitchRatio(lm: Point2D[] | null | undefined): number | null {
+  if (!lm || lm.length < 400) return null;
+  const nose = lm[NOSE_TIP];
+  const chin = lm[152];
+  const r = mid(lm, RIGHT_EYE);
+  const l = mid(lm, LEFT_EYE);
+  if (!nose || !chin || !r || !l) return null;
+  const eyeY = (r.y + l.y) / 2;
+  const span = chin.y - eyeY;
+  if (span < 1e-4) return null;
+  return (nose.y - eyeY) / span;
+}
+export const PITCH_MIN = 0.05;
+export const PITCH_MAX = 0.2;
+
 /** Bounding box of the landmarks in normalised [0,1] image units. */
 export function faceBox(lm: Point2D[]): { cx: number; cy: number; w: number; h: number } {
   let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -100,6 +120,20 @@ export type TurnSide = "LEFT" | "RIGHT";
 export function isTurned(ratio: number, side: TurnSide): boolean {
   const v = side === "LEFT" ? ratio : -ratio;
   return v >= CLIENT_POSE.TURN_MIN && v <= CLIENT_POSE.TURN_MAX;
+}
+
+/**
+ * Six-frame scan (straight, challenge side, other side, up, down, straight): frame 1 must be turned
+ * to the challenge side and frame 2 to the other side, when the face service reports a signed yaw.
+ * A pre-recorded turning video gets the order right only half the time.
+ */
+export function checkTurnOrder(signed: (number | null | undefined)[], side: TurnSide, turnMin: number): boolean {
+  const want = side === "LEFT" ? 1 : -1;
+  const a = signed[1];
+  const b = signed[2];
+  if (typeof a === "number" && Math.abs(a) >= turnMin && Math.sign(a) !== want) return false;
+  if (typeof b === "number" && Math.abs(b) >= turnMin && Math.sign(b) !== -want) return false;
+  return true;
 }
 
 export type PoseCheck = { ok: true } | { ok: false; code: "NO_FRONTAL_FRAME" | "NO_TURNED_FRAME" | "WRONG_TURN_DIRECTION" };

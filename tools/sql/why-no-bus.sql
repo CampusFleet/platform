@@ -76,6 +76,7 @@ select
   end as reason
 from diag d
 left join users u on u.id = d.user_id
-where d.booking_status is null or d.booking_status = 'CANCELLED'   -- remove this line to see everyone
+where (d.booking_status is null or d.booking_status = 'CANCELLED')   -- remove this line to see everyone
+  and coalesce(u.role, 'student') = 'student'   -- old teacher test rows also have a student record
 -- and lower(u.email) = 'someone@gmail.com'
 order by reason, d.class_name, d.start_time;

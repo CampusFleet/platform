@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS public.bus_crew_assignments (
   updated_by TEXT,
   CHECK (driver_id IS NULL OR conductor_id IS NULL OR driver_id <> conductor_id)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_bus_crew_driver ON public.bus_crew_assignments (driver_id) WHERE driver_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_bus_crew_conductor ON public.bus_crew_assignments (conductor_id) WHERE conductor_id IS NOT NULL;
 ALTER TABLE public.bus_crew_assignments ENABLE ROW LEVEL SECURITY;
 
 -- Seed from each bus's latest trip so nothing changes until a manager edits it.
@@ -31,6 +29,7 @@ INSERT INTO public.bus_crew_assignments (bus_id, driver_id, conductor_id, update
 SELECT DISTINCT ON (t.bus_id) t.bus_id, t.driver_id, t.conductor_id, 'seed'
   FROM public.trips t
  WHERE t.bus_id IS NOT NULL AND (t.driver_id IS NOT NULL OR t.conductor_id IS NOT NULL)
+   AND t.driver_id IS DISTINCT FROM t.conductor_id
  ORDER BY t.bus_id, t.trip_date DESC, t.started_at DESC NULLS LAST
 ON CONFLICT (bus_id) DO NOTHING;
 -- The seed can put one person on two buses; keep them on the lowest bus id only (the manager
@@ -44,6 +43,10 @@ UPDATE public.bus_crew_assignments a SET conductor_id = NULL
 UPDATE public.bus_crew_assignments a SET conductor_id = NULL
   FROM public.bus_crew_assignments b
  WHERE a.conductor_id = b.driver_id AND a.updated_by = 'seed' AND b.updated_by = 'seed';
+
+-- One bus per person: indexes are added only after the seed is de-duplicated.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bus_crew_driver ON public.bus_crew_assignments (driver_id) WHERE driver_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bus_crew_conductor ON public.bus_crew_assignments (conductor_id) WHERE conductor_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.set_bus_crew(
   p_bus_id INTEGER, p_driver_id TEXT, p_conductor_id TEXT, p_apply_today BOOLEAN, p_actor TEXT, p_actor_role TEXT

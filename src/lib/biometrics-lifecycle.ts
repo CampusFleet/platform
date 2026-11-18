@@ -75,6 +75,8 @@ export async function runBiometricRetention(now = new Date()) {
     const ids = old.map((c) => c.id);
     await supabaseAdmin.from("gate_captures").update({ evidence_purged_at: now.toISOString() }).in("id", ids);
     await supabaseAdmin.from("bus_security_incidents").update({ evidence_blob_key: null }).in("capture_id", ids);
+    // Sighting photos point at the same crops (migration 20261125; table missing before it is applied).
+    await (supabaseAdmin as any).from("bus_incident_sightings").update({ evidence_blob_key: null }).in("capture_id", ids);
     summary.evidencePurged += old.length;
   }
 

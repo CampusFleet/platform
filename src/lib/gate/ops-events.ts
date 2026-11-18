@@ -12,6 +12,8 @@ export type OpsEvent =
   | { type: "GATE"; busId: number; door: "IN" | "OUT"; outcome: string; captureId: string }
   | { type: "INCIDENT"; busId: number; incidentId: string; incidentType: string }
   | { type: "INCIDENT_RESOLVED"; busId: number; incidentId: string }
+  /** Same unknown person seen again: the incident gained a sighting (no new alert). */
+  | { type: "INCIDENT_UPDATED"; busId: number; incidentId: string; incidentType: string }
   | { type: "DEVICE"; busId: number | null; deviceId: string; status: string };
 
 export interface StoredOpsEvent {

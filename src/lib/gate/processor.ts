@@ -285,7 +285,7 @@ export async function processCapture(c: CaptureRow): Promise<ProcessResult> {
   });
 
   // 5. Side effects
-  await applyDecision({ c, decision, matched, reservation, trip, stopId, busLabel, template: tpl.template });
+  await applyDecision({ c, decision, matched, reservation, trip, stopId, busLabel, template: tpl.template, threshold });
 
   // Learn the student's real door-camera look (glasses, light) from very confident boardings on
   // their own bus only. Quality and liveness already passed (tpl.accepted). Migration 20261123.
@@ -333,6 +333,7 @@ async function applyDecision(args: {
   stopId: string | null;
   busLabel: string;
   template: number[];
+  threshold: number;
 }) {
   const { c, decision, matched, reservation, trip, stopId, busLabel } = args;
   if (decision.outcome === "DUPLICATE") return;
@@ -413,8 +414,36 @@ async function applyDecision(args: {
   });
   if (evErr) console.error("[gate] gate event log:", evErr.message);
 
+  // Unknown face boarding: one incident per person. The same face seen again on this bus (open
+  // incident, within the match threshold) is added as a sighting with its own photo, and nobody is
+  // alerted a second time (migration 20261125, rpc record_intruder_sighting under a per-bus lock).
+  let intruder: { incidentId: string; isNew: boolean } | null = null;
+  if (decision.incidents.some((i) => i.type === "UNAUTHORIZED_INTRUDER")) {
+    const { data, error } = await supabaseAdmin.rpc("record_intruder_sighting" as never, {
+      p_bus_id: c.bus_id,
+      p_trip_id: tripId,
+      p_capture_id: c.id,
+      p_embedding: toVectorLiteral(args.template),
+      p_evidence_key: c.evidence_blob_key,
+      p_threshold: args.threshold,
+      p_window_hours: INTRUDER_MATCH_WINDOW_H,
+      p_door: c.door,
+      p_captured_at: at,
+      p_latitude: c.latitude,
+      p_longitude: c.longitude,
+      p_metadata: { door: c.door, outcome: decision.outcome, stop_id: stopId, captured_at: at, gps_missing: c.latitude === null },
+    } as never);
+    if (error && error.code !== "PGRST202") throw new Error(`intruder sighting: ${error.message}`);
+    const r = data as unknown as { incident_id?: string; new?: boolean } | null;
+    if (!error && r?.incident_id) {
+      intruder = { incidentId: r.incident_id, isNew: Boolean(r.new) };
+      await publishOpsEvent({ type: intruder.isNew ? "INCIDENT" : "INCIDENT_UPDATED", busId: c.bus_id, incidentId: intruder.incidentId, incidentType: "UNAUTHORIZED_INTRUDER" });
+    }
+  }
+  const repeatSighting = intruder !== null && !intruder.isNew;
+
   // Conductor + student notifications (bus number only — never trip ids, per AGENTS.md)
-  if (decision.notifyConductor) {
+  if (decision.notifyConductor && !repeatSighting) {
     let conductorUser: string | null = null;
     if (trip?.conductor_id) {
       const { data: st } = await supabaseAdmin.from("staff").select("user_id").eq("id", trip.conductor_id).maybeSingle();
@@ -442,6 +471,7 @@ async function applyDecision(args: {
   }
 
   for (const inc of decision.incidents) {
+    if (inc.type === "UNAUTHORIZED_INTRUDER" && intruder) continue; // recorded above
     const { data: row } = await supabaseAdmin
       .from("bus_security_incidents")
       .insert({

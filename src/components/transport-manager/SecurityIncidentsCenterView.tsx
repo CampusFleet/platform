@@ -475,18 +475,39 @@ export function SecurityIncidentsCenterView({
                         </span>
                       </div>
 
-                      {incident.hasEvidence && (
+                      {(incident.sightingCount ?? 1) > 1 && (
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                          Same person seen {incident.sightingCount} times
+                          {incident.lastSeenAt && ` · last at ${new Date(incident.lastSeenAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`}
+                        </div>
+                      )}
+                      {(incident.hasEvidence || (incident.sightings || []).some((x) => x.hasEvidence)) && (
                         <details className="pt-1">
                           <summary className="text-xs font-bold text-blue-600 dark:text-blue-400 cursor-pointer select-none">
-                            View door-camera photo (access is logged)
+                            View door-camera photo{(incident.sightings || []).length > 1 ? "s" : ""} (access is logged)
                           </summary>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`/api/biometrics/evidence/${incident.id}`}
-                            alt="Door camera evidence"
-                            loading="lazy"
-                            className="mt-2 w-40 h-40 object-cover rounded-2xl border border-slate-200 dark:border-slate-800"
-                          />
+                          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                            {((incident.sightings || []).length
+                              ? incident.sightings!
+                              : [{ id: "", door: null as string | null, capturedAt: incident.createdAt, hasEvidence: Boolean(incident.hasEvidence) }])
+                              .filter((x) => x.hasEvidence)
+                              .slice(0, 8)
+                              .map((x) => (
+                                <figure key={x.id || "main"} className="shrink-0">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={`/api/biometrics/evidence/${incident.id}${x.id ? `?sighting=${x.id}` : ""}`}
+                                    alt="Door camera evidence"
+                                    loading="lazy"
+                                    className="w-32 h-32 object-cover rounded-2xl border border-slate-200 dark:border-slate-800"
+                                  />
+                                  <figcaption className="text-[10px] text-slate-500 mt-1">
+                                    {new Date(x.capturedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                    {x.door ? ` · ${x.door === "IN" ? "boarding" : "leaving"}` : ""}
+                                  </figcaption>
+                                </figure>
+                              ))}
+                          </div>
                         </details>
                       )}
 

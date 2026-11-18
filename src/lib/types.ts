@@ -922,6 +922,11 @@ export interface BusSecurityIncident {
   evidenceUrl?: string | null;
   /** True when a private evidence crop exists (served by /api/biometrics/evidence/:id, audited). */
   hasEvidence?: boolean;
+  /** Times this same unknown person was seen (one incident per person, migration 20261125). */
+  sightingCount?: number;
+  lastSeenAt?: string | null;
+  /** Each door crossing, newest first; photo at /api/biometrics/evidence/:id?sighting=:sightingId */
+  sightings?: { id: string; door: string | null; capturedAt: string; hasEvidence: boolean }[];
   status: IncidentStatus;
   createdAt: string;
   resolvedAt?: string | null;

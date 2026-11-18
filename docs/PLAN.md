@@ -116,3 +116,4 @@ Steps:
 - ✅ Two fleet pages: Bus routes and Bus crew (standing assignments, migration `20261122_fleet_assignments.sql`, **apply in SQL Editor**); dispatch board is shift-first with cross-run warnings; rollover uses standing crew. Fixes driver portal showing the old bus.
 - ✅ Face ID: full-head framing and ID-style pass photo; extra looks (glasses on/off) and learned door-camera templates (migration `20261123_face_templates_variety.sql`, **apply in SQL Editor**). Open: newer recognition model (needs re-enrollment).
 - ✅ Face ID model → AuraFace v1 512-d (migration `20261124_face_model_auraface.sql`, **apply before deploying face-service**); 6-angle enrollment scan; Sheet portal fixes the notification panel opening inside the header.
+- ✅ One incident per unknown person: repeat door crossings become sightings with photos, no duplicate alerts (migration `20261125_intruder_sightings.sql`, **apply after 20261124**).

@@ -263,27 +263,18 @@ export async function getSecurityIncidents(options?: {
   busId?: number;
   limit?: number;
 }): Promise<BusSecurityIncident[]> {
-  let query = (supabaseAdmin as any)
-    .from("bus_security_incidents")
-    .select("id, bus_id, trip_id, incident_type, severity, stop_name, latitude, longitude, matched_student_id, evidence_url, evidence_blob_key, status, created_at, resolved_at, resolved_by, resolution_notes, metadata, buses(bus_number, registration_no)")
-    .order("created_at", { ascending: false });
-
-  if (options?.status) {
-    query = query.eq("status", options.status);
-  }
-  if (options?.severity) {
-    query = query.eq("severity", options.severity);
-  }
-  if (options?.busId) {
-    query = query.eq("bus_id", options.busId);
-  }
-  if (options?.limit) {
-    query = query.limit(options.limit);
-  } else {
-    query = query.limit(50);
-  }
-
-  const { data, error } = await query;
+  const base = "id, bus_id, trip_id, incident_type, severity, stop_name, latitude, longitude, matched_student_id, evidence_url, evidence_blob_key, status, created_at, resolved_at, resolved_by, resolution_notes, metadata, buses(bus_number, registration_no)";
+  const withSightings = `${base}, sighting_count, last_seen_at, bus_incident_sightings(id, door, captured_at, evidence_blob_key)`;
+  const build = (cols: string) => {
+    let q = (supabaseAdmin as any).from("bus_security_incidents").select(cols).order("created_at", { ascending: false });
+    if (options?.status) q = q.eq("status", options.status);
+    if (options?.severity) q = q.eq("severity", options.severity);
+    if (options?.busId) q = q.eq("bus_id", options.busId);
+    return q.limit(options?.limit || 50);
+  };
+  let { data, error } = await build(withSightings);
+  // Before migration 20261125 the sighting columns do not exist.
+  if (error && (error.code === "42703" || error.code === "PGRST200")) ({ data, error } = await build(base));
   if (error) {
     throw new Error(`Failed to fetch security incidents: ${error.message}`);
   }
@@ -302,6 +293,11 @@ export async function getSecurityIncidents(options?: {
     matchedStudentId: row.matched_student_id,
     evidenceUrl: row.evidence_url,
     hasEvidence: Boolean(row.evidence_blob_key),
+    sightingCount: row.sighting_count ?? 1,
+    lastSeenAt: row.last_seen_at ?? row.created_at,
+    sightings: ((row.bus_incident_sightings || []) as any[])
+      .map((x) => ({ id: x.id, door: x.door, capturedAt: x.captured_at, hasEvidence: Boolean(x.evidence_blob_key) }))
+      .sort((a, b) => String(b.capturedAt).localeCompare(String(a.capturedAt))),
     status: row.status,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,

@@ -21,19 +21,35 @@ export async function GET(req: NextRequest, { params }: { params: { incidentId: 
     .select("id, evidence_blob_key, matched_student_id, capture_id")
     .eq("id", params.incidentId)
     .maybeSingle();
-  if (!inc?.evidence_blob_key) return new NextResponse(null, { status: 404 });
+  if (!inc) return new NextResponse(null, { status: 404 });
+  // ?sighting=<id>: the photo of one door crossing of this incident (same person seen again).
+  const sightingId = req.nextUrl.searchParams.get("sighting");
+  let key = inc.evidence_blob_key as string | null;
+  let captureId = inc.capture_id as string | null;
+  if (sightingId) {
+    if (!/^[0-9a-f-]{36}$/i.test(sightingId)) return new NextResponse(null, { status: 400 });
+    const { data: s } = await (supabaseAdmin as any)
+      .from("bus_incident_sightings")
+      .select("evidence_blob_key, capture_id")
+      .eq("id", sightingId)
+      .eq("incident_id", inc.id)
+      .maybeSingle();
+    key = s?.evidence_blob_key ?? null;
+    captureId = s?.capture_id ?? null;
+  }
+  if (!key) return new NextResponse(null, { status: 404 });
 
   await supabaseAdmin.from("biometric_access_log").insert({
     actor_user_id: session.userId,
     actor_role: session.role,
     action: "EVIDENCE_VIEWED",
     incident_id: inc.id,
-    capture_id: inc.capture_id,
+    capture_id: captureId,
     subject_student_id: inc.matched_student_id,
-    details: { ip: req.headers.get("x-forwarded-for")?.split(",")[0] || null },
+    details: { ip: req.headers.get("x-forwarded-for")?.split(",")[0] || null, ...(sightingId ? { sighting_id: sightingId } : {}) },
   });
 
-  const img = await readEvidence(inc.evidence_blob_key).catch(() => null);
+  const img = await readEvidence(key).catch(() => null);
   if (!img) return new NextResponse(null, { status: 410 }); // purged by retention
   return new NextResponse(new Uint8Array(img), {
     headers: { "content-type": "image/jpeg", "cache-control": "no-store", "x-content-type-options": "nosniff" },

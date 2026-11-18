@@ -825,6 +825,7 @@ Replaced the legacy `src/lib/store/*` (whole-DB browser sync, localStorage, cros
 - **MongoDB:** MONGODB_URI, MONGODB_DB_NAME (mongodb.ts).
 - **Blob:** BLOB_READ_WRITE_TOKEN (maintenance/upload, delete-account); EVIDENCE_READ_WRITE_TOKEN (gate/evidence.ts).
 - **Razorpay:** RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, NEXT_PUBLIC_RAZORPAY_KEY_ID (approvals, create-link, verify-link, razorpay-payouts); RAZORPAY_WEBHOOK_SECRET (webhook); RAZORPAYX_ACCOUNT_NUMBER (payouts).
+- **Function region:** `vercel.json` `regions: ["sin1"]` (Singapore), next to the Supabase database (AWS ap-southeast-1). face-service runs in `bom1`.
 - **Face service:** FACE_SERVICE_URL, FACE_SERVICE_KEY (face/client.ts).
 - **Face ID enrollment:** FACE_CHALLENGE_SECRET (optional, falls back to JWT_SECRET; face/challenge.ts); FACE_ENROLL_POSE_CHECK (`off` disables the head-turn check), FACE_ENROLL_TURN_MIN (default 0.12), FACE_ENROLL_FRONTAL_MAX (default 0.10) (enroll-v2).
 - **Gate devices:** GATE_DEVICE_MASTER_KEY (gate/device-auth.ts).

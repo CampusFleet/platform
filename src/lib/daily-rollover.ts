@@ -147,6 +147,15 @@ export async function executeDailyRollover(
       const cur = lastCrew.get(t.bus_id) || { driver: null, conductor: null };
       lastCrew.set(t.bus_id, { driver: cur.driver || t.driver_id, conductor: cur.conductor || t.conductor_id });
     }
+    // Standing crew per bus (crew page, migration 20261122) wins over the last trip's crew.
+    const { data: standing, error: standingErr } = await (supabaseAdmin as any)
+      .from("bus_crew_assignments")
+      .select("bus_id, driver_id, conductor_id");
+    const hasStanding = !standingErr;
+    if (hasStanding) {
+      for (const b of busIds) lastCrew.set(b, { driver: null, conductor: null });
+      for (const c of standing || []) lastCrew.set(c.bus_id, { driver: c.driver_id, conductor: c.conductor_id });
+    }
     const staff = (staffList || []).filter((s: any) => s.is_active !== false);
     const byCode = (prefix: string, busNumber: string) => {
       const n = String(Number(busNumber));
@@ -169,8 +178,9 @@ export async function executeDailyRollover(
         route_id: p.routeId,
         bus_id: p.busId,
         shift_id: p.shiftId,
-        driver_id: bus ? crew?.driver || byCode("DRV", bus.bus_number) : null,
-        conductor_id: bus ? crew?.conductor || byCode("CND", bus.bus_number) : null,
+        // With standing crew, an empty slot stays empty (shown as "needs crew"), never guessed.
+        driver_id: bus ? crew?.driver || (hasStanding ? null : byCode("DRV", bus.bus_number)) : null,
+        conductor_id: bus ? crew?.conductor || (hasStanding ? null : byCode("CND", bus.bus_number)) : null,
         trip_date: targetDate,
         status: "SCHEDULED",
         delay_minutes: 0,

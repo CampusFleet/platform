@@ -679,6 +679,11 @@ Tables for `/api/telematics/devices`: buses, audit_logs.
 - **Types:** `review_early_departure` and `booked_trip_id` are not in `database.types.ts` until it is regenerated after the migration (rpc call is cast).
 
 - **Teacher timetable screen:** switching a day on fills the class's usual shifts; saving a day that is on with no shift is refused (client and `POST /api/teacher/schedule-shift` 400). Before, it was silently saved as a day off.
+- **Fleet plan** (migration `20261122_fleet_assignments.sql`, apply in SQL Editor; `src/lib/manager/fleet-plan.ts`, `GET/POST /api/transport-manager/fleet-plan`):
+  - `/transport-manager/bus-routes` (`BusRoutesView`): bus → route (`buses.current_route_id`, rpc `set_bus_route`, from the next plan). Flags routes with riders but no bus, and over-capacity routes.
+  - `/transport-manager/crew` (`CrewAssignmentView`): staff → bus, table `bus_crew_assignments` (one regular driver + conductor per bus; a person on one bus at most). rpc `set_bus_crew` moves the person off their old bus and, with `applyToday`, updates today's unstarted runs of this bus and takes them off other buses' unstarted runs (those get that bus's own crew). Runs under way are never changed.
+  - `/transport-manager/drivers` redirects to `/crew`. The dispatch board (`/trips`) is for one-run exceptions: shift picker first, and it warns when a driver/conductor is also on another run today.
+  - Daily rollover takes crew from `bus_crew_assignments` (empty slot stays empty); before, it copied the bus's last trip, which kept a moved driver on his old bus (the "bus 37 instead of 44" bug).
 - **Shift and timetable changes** (`src/lib/shifts/changes.ts`, used by `PUT/DELETE /api/shifts`; migration `20261121_timetable_release.sql`, apply in SQL Editor):
   - Shift time / cutoff: refused (409) once a run of that shift left or its final chart is locked today; otherwise booked riders and teachers get `SHIFT_CHANGED`, and buses whose runs now overlap come back as `warning` (fix on the dispatch board). Trips read the shift's time, so nothing else moves.
   - Direction: refused while the shift has runs today or later. Switching off: refused while today's runs are not finished (cancel them on the dispatch board, which moves/tells riders). Switching on: `executeDailyRollover(force)` adds today's missing runs.

@@ -113,3 +113,4 @@ Steps:
 - ✅ Face ID required to activate a pass while camera boarding is on (page + server check). Timetable saves for today add the missing trips (fixes "no bus assigned" after a teacher switches a day on).
 - ✅ Same-day shift changes: time/cutoff/direction/off guarded against today's runs, riders told of new times, bus overlaps flagged, activation adds runs, shifts with history retired not deleted; timetable switched off/changed today releases stale seats (migration `20261121_timetable_release.sql`, **apply in SQL Editor**).
 - ✅ Teacher timetable: a day switched on can't be saved without a shift (was silently saved as off).
+- ✅ Two fleet pages: Bus routes and Bus crew (standing assignments, migration `20261122_fleet_assignments.sql`, **apply in SQL Editor**); dispatch board is shift-first with cross-run warnings; rollover uses standing crew. Fixes driver portal showing the old bus.

@@ -4,7 +4,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, Plus, RefreshCw, X } from "lucide-react";
 import type { FleetRun } from "@/lib/manager/fleet-live";
 import type { getDispatchBoard } from "@/lib/manager/dispatch";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select, Sheet } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Segmented, Select, Sheet } from "@/components/ui";
 
 /**
  * Transport manager → Dispatch. One board for "Today's trips" and "Crew assignment":
@@ -25,6 +25,8 @@ export default function DispatchBoard({ initial }: { initial: Board }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [cancelling, setCancelling] = useState<FleetRun | null>(null);
+  // Shift first: the board shows one shift at a time (default: the one running or next).
+  const [shiftId, setShiftId] = useState<string>("");
 
   const load = useCallback(async (date: string) => {
     setLoading(true);
@@ -68,6 +70,21 @@ export default function DispatchBoard({ initial }: { initial: Board }) {
       .map((s) => ({ shift: s, runs: (byShift.get(s.id) || []).sort((a, b) => (a.bus ? 1 : 0) - (b.bus ? 1 : 0)) }))
       .filter((g) => g.runs.length > 0);
   }, [board]);
+  const nowHm = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(11, 16);
+  const defaultShift =
+    groups.find((g) => g.runs.some((r) => r.status === "IN_PROGRESS"))?.shift.id ||
+    groups.find((g) => (g.shift.end || "99:99") > nowHm)?.shift.id ||
+    groups[0]?.shift.id ||
+    "";
+  const activeShift = groups.some((g) => g.shift.id === shiftId) ? shiftId : defaultShift;
+  const visible = groups.filter((g) => g.shift.id === activeShift);
+  // Other runs today per person, so a manager sees "Aditya also drives Bus 37 at 07:15".
+  const elsewhere = (staffId: string, tripId: string) =>
+    staffId
+      ? board.runs
+          .filter((x) => x.tripId !== tripId && (x.driverId === staffId || x.conductorId === staffId) && x.status !== "COMPLETED")
+          .map((x) => `Bus ${x.bus?.number ?? "?"} ${x.shift?.start || ""}`.trim())
+      : [];
 
   const needBus = board.runs.filter((r) => !r.bus && r.status !== "COMPLETED").length;
   const noCrew = board.runs.filter((r) => r.bus && (!r.driverId || !r.conductorId) && r.status !== "COMPLETED").length;
@@ -109,7 +126,21 @@ export default function DispatchBoard({ initial }: { initial: Board }) {
         </Card>
       )}
 
-      {groups.map(({ shift, runs }) => (
+      {groups.length > 0 && (
+        <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <Segmented<string>
+            value={activeShift}
+            onChange={setShiftId}
+            options={groups.map((g) => ({ value: g.shift.id, label: `${g.shift.start ? `${g.shift.start} ` : ""}${g.shift.name} (${g.runs.length})` }))}
+          />
+        </div>
+      )}
+      <p className="text-xs text-gray-500">
+        Changes here apply to this run only. For a bus&apos;s regular driver, conductor or route, use{" "}
+        <a href="/transport-manager/crew" className="text-blue-600 font-semibold">Bus crew</a> and{" "}
+        <a href="/transport-manager/bus-routes" className="text-blue-600 font-semibold">Bus routes</a>.
+      </p>
+      {visible.map(({ shift, runs }) => (
         <Card key={shift.id}>
           <CardHeader title={`${shift.start ? `${shift.start} · ` : ""}${shift.name}`} subtitle={shift.direction === "HOME_TO_CAMPUS" ? "To campus" : shift.direction === "CAMPUS_TO_HOME" ? "From campus" : undefined} />
           <ul className="space-y-2">
@@ -142,6 +173,14 @@ export default function DispatchBoard({ initial }: { initial: Board }) {
                       {board.conductors.map((s) => <option key={s.id} value={s.id}>{s.name}{s.role === "driver" ? " (driver)" : ""}</option>)}
                     </Select>
                   </div>
+                  {[["Driver", d.driverId], ["Conductor", d.conductorId]].map(([label, id]) => {
+                    const other = elsewhere(id, r.tripId);
+                    return other.length ? (
+                      <p key={label} className="text-[11px] text-amber-700 dark:text-amber-400">
+                        {label} is also on {other.join(", ")} today.
+                      </p>
+                    ) : null;
+                  })}
                   {!locked && (
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" disabled={!dirty} loading={saving === r.tripId} onClick={() => void post({ action: "UPDATE", tripId: r.tripId, busId: d.busId, driverId: d.driverId || null, conductorId: d.conductorId || null }, r.tripId)}>

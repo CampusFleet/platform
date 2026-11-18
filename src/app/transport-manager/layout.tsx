@@ -45,6 +45,8 @@ export default function TransportManagerLayout({ children }: { children: React.R
       items: [
         { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
         { href: "/transport-manager/trips", label: "Today's Trips", shortLabel: "Trips", icon: Navigation },
+        { href: "/transport-manager/bus-routes", label: "Bus Routes", shortLabel: "Routes", icon: Navigation },
+        { href: "/transport-manager/crew", label: "Bus Crew", shortLabel: "Crew", icon: Users },
       ],
     },
     drivers: {
@@ -52,7 +54,8 @@ export default function TransportManagerLayout({ children }: { children: React.R
       subtitle: "Crew Dispatch & Role Qualifications",
       items: [
         { href: "/transport-manager", label: "← Hub", shortLabel: "Hub", icon: Home },
-        { href: "/transport-manager/drivers", label: "Crew Assignment", shortLabel: "Drivers", icon: Users },
+        { href: "/transport-manager/crew", label: "Bus Crew", shortLabel: "Crew", icon: Users },
+        { href: "/transport-manager/bus-routes", label: "Bus Routes", shortLabel: "Routes", icon: Navigation },
         { href: "/transport-manager/teachers", label: "Teachers on the Bus", shortLabel: "Teachers", icon: Users },
       ],
     },
@@ -101,7 +104,7 @@ export default function TransportManagerLayout({ children }: { children: React.R
     currentNavLinks = subPortals.trips.items;
     currentTitle = subPortals.trips.title;
     currentSubtitle = subPortals.trips.subtitle;
-  } else if (pathname.startsWith("/transport-manager/drivers") || pathname.startsWith("/transport-manager/teachers")) {
+  } else if (pathname.startsWith("/transport-manager/drivers") || pathname.startsWith("/transport-manager/crew") || pathname.startsWith("/transport-manager/bus-routes") || pathname.startsWith("/transport-manager/teachers")) {
     currentNavLinks = subPortals.drivers.items;
     currentTitle = subPortals.drivers.title;
     currentSubtitle = subPortals.drivers.subtitle;
